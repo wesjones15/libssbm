@@ -1,0 +1,14 @@
+[workspace]
+resolver = "3"
+members = ["crates/libssbm", "crates/libssbm-assets", "crates/libssbm-ffi", "crates/viewer"]
+default-members = ["crates/libssbm", "crates/libssbm-assets", "crates/libssbm-ffi"]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2024"
+publish = false
+
+[workspace.dependencies]
+glam = "0.30"
+libssbm = { path = "crates/libssbm" }
+libssbm-assets = { path = "crates/libssbm-assets" }

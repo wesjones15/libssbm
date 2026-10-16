@@ -1,0 +1,8 @@
+[package]
+name = "libssbm"
+version.workspace = true
+edition.workspace = true
+publish.workspace = true
+
+[dependencies]
+glam.workspace = true

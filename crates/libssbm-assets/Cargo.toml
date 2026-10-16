@@ -1,0 +1,17 @@
+[package]
+name = "libssbm-assets"
+version.workspace = true
+edition.workspace = true
+publish.workspace = true
+
+[dependencies]
+libssbm.workspace = true
+glam.workspace = true
+
+[[bin]]
+name = "ssbm-extract"
+path = "src/bin/extract.rs"
+
+[[bin]]
+name = "ssbm-inspect"
+path = "src/bin/inspect.rs"

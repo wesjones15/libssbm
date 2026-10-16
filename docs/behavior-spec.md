@@ -11,7 +11,7 @@ Behavior is reimplemented, not copied. Disc data is extracted into ignored asset
 ## Units, clock and host extensions
 
 GALE01 gameplay advances one fighter frame per game-loop update; NTSC uses 60 Hz.
-Check `gm/gm_1A45.c`, `sysdolphin/baselib/gobjproc.c`, and the retrace wait in
+Check `gm/gmscene.c`, `sysdolphin/baselib/gobjproc.c`, and the retrace wait in
 `sysdolphin/baselib/video.c`. Core distances are Melee units, velocities units per
 gameplay frame, accelerations units per frame squared. 3D radial movement, camera
 aim, cooldowns and RoR2 damage ratios are host extensions. Scale only at adapters.
@@ -20,22 +20,37 @@ aim, cooldowns and RoR2 damage ratios are host extensions. Scale only at adapter
 
 | Mechanic | Behavioral source | Status |
 | --- | --- | --- |
-| DAT relocation/public symbols | baselib/archive.h, archive.c HSD_ArchiveParse | Planned |
-| Movement tuning | ft/types.h ftCo_DatAttrs; ftData.x0 in PlSs.dat | Planned |
-| Samus special tuning | ft/kinds/ftSamus/types.h ftSs_DatAttrs; ftData.ext_attr | Planned |
-| Walk/dash/air drift | ftCommon walk/run and ftcommon physics | Planned |
-| Jump squat, short hop, double jump | ftCommon/ftCo_Jump.c, ftCo_JumpAerial.c | Planned |
-| Charge Shot storage/fire | ftsamusspecialn.c SpecialNHold_Anim, SpecialNHold_IASA | Planned |
-| Normal/smash missile | ftsamusspecials.c SpecialS_Enter | Planned |
-| Screw Attack | ftsamusspecialhi.c SpecialHi_Enter | Planned |
-| Bomb | ftsamusspeciallw1.c | Planned |
-| Smash detection/charge | ftCommon/ftCo_AttackS4.c, ftCo_AttackHi4.c, ftCo_AttackLw4.c | Planned |
+| DAT relocation/public symbols | baselib/archive.h, archive.c HSD_ArchiveParse | Implemented; bounds tests |
+| Movement tuning | ft/types.h ftCo_DatAttrs; ftData.x0 in PlSs.dat | Read from disc |
+| Samus special tuning | ft/kinds/ftSamus/types.h ftSs_DatAttrs; ftData.ext_attr | Used fields read from disc |
+| Walk/dash/air drift | ftCommon walk/run and ftcommon physics | Partial: radial adapter; simplified acceleration |
+| Jump squat, short hop, double jump | ftCommon/ftCo_KneeBend.c, ftCo_Jump.c, ftCo_JumpAerial.c | Partial: disc squat/velocities, short hop, jump count tested |
+| Charge Shot storage/fire | ftsamusspecialn.c SpecialNHold_Anim, SpecialNHold_IASA | Partial: disc charge increments; prototype startup/recovery |
+| Normal/smash missile | ftsamusspecials.c SpecialS_Enter | Partial: flick selects type; projectile supplied by host |
+| Screw Attack | ftsamusspecialhi.c SpecialHi_Enter | Partial: launch, then helpless fall; multi-hit schedule pending |
+| Bomb | ftsamusspeciallw1.c | Partial: down-special event, air hop; host supplies bomb |
+| Smash detection/charge | ftCommon/ftCo_AttackS4.c, ftCo_AttackHi4.c, ftCo_AttackLw4.c | Partial: recent flick, held charge/release, shoulder directions tested |
 | Grab/throws, ledges, percent knockback | ftCommon catch/throw/cliff/damage | Not yet |
 | HSD model, animation, materials, audio | baselib jobj/pobj/tobj/fobj; lb audio | Not yet |
-| Alternate disc costumes and unlocks | ftsam us costume table (see ftsamus.c) | Not yet |
+| Alternate disc costumes and unlocks | ftsamus.c ftSs_Init_CostumeStrings | Five archives extracted; rendering/unlocks pending |
 
 Controller interpretation from the idea file: RT = A attacks, LT = B specials,
 LB/RB = up/down modifiers, A = jump, LS click = sprint, X = interact (grab later).
 Shield is omitted. B is unassigned until a useful action is defined. Keyboard
 equivalents must be documented. The idea file is design context, not a source of
 repository policy.
+
+## Current limits and verification
+
+The fixed-step prototype has synthetic scenario tests for frame partitioning,
+short hop, double/extra jumps, input latching, shoulder modifiers, smash release,
+stored charge, airborne firing, missile selection and Screw Attack helplessness.
+It is not a frame-perfect port. Attack hitboxes, startup/active/recovery timing,
+smash charge curve and projectile damage still need the disc command streams.
+`Options::fixture()` parameters (actually `Params::fixture()`) are synthetic test
+data; runtime creation requires valid disc tuning. `Options::hold_charge` is an
+explicit control adaptation, off by default. CANCEL stores charge without a shield.
+
+`ssbm-extract` reads ISO/GCM/CISO GALE01 rev 2. Its output was compared with the
+gc2ror2 MCP extraction. Caches belong in ignored `assets/` / `build/`. First-run
+asset discovery and model/animation presentation are the next milestone.
