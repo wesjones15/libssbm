@@ -106,6 +106,7 @@ fn charge_can_be_stored_then_fired_and_air_shot_does_not_charge() {
     p.buttons = CANCEL;
     frames(&mut s, &mut h, p, 1);
     assert_eq!(s.phase, Phase::Free);
+    assert_eq!(s.current_move, None);
     assert!(s.shot_charge >= charge);
     p.buttons = 0;
     frames(&mut s, &mut h, p, 1);
@@ -157,4 +158,20 @@ fn missile_flick_and_screw_helpless_are_distinct() {
     p.buttons = JUMP;
     frames(&mut s, &mut h, p, 1);
     assert!(!h.events.iter().any(|e| e.kind == EventKind::Jump));
+}
+
+#[test]
+fn crowd_control_interrupts_startup_and_pad_flight_preserves_momentum() {
+    let (mut s, mut h, mut p) = scene();
+    p.buttons = ATTACK;
+    frames(&mut s, &mut h, p, 1);
+    s.interrupt();
+    p.buttons = 0;
+    frames(&mut s, &mut h, p, 30);
+    assert!(!h.events.iter().any(|e| e.kind == EventKind::Hit));
+    s.teleport(Vec3::Y * 100.);
+    s.launch_pad(Vec3::new(8., 5., 0.), Vec3::new(0., -0.02, 0.));
+    frames(&mut s, &mut h, p, 60);
+    assert!((s.velocity.x - 8.).abs() < 1e-4);
+    assert!((s.velocity.y - 3.8).abs() < 1e-3);
 }

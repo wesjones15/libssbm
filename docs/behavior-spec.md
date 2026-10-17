@@ -34,7 +34,7 @@ aim, cooldowns and RoR2 damage ratios are host extensions. Scale only at adapter
 | Smash detection/charge | ftCommon/ftCo_AttackS4.c, ftCo_AttackHi4.c, ftCo_AttackLw4.c | Partial: recent flick, held charge/release, shoulder directions tested |
 | Grab/throws, ledges, percent knockback | ftCommon catch/throw/cliff/damage | Not yet |
 | HSD model, animation, materials, audio | baselib jobj/pobj/tobj/fobj; lb/lbanim.h | Partial: real meshes, textures, envelope skinning, 208 FigaTree clips; audio/TEV pending |
-| Alternate disc costumes and unlocks | ftsamus.c ftSs_Init_CostumeStrings | Five costumes render in viewer; RoR2 unlocks pending |
+| Alternate disc costumes and unlocks | ftsamus.c ftSs_Init_CostumeStrings | Five costumes render; RoR2 stage 1..4 unlock adapter compiled, gameplay unverified |
 
 Controller interpretation from the idea file: RT = A attacks, LT = B specials,
 LB/RB = up/down modifiers, A = jump, LS click = sprint, X = interact (grab later).
@@ -56,6 +56,25 @@ explicit control adaptation, off by default. CANCEL stores charge without a shie
 `ssbm-extract` reads ISO/GCM/CISO GALE01 rev 2. Its output was compared with the
 gc2ror2 MCP extraction. Caches belong in ignored `assets/` / `build/`. First-run
 asset discovery in the RoR2 plugin is the next milestone.
+
+## Native and RoR2 adapter status
+
+libssbm-ffi exports ABI 1 with eleven pinned layouts. The real DLL was exercised
+from ror2-samus/NativeCheck through the plugin's exact Native.cs: callbacks,
+jumps/landing/attack, five costumes, mesh indices and texture copies pass.
+The adapter compiles against the installed RoR2 DLC4 assemblies. The survivor,
+physical Xbox input, common ModelView, NativeSkills, NativeHit, stat/Feather
+adaptation, external velocity, stun interruption, ground gating, camera smoothing,
+world probes and basic safe-point rescue are implemented but need gameplay tests.
+
+Host extensions: `interrupt` cancels current action and preserves stored charge;
+`launch_pad` integrates host-supplied velocity and gravity (units/tick and
+units/tick squared) without Melee speed caps/steering until landing or a jump,
+Screw Attack or bomb cancels it. Both are covered by a synthetic scenario.
+Runtime creation requires disc tuning; missing assets return an error.
+Attack schedules and coefficients remain prototype values. Original sound,
+hitboxes, grabs/throws, ledges, blast-zone presentation, percent/stock HUD,
+multiplayer and complete item integration are not claimed.
 
 Viewer verification: actual rendered screenshot inspected. Single-bone envelopes
 use local coordinates when the owner is a skeleton root; blended envelopes use

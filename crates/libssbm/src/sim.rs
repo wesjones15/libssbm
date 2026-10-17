@@ -152,6 +152,7 @@ pub struct Sim {
     charge_clock: u32,
     short_hop: bool,
     release_phase: bool,
+    pad_gravity: Option<Vec3>,
     move_aim: Vec3,
     move_strength: f32,
 }
@@ -180,6 +181,7 @@ impl Sim {
             charge_clock: 0,
             short_hop: false,
             release_phase: false,
+            pad_gravity: None,
             move_aim: Vec3::X,
             move_strength: 1.,
         }
@@ -204,6 +206,7 @@ impl Sim {
         ticks
     }
     pub fn teleport(&mut self, position: Vec3) {
+        self.pad_gravity = None;
         self.position = position;
         self.velocity = Vec3::ZERO;
         self.grounded = false;
@@ -212,8 +215,22 @@ impl Sim {
         self.jumps_used = 1;
     }
     pub fn launch(&mut self, velocity: Vec3) {
+        self.pad_gravity = None;
         self.velocity = velocity;
         self.grounded = false;
+    }
+    /// Host-only ballistic jump pad: preserve all momentum and host gravity until
+    /// contact, rather than applying Melee's steering/terminal velocity.
+    pub fn launch_pad(&mut self, velocity: Vec3, gravity: Vec3) {
+        self.launch(velocity);
+        self.pad_gravity = Some(gravity);
+    }
+    /// Host crowd-control interruption. Stored neutral charge survives.
+    pub fn interrupt(&mut self) {
+        self.current_move = None;
+        self.smash_charge = 0;
+        self.release_phase = false;
+        self.set_phase(Phase::Free);
     }
     fn emit(&self, host: &mut impl Host, kind: EventKind, move_id: u32, strength: f32) {
         host.event(Event {
@@ -243,10 +260,12 @@ impl Sim {
         self.emit(host, EventKind::Started, m as u32, 1.);
         self.set_phase(Phase::Startup);
         if m == Move::ScrewAttack {
+            self.pad_gravity = None;
             self.grounded = false;
             self.velocity.y = self.params.screw_velocity * self.options.jump_scale;
             self.jumps_used = self.params.jumps + self.options.extra_jumps;
         } else if m == Move::Bomb && !self.grounded {
+            self.pad_gravity = None;
             self.velocity.y = self.params.bomb_velocity;
         }
     }
@@ -291,6 +310,7 @@ impl Sim {
         }
     }
     fn jump(&mut self, host: &mut impl Host, aerial: bool) {
+        self.pad_gravity = None;
         self.grounded = false;
         self.velocity.y = if aerial {
             self.params.jump_speed * self.params.air_jump_scale
@@ -403,6 +423,7 @@ impl Sim {
                         self.shot_charge as f32,
                     );
                     self.set_phase(Phase::Free);
+                    self.current_move = None;
                     if pressed & JUMP != 0 && self.grounded {
                         self.short_hop = false;
                         self.set_phase(Phase::JumpSquat);
@@ -431,51 +452,55 @@ impl Sim {
         }
         let movable = matches!(self.phase, Phase::Free | Phase::JumpSquat | Phase::Helpless)
             || !self.grounded;
-        let horizontal = self.velocity.with_y(0.);
-        let (speed, accel, friction) = if self.grounded {
-            if input.buttons & SPRINT != 0 {
-                (
-                    self.params.run_speed,
-                    self.params.dash_accel + self.params.dash_base,
-                    self.params.friction,
-                )
+        if let Some(gravity) = self.pad_gravity {
+            self.velocity += gravity;
+        } else {
+            let horizontal = self.velocity.with_y(0.);
+            let (speed, accel, friction) = if self.grounded {
+                if input.buttons & SPRINT != 0 {
+                    (
+                        self.params.run_speed,
+                        self.params.dash_accel + self.params.dash_base,
+                        self.params.friction,
+                    )
+                } else {
+                    (
+                        self.params.walk_speed,
+                        self.params.walk_accel + self.params.walk_base,
+                        self.params.friction,
+                    )
+                }
             } else {
                 (
-                    self.params.walk_speed,
-                    self.params.walk_accel + self.params.walk_base,
-                    self.params.friction,
+                    self.params.air_speed,
+                    self.params.air_accel + self.params.air_base,
+                    self.params.air_friction,
                 )
-            }
-        } else {
-            (
-                self.params.air_speed,
-                self.params.air_accel + self.params.air_base,
-                self.params.air_friction,
-            )
-        };
-        let target = if movable {
-            movement * speed * self.options.speed_scale
-        } else {
-            Vec3::ZERO
-        };
-        let difference = target - horizontal;
-        let step = if target.length_squared() > 0.001 {
-            accel * self.options.speed_scale
-        } else {
-            friction
-        };
-        let horizontal = horizontal + difference.clamp_length_max(step.max(0.));
-        self.velocity.x = horizontal.x;
-        self.velocity.z = horizontal.z;
-        if !self.grounded {
-            let cap = if input.buttons & DOWN != 0 && self.velocity.y <= 0. {
-                self.params.fast_fall
-            } else {
-                self.params.fall_speed
             };
-            self.velocity.y = (self.velocity.y - self.params.gravity).max(-cap);
-        } else {
-            self.velocity.y = self.velocity.y.min(0.);
+            let target = if movable {
+                movement * speed * self.options.speed_scale
+            } else {
+                Vec3::ZERO
+            };
+            let difference = target - horizontal;
+            let step = if target.length_squared() > 0.001 {
+                accel * self.options.speed_scale
+            } else {
+                friction
+            };
+            let horizontal = horizontal + difference.clamp_length_max(step.max(0.));
+            self.velocity.x = horizontal.x;
+            self.velocity.z = horizontal.z;
+            if !self.grounded {
+                let cap = if input.buttons & DOWN != 0 && self.velocity.y <= 0. {
+                    self.params.fast_fall
+                } else {
+                    self.params.fall_speed
+                };
+                self.velocity.y = (self.velocity.y - self.params.gravity).max(-cap);
+            } else {
+                self.velocity.y = self.velocity.y.min(0.);
+            }
         }
         let before = self.grounded;
         let contact = host.collide(self.position, self.position + self.velocity);
@@ -485,6 +510,7 @@ impl Sim {
             self.velocity.y = self.velocity.y.min(0.);
         }
         if self.grounded {
+            self.pad_gravity = None;
             if !before {
                 self.emit(host, EventKind::Land, 0, -self.velocity.y);
             }

@@ -604,6 +604,29 @@ pub unsafe extern "C" fn ssbm_view_texture(
     1
 }
 
+/// # Safety
+/// `handle` must be a live uniquely borrowed simulation, or null.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn ssbm_sim_interrupt(handle: *mut Handle) {
+    if !handle.is_null() {
+        let h = unsafe { &mut *handle };
+        if !h.poisoned {
+            h.sim.interrupt();
+        }
+    }
+}
+/// # Safety
+/// Live unique handle or null; velocity is units/tick, gravity units/tick squared.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn ssbm_sim_launch_pad(handle: *mut Handle, velocity: V3, gravity: V3) {
+    if handle.is_null() || !Vec3::from(velocity).is_finite() || !Vec3::from(gravity).is_finite() {
+        return;
+    }
+    let h = unsafe { &mut *handle };
+    if !h.poisoned {
+        h.sim.launch_pad(velocity.into(), gravity.into());
+    }
+}
 #[cfg(test)]
 mod tests {
     use super::*;
