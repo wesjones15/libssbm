@@ -280,6 +280,22 @@ impl Sim {
         self.emit(host, EventKind::Started, m as u32, 1.);
         self.set_phase(Phase::Startup);
         if m == Move::ScrewAttack {
+            self.action.effects.push(crate::action::GfxCue {
+                id: 1154,
+                bone: 3,
+                common: true,
+                destroy_on_change: true,
+                offset: Vec3::ZERO,
+                param: 0.,
+                clip: if self.move_started_grounded {
+                    "SpecialHi"
+                } else {
+                    "SpecialAirHi"
+                },
+                frame: 0.,
+                origin: self.position,
+                facing: self.facing,
+            });
             self.pad_gravity = None;
             self.grounded = false;
             self.velocity.y = self.params.screw_velocity * self.options.jump_scale;
@@ -459,6 +475,15 @@ impl Sim {
                     self.shot_charge = (self.shot_charge + 1).min(self.params.charge_steps);
                 }
                 if pressed & (CANCEL | JUMP) != 0 || self.shot_charge >= self.params.charge_steps {
+                    if self.shot_charge >= self.params.charge_steps {
+                        self.action.sounds.push(crate::action::SoundCue {
+                            sound: 260021,
+                            volume: 127,
+                            pan: 64,
+                            channel: 0,
+                            stop: false,
+                        });
+                    }
                     self.emit(
                         host,
                         EventKind::ChargeStored,

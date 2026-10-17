@@ -508,7 +508,16 @@ pub extern "C" fn ssbm_effect_target(id: u32) -> i32 {
         libssbm::effect::Target::Particle(id) => id as i32,
         libssbm::effect::Target::Model(id) => -(id as i32) - 1,
         libssbm::effect::Target::NoOp => i32::MIN,
+        libssbm::effect::Target::CameraShake(id) => i32::MIN + id as i32 + 1,
         libssbm::effect::Target::Unknown => i32::MAX,
+    }
+}
+#[unsafe(no_mangle)]
+pub extern "C" fn ssbm_effect_flags(id: u32) -> u32 {
+    // Attachment policy from ftCo_8009F834 and efAlt_Spawn.
+    match id {
+        1026 | 1027 | 1060 | 1154 | 1159 => 1,
+        _ => 0,
     }
 }
 /// # Safety
@@ -697,6 +706,7 @@ impl View {
         let mut offset = 0;
         for i in 0..self.actor.model.batches.len() {
             let visible = self.actor.visible(i);
+            self.colors[i] = self.actor.color(i);
             for (p, n) in self.actor.model.skin(i, &self.actor.world) {
                 self.positions[offset] = if visible { p.into() } else { V3::default() };
                 self.normals[offset] = n.into();
@@ -728,8 +738,8 @@ impl View {
                 first_vertex,
                 vertex_count: b.vertices.len() as u32,
                 texture,
-                blend: 0,
-                lit: 1,
+                blend: b.blend,
+                lit: b.lit,
                 cull: 2,
                 env: 0,
             });
@@ -808,13 +818,7 @@ pub unsafe extern "C" fn ssbm_object_duration(view: *const View) -> f32 {
     if view.is_null() {
         return 0.;
     }
-    unsafe { &*view }
-        .actor
-        .animations
-        .clips
-        .get("Object")
-        .map(|c| c.frames)
-        .unwrap_or(0.)
+    unsafe { &*view }.actor.duration
 }
 /// # Safety
 /// Unique live object view and finite nonnegative frame, main thread only.
@@ -875,7 +879,7 @@ pub unsafe extern "C" fn ssbm_view_update(v: *mut View, h: *const Handle, dt: f3
             v.colors[i] = if flash {
                 [1., 0.9, 0.15, 1.]
             } else {
-                v.actor.model.batches[i].color
+                v.actor.color(i)
             };
         }
         1

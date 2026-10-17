@@ -5,6 +5,7 @@ pub enum Target {
     Particle(u32),
     Model(u32),
     NoOp,
+    CameraShake(u32),
     Unknown,
 }
 pub fn resolve(id: u32) -> Target {
@@ -33,8 +34,8 @@ pub fn resolve(id: u32) -> Target {
         1157 => Particle(2014),
         1158 => Model(2001),
         1159 => Model(2002),
-        // efsync's default branch returns NULL for this source command ID.
-        1299 => NoOp,
+        // ftCo_8009F834 routes this to Camera_RequestQuake, before efsync.
+        1299 => CameraShake(2),
         _ => Unknown,
     }
 }

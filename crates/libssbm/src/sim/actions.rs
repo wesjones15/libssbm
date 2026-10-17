@@ -55,6 +55,25 @@ impl Sim {
             return;
         }
         self.action.projectile_fired = true;
+        let cue = match m {
+            Move::ChargeShot => Some((1158, 51, true)),
+            Move::Missile | Move::SuperMissile => Some((1155, 56, false)),
+            _ => None,
+        };
+        if let Some((id, bone, common)) = cue {
+            self.action.effects.push(crate::action::GfxCue {
+                id,
+                bone,
+                common,
+                destroy_on_change: false,
+                offset: Vec3::ZERO,
+                param: 0.,
+                clip: self.motion.clip,
+                frame: self.motion.frame,
+                origin: self.position,
+                facing: self.facing,
+            });
+        }
         let strength = if m == Move::ChargeShot {
             let charge = self.shot_charge as f32 / self.params.charge_steps as f32;
             self.shot_charge = 0;
