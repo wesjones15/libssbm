@@ -77,6 +77,13 @@ impl Model {
             .find(|(s, _)| s.ends_with("_Share_joint"))
             .ok_or("missing shared joint")?
             .1;
+        let model = Self::from_joint(d, root)?;
+        if model.batches.is_empty() {
+            return Err("fighter model has no triangles".into());
+        }
+        Ok(model)
+    }
+    pub fn from_joint(d: &Dat, root: usize) -> Result<Self> {
         let mut joints = Vec::new();
         let mut visited = HashSet::new();
         fn walk(
@@ -156,9 +163,6 @@ impl Model {
                 }
                 dobj = d.ptr(at + 4)?;
             }
-        }
-        if batches.is_empty() {
-            return Err("model has no triangles".into());
         }
         Ok(Self {
             joints,

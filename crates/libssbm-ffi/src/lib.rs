@@ -563,6 +563,17 @@ pub unsafe extern "C" fn ssbm_sim_place(handle: *mut Handle, v: V3, kind: u32) {
 }
 
 impl View {
+    fn refresh(&mut self) {
+        let mut offset = 0;
+        for i in 0..self.actor.model.batches.len() {
+            let visible = self.actor.visible(i);
+            for (p, n) in self.actor.model.skin(i, &self.actor.world) {
+                self.positions[offset] = if visible { p.into() } else { V3::default() };
+                self.normals[offset] = n.into();
+                offset += 1;
+            }
+        }
+    }
     fn new(actor: Presentation) -> Self {
         let mut v = Self {
             actor,
@@ -612,6 +623,7 @@ impl View {
             lo: lo.into(),
             hi: hi.into(),
         };
+        v.refresh();
         v
     }
 }
@@ -629,6 +641,45 @@ pub unsafe extern "C" fn ssbm_view_new(dir: *const c_char, costume: u32) -> *mut
             }
         }
     })
+}
+/// # Safety
+/// UTF-8 cache path and Samus article kind 0..3/state. Free with ssbm_view_free.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn ssbm_article_new(dir: *const c_char, kind: u32, state: u32) -> *mut View {
+    guarded(std::ptr::null_mut(), || {
+        let result = (|| Presentation::article(unsafe { path(dir) }?, kind, state))();
+        match result {
+            Ok(a) => Box::into_raw(Box::new(View::new(a))),
+            Err(e) => {
+                error(e);
+                std::ptr::null_mut()
+            }
+        }
+    })
+}
+/// # Safety
+/// Unique live object view and finite nonnegative frame, main thread only.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn ssbm_object_update(v: *mut View, frame: f32) -> u32 {
+    if v.is_null() || !frame.is_finite() || frame < 0. {
+        return 0;
+    }
+    let v = unsafe { &mut *v };
+    if v.poisoned {
+        return 0;
+    }
+    match catch_unwind(AssertUnwindSafe(|| {
+        v.actor.object_pose(frame);
+        v.refresh();
+        1
+    })) {
+        Ok(n) => n,
+        Err(_) => {
+            v.poisoned = true;
+            error("object view panic");
+            0
+        }
+    }
 }
 /// # Safety
 /// Unique live view or null; consume exactly once.

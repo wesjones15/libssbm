@@ -127,3 +127,13 @@ buffers, and the adapter applies GameSettings gain, pause and run cleanup. Sourc
 surround/aux bus routing is approximated to stereo. Synthetic decoding/interpreter
 checks and 271 real samples/checked sound sequences pass; device playback and
 movement/attack sound synchronization still need listening verification.
+
+Articles/effect archive decoding: HSD object animation trees (AObj/FObj rather
+than fighter FigaTree) now pose bomb, all nine charge states, all four missile
+states and the grapple model. Native object views transfer these meshes/textures
+to ModelView; the RoR2 shot renderer uses article art. The missile was rendered
+and visually inspected in the viewer. Projectile physics/impacts are still partial.
+Embedded effect readers decode 47 common and 3 Samus model descriptors, 592+22
+emitter definitions and 36+8 texture groups with all frame/palette data. Relative
+bank relocation is independent of DAT pointers. Finite object poses, skinned
+vertices and texture bounds pass; source particle playback/rendering is pending.

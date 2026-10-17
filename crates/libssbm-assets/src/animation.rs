@@ -151,6 +151,66 @@ impl Track {
     }
 }
 impl Animations {
+    /// HSD_AnimJoint/AObj/FObj descriptors used by articles and effect models,
+    /// separate from fighter FigaTree clips. See HSD_JObjAddAnimAll/LoadDesc.
+    pub fn object(d: &Dat, root: Option<usize>, model: &Model) -> Result<Self> {
+        let mut tracks = Vec::new();
+        let mut frames = 0f32;
+        let mut looping = false;
+        let mut seen = std::collections::HashSet::new();
+        let mut stack = root.map(|p| vec![p]).unwrap_or_default();
+        let mut joint = 0;
+        while let Some(at) = stack.pop() {
+            if !seen.insert(at) || seen.len() > 2048 {
+                return Err("cyclic/oversized object animation tree".into());
+            }
+            if let Some(next) = d.ptr(at + 4)? {
+                stack.push(next);
+            }
+            if let Some(child) = d.ptr(at)? {
+                stack.push(child);
+            }
+            if let Some(aobj) = d.ptr(at + 8)? {
+                let end = d.f32(aobj + 4)?;
+                if !(0. ..=100000.).contains(&end) {
+                    return Err("invalid object animation length".into());
+                }
+                frames = frames.max(end);
+                looping |= d.u32(aobj)? & (1 << 29) != 0;
+                let target = d
+                    .ptr(aobj + 12)?
+                    .and_then(|p| model.joints.iter().position(|j| j.address == p))
+                    .unwrap_or(joint);
+                let mut fobj = d.ptr(aobj + 8)?;
+                let mut visited = std::collections::HashSet::new();
+                while let Some(f) = fobj {
+                    if !visited.insert(f) || visited.len() > 64 {
+                        return Err("cyclic/oversized object tracks".into());
+                    }
+                    let length = d.u32(f + 4)? as usize;
+                    let raw = d.bytes(d.required_ptr(f + 16)?, length)?;
+                    let frac = d.bytes(f + 13, 2)?;
+                    tracks.push(Track {
+                        joint: target,
+                        channel: d.bytes(f + 12, 1)?[0],
+                        keys: keys(raw, frac[0], frac[1], d.f32(f + 8)?)?,
+                    });
+                    fobj = d.ptr(f)?;
+                }
+            }
+            joint += 1;
+        }
+        Ok(Self {
+            clips: BTreeMap::from([(
+                "Object".into(),
+                Clip {
+                    frames,
+                    looping,
+                    tracks,
+                },
+            )]),
+        })
+    }
     pub fn motion_definitions(&self) -> BTreeMap<String, libssbm::motion::MotionDef> {
         self.clips
             .iter()
@@ -252,6 +312,25 @@ impl Animations {
         Ok(Self { clips })
     }
     pub fn pose(&self, model: &Model, name: &str, frame: f32, looping: bool) -> Vec<Mat4> {
+        self.pose_inner(model, name, frame, looping, true)
+    }
+    pub fn pose_object(&self, model: &Model, frame: f32) -> Vec<Mat4> {
+        self.pose_inner(
+            model,
+            "Object",
+            frame,
+            self.clips.get("Object").is_some_and(|c| c.looping),
+            false,
+        )
+    }
+    fn pose_inner(
+        &self,
+        model: &Model,
+        name: &str,
+        frame: f32,
+        looping: bool,
+        remove_root_motion: bool,
+    ) -> Vec<Mat4> {
         let mut t: Vec<_> = model.joints.iter().map(|j| j.translation).collect();
         let mut r: Vec<_> = model.joints.iter().map(|j| j.rotation).collect();
         let mut s: Vec<_> = model.joints.iter().map(|j| j.scale).collect();
@@ -285,7 +364,7 @@ impl Animations {
             }
         }
         // Root translation is movement, already owned by the gameplay sim.
-        if !t.is_empty() {
+        if remove_root_motion && !t.is_empty() {
             t[0] = model.joints[0].translation;
         }
         let mut world = Vec::with_capacity(model.joints.len());

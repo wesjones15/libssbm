@@ -2,9 +2,11 @@
 //! No disc data is compiled into this crate.
 pub mod action;
 pub mod animation;
+pub mod article;
 pub mod audio;
 pub mod dat;
 pub mod disc;
+pub mod effects;
 pub mod model;
 pub mod params;
 pub mod presentation;

@@ -55,15 +55,34 @@ async fn run() -> libssbm_assets::Result<()> {
         .map(|s| s.parse::<f32>())
         .transpose()?
         .unwrap_or(0.);
-    let mut actor = Presentation::load(std::path::Path::new(&path), 0)?;
+    let article = args
+        .iter()
+        .position(|s| s == "--article")
+        .and_then(|i| args.get(i + 1))
+        .map(|s| s.parse::<u32>())
+        .transpose()?;
+    let article_state = args
+        .iter()
+        .position(|s| s == "--state")
+        .and_then(|i| args.get(i + 1))
+        .map(|s| s.parse::<u32>())
+        .transpose()?
+        .unwrap_or(0);
+    let mut actor = if let Some(kind) = article {
+        Presentation::article(std::path::Path::new(&path), kind, article_state)?
+    } else {
+        Presentation::load(std::path::Path::new(&path), 0)?
+    };
     let mut sim = Sim::new(
         libssbm_assets::params::load(std::path::Path::new(&path))?,
         ::glam::Vec3::ZERO,
     );
     let mut host = FlatHost::default();
-    sim.motion.definitions = actor.animations.motion_definitions();
+    let fighter_animations =
+        libssbm_assets::animation::Animations::load(std::path::Path::new(&path))?;
+    sim.motion.definitions = fighter_animations.motion_definitions();
     sim.action.definitions =
-        libssbm_assets::action::load(std::path::Path::new(&path), &actor.animations)?;
+        libssbm_assets::action::load(std::path::Path::new(&path), &fighter_animations)?;
     let mut shots = Vec::<Shot>::new();
     let mut camera_yaw = 0.7f32;
     let mut costume = 0;
@@ -164,9 +183,18 @@ async fn run() -> libssbm_assets::Result<()> {
         }
         shots.retain(|s| s.life > 0.);
         clear_background(Color::from_rgba(10, 17, 28, 255));
-        let center = gv(sim.position) + vec3(0., 12., 0.);
+        if article.is_some() {
+            actor.object_pose(pose_frame);
+        }
+        let center = gv(sim.position) + vec3(0., if article.is_some() { 0. } else { 12. }, 0.);
+        let distance = if article.is_some() { 15. } else { 65. };
         set_camera(&Camera3D {
-            position: center + vec3(camera_yaw.sin() * 65., 28., camera_yaw.cos() * 65.),
+            position: center
+                + vec3(
+                    camera_yaw.sin() * distance,
+                    distance * 0.43,
+                    camera_yaw.cos() * distance,
+                ),
             target: center,
             up: Vec3::Y,
             fovy: 45.,

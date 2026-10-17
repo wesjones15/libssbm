@@ -11,6 +11,22 @@ pub struct Presentation {
     pub ball: bool,
 }
 impl Presentation {
+    pub fn article(dir: &Path, kind: u32, state: u32) -> Result<Self> {
+        let a = crate::article::Article::load(dir, kind, state)?;
+        let world = a.model.bind_world();
+        Ok(Self {
+            model: a.model,
+            animations: a.animations,
+            clip: "Object".into(),
+            frame: 0.,
+            world,
+            ball: false,
+        })
+    }
+    pub fn object_pose(&mut self, frame: f32) {
+        self.frame = frame;
+        self.world = self.animations.pose_object(&self.model, frame);
+    }
     pub fn load(dir: &Path, costume: usize) -> Result<Self> {
         let model = Model::load(dir, costume)?;
         let world = model.bind_world();
