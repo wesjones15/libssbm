@@ -1,13 +1,13 @@
 # Samus / Melee behavior specification
 
-## Current checkpoint: 0.2.2, 2026-10-17
+## Current checkpoint: 0.2.3, 2026-10-17
 
-Unreleased follow-up: source entry colour program 0x75 now decodes from PlCo and
+Source entry colour program 0x75 now decodes from PlCo and
 reaches the common renderer's colour-overlay input. A null-safe optional ABI-4
 export reports RGBA. Fall/air-fall/helpless directional poses now blend local
 joint transforms against neutral using the common disc threshold/response.
 Hierarchy and endpoint checks, native entry overlay checks and the C# build pass.
-The installed 0.2.2 release remains unchanged while awaiting playtest feedback.
+The 0.2.3 pair is installed in D: Steam RoR2; in-game playtest feedback is pending.
 
 The incremental notes below retain implementation history; this checkpoint
 supersedes their earlier prototype and pending-integration statements.
@@ -43,8 +43,8 @@ pose blending and Melee percent/hitstun/tech rules are not implemented.
 
 All clips and five costumes decode; sampled walk/run cycles have at least 18
 distinct poses across 20 samples. Trophy entry uses original platform, tuning,
-sound and effect, with collision feet held at a safe host position. Entry colour
-animation 0x75 is missing. Character select repeats up-B/effects/audio using UI
+sound, colour overlay and effect, with collision feet held at a safe host position.
+Character select repeats up-B/effects/audio using UI
 time; its original CSS grid tile replaces the large selected-character photo.
 
 Full TEV/animated texture and UV fidelity, particle trail/mirror/alpha-compare
