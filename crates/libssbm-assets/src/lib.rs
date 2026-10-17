@@ -8,6 +8,7 @@ pub mod dat;
 pub mod disc;
 pub mod effects;
 pub mod fighter;
+pub mod grapple;
 pub mod model;
 pub mod params;
 pub mod portrait;

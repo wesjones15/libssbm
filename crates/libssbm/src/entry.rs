@@ -12,12 +12,19 @@ pub struct Params {
 }
 #[derive(Clone, Copy, Debug)]
 pub struct State {
+    pub waiting: bool,
+    pub started: bool,
     pub params: Params,
     pub frame: u32,
 }
 impl State {
     pub fn new(params: Params) -> Self {
-        Self { params, frame: 0 }
+        Self {
+            params,
+            frame: 0,
+            waiting: false,
+            started: false,
+        }
     }
     pub fn finished(&self) -> bool {
         self.frame >= self.params.grow + self.params.release
@@ -26,6 +33,9 @@ impl State {
         (self.frame as f32 / self.params.grow.max(1) as f32).min(1.)
     }
     pub fn platform_y(&self) -> f32 {
+        if self.waiting {
+            return self.growth();
+        }
         if self.frame < self.params.grow {
             self.growth()
         } else {

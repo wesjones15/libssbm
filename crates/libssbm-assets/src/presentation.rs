@@ -12,6 +12,7 @@ pub struct Presentation {
     pub material_tracks: Vec<crate::animation::Track>,
     pub duration: f32,
     pub commands: Vec<libssbm::action::TimedCommand>,
+    pub object_scale: f32,
 }
 impl Presentation {
     pub fn platform(dir: &Path) -> Result<Self> {
@@ -34,6 +35,7 @@ impl Presentation {
             material_tracks: Vec::new(),
             duration: 0.,
             commands: Vec::new(),
+            object_scale: 1.,
         })
     }
     pub fn effect(dir: &Path, id: u32) -> Result<Self> {
@@ -67,6 +69,7 @@ impl Presentation {
             material_tracks: model.material_tracks,
             duration: model.lifetime,
             commands: Vec::new(),
+            object_scale: 1.,
         })
     }
     pub fn article(dir: &Path, kind: u32, state: u32) -> Result<Self> {
@@ -86,6 +89,11 @@ impl Presentation {
             .get("Object")
             .map(|c| c.frames)
             .unwrap_or(0.);
+        let object_scale = if kind == 1 && state > 0 {
+            a.special[6] + (a.special[7] - a.special[6]) * (state - 1) as f32 / 7.
+        } else {
+            1.
+        };
         Ok(Self {
             model: a.model,
             animations: a.animations,
@@ -96,11 +104,18 @@ impl Presentation {
             material_tracks: a.material_tracks,
             duration,
             commands: a.commands,
+            object_scale,
         })
     }
     pub fn object_pose(&mut self, frame: f32) {
         self.frame = frame;
         self.world = self.animations.pose_object(&self.model, frame);
+        if self.object_scale != 1. {
+            let scale = Mat4::from_scale(glam::Vec3::splat(self.object_scale));
+            for world in &mut self.world {
+                *world = scale * *world;
+            }
+        }
     }
     pub fn load(dir: &Path, costume: usize) -> Result<Self> {
         Self::load_for(dir, costume, &crate::fighter::SAMUS)
@@ -122,6 +137,7 @@ impl Presentation {
             material_tracks: Vec::new(),
             duration: 0.,
             commands: Vec::new(),
+            object_scale: 1.,
         })
     }
     pub fn update(&mut self, sim: &Sim, _dt: f32) {
@@ -162,7 +178,7 @@ impl Presentation {
         let mut color = b.color;
         let mut blending = b.texture_blend;
         for track in &self.material_tracks {
-            if track.joint == b.dobj
+            if track.joint == b.material_dobj
                 && let Some(value) = track.sample(self.frame)
             {
                 match track.channel {

@@ -1,6 +1,18 @@
 use libssbm_assets::{Result, presentation::Presentation};
 fn main() -> Result<()> {
     let dir = std::path::Path::new("assets");
+    {
+        let bytes = std::fs::read(dir.join("PlSs.dat"))?;
+        let d = libssbm_assets::dat::Dat::parse(&bytes)?;
+        let items = d.required_ptr(d.root("ftDataSamus")? + 0x48)?;
+        let beam = d.required_ptr(items + 16)?;
+        println!(
+            "throwbeam {beam:x} {:?}",
+            (0..8)
+                .map(|i| d.u32(beam + i * 4).map(|v| format!("{v:08x}")))
+                .collect::<Vec<_>>()
+        );
+    }
     let animations = libssbm_assets::animation::Animations::load(dir)?;
     let actions = libssbm_assets::action::load(dir, &animations)?;
     for name in [

@@ -83,7 +83,8 @@ aim, cooldowns and RoR2 damage ratios are host extensions. Scale only at adapter
 | Screw Attack | ftsamusspecialhi.c SpecialHi_Enter | Partial: launch, then helpless fall; multi-hit schedule pending |
 | Bomb | ftsamusspeciallw1.c | Partial: down-special event, air hop; host supplies bomb |
 | Smash detection/charge | ftCommon/ftCo_AttackS4.c, ftCo_AttackHi4.c, ftCo_AttackLw4.c | Partial: recent flick, held charge/release, shoulder directions tested |
-| Grab/throws, ledges, percent knockback | ftCommon catch/throw/cliff/damage | Not yet |
+| Grab/pummel/throws | ftCommon catch/throw; Samus grapple | Source contact/release windows, damage, four throw directions and accessory models; RoR2 capture policy below |
+| Ledges, percent knockback, escape rules | ftCommon cliff/damage/capture | Not yet |
 | HSD model, animation, materials, audio | baselib jobj/pobj/tobj/fobj; lb/lbanim.h | Partial: real meshes, textures, envelope skinning, 208 FigaTree clips; audio/TEV pending |
 | Alternate disc costumes and unlocks | ftsamus.c ftSs_Init_CostumeStrings | Five costumes render; RoR2 stage 1..4 unlock adapter compiled, gameplay unverified |
 
@@ -255,3 +256,32 @@ its animated texture blend; charge articles retain replacement alpha instead of
 being multiplied by material alpha. Viewer and real-disc regression inspected.
 Reaching maximum charge no longer queues a firing voice. RoR2 may explicitly
 disable projectile offscreen lifetime; core defaults remain disc-derived.
+
+# Capture, stored charge and arrival checkpoint (2026-10-17)
+
+B/C starts ground grab or aerial Z-air. Ground capture uses the disc Catch hit
+windows; the virtual grapple joint 0x8B and rendered chain share their endpoint.
+The 3D chain extension is an adapter approximation using source link count,
+length, speed and gravity; full constrained-link/collision/ledge physics remain
+open. Original head/link/tail geometry and the four authored throw accessory
+animations load from PlSs. HSD JOBJ_INSTANCE references render without being
+misread as cyclic owned children. Pummel and throw damage/release flags are
+executed from subactions at 60 Hz. A captured enemy enables raw LS up/down/side
+selection with A/B; shoulder modifiers take priority. Native collision identity
+and enemy AI suspension belong to common EnemyCapture, including release on
+death/interruption and an eight-second RoR2 timeout. RoR2 health/force replaces
+Melee percent knockback; stationary encounter structures and player bodies are
+not moved. Grab escape/ledge mechanics remain open.
+
+Full charge reuses PlCo colour program 53's colour cycle. It no longer emits the
+firing voice on storage; held/stored charge is also visible in the host HUD.
+Charge article scale interpolates the original item attributes. Projectile hits
+now request element-specific source feedback as melee hits already did. The UV
+export transfers both coordinates for every vertex (the previous float/pair
+count error left half the buffer empty).
+
+The first map spawn uses a shared host arrival state, with no vanilla pod. The
+figure materializes on its original platform at a safe standing point, waits for
+Interact, then releases via the original entry effect/sound/platform animation.
+The waiting figurine and Interact gate are RoR2 adaptations. Native/real-disc
+tests and C# boundary checks pass; these changes still require gameplay testing.

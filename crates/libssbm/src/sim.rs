@@ -14,6 +14,7 @@ pub const UP: u32 = 8;
 pub const DOWN: u32 = 16;
 pub const SPRINT: u32 = 32;
 pub const CANCEL: u32 = 64;
+pub const GRAB: u32 = 128;
 
 #[derive(Clone, Copy, Debug, Default)]
 pub struct Input {
@@ -56,6 +57,15 @@ pub enum Move {
     SuperMissile = 22,
     ScrewAttack = 23,
     Bomb = 24,
+    Grab = 25,
+    DashGrab = 26,
+    AirGrab = 27,
+    Pummel = 28,
+    ThrowForward = 29,
+    ThrowBack = 30,
+    ThrowUp = 31,
+    ThrowDown = 32,
+    GrabHold = 33,
 }
 impl Move {
     pub fn slot(self) -> u32 {
@@ -78,6 +88,7 @@ pub enum EventKind {
     Jump = 3,
     Land = 4,
     ChargeStored = 5,
+    Throw = 6,
 }
 #[derive(Clone, Copy, Debug)]
 pub struct Event {
@@ -139,6 +150,7 @@ impl Default for Options {
 }
 
 pub struct Sim {
+    pub grabbed: bool,
     pub reaction: Option<crate::reaction::Stage>,
     pub entry: Option<crate::entry::State>,
     pub action: crate::action::ActionState,
@@ -175,6 +187,7 @@ pub struct Sim {
 impl Sim {
     pub fn new(params: Params, position: Vec3) -> Self {
         Self {
+            grabbed: false,
             reaction: None,
             entry: None,
             action: crate::action::ActionState::default(),
@@ -232,6 +245,7 @@ impl Sim {
         ticks
     }
     pub fn teleport(&mut self, position: Vec3) {
+        self.grabbed = false;
         self.suppress_initial_landing = true;
         self.action.reset();
         self.motion.select("Wait", 1.);
@@ -260,6 +274,7 @@ impl Sim {
     }
     /// Host crowd-control interruption. Stored neutral charge survives.
     pub fn interrupt(&mut self) {
+        self.grabbed = false;
         self.current_move = None;
         self.smash_charge = 0;
         self.release_phase = false;
@@ -395,6 +410,22 @@ impl Sim {
             self.velocity.y = self.params.bomb_velocity;
         }
     }
+    /// The host owns enemy identity/collision; fighter capture/throw transitions
+    /// and disc animation command timing remain engine-independent.
+    pub fn set_grabbed(&mut self, grabbed: bool) {
+        self.grabbed = grabbed;
+        self.action.reset();
+        self.velocity = Vec3::ZERO;
+        self.current_move = if grabbed { Some(Move::GrabHold) } else { None };
+        self.set_phase(if grabbed {
+            Phase::Recovery
+        } else {
+            Phase::Free
+        });
+        self.motion
+            .select(if grabbed { "CatchWait" } else { "Wait" }, 1.);
+        self.motion.frame = 0.;
+    }
     /// A host/test can request a named fighter move; the same slot gate and entry
     /// logic used by physical input apply. No engine-specific objects are needed.
     pub fn start_move(&mut self, host: &mut impl Host, m: Move, input: Input) -> bool {
@@ -499,7 +530,19 @@ impl Sim {
     fn tick(&mut self, host: &mut impl Host, input: Input, pressed: u32) {
         self.frame += 1;
         if let Some(mut entry) = self.entry {
-            if entry.frame == 0 {
+            if entry.waiting {
+                self.current_move = None;
+                self.velocity = Vec3::ZERO;
+                self.action.active.clear();
+                self.motion.select("Entry", 0.);
+                self.motion.frame = 0.;
+                entry.frame = (entry.frame + 1).min(entry.params.grow);
+                self.entry = Some(entry);
+                self.previous = input;
+                return;
+            }
+            if !entry.started {
+                entry.started = true;
                 self.action.sounds.push(crate::action::SoundCue {
                     sound: 0x8b,
                     volume: 127,
@@ -576,6 +619,15 @@ impl Sim {
                     } else if self.jumps_used < self.params.jumps + self.options.extra_jumps {
                         self.jump(host, true, input);
                     }
+                } else if pressed & GRAB != 0 {
+                    let m = if !self.grounded {
+                        Move::AirGrab
+                    } else if input.buttons & SPRINT != 0 {
+                        Move::DashGrab
+                    } else {
+                        Move::Grab
+                    };
+                    self.start(host, m, input);
                 } else if pressed & SPECIAL != 0 {
                     let m = if input.buttons & UP != 0 {
                         Move::ScrewAttack
@@ -649,7 +701,9 @@ impl Sim {
                     self.charge_clock = 0;
                     self.shot_charge = (self.shot_charge + 1).min(self.params.charge_steps);
                 }
-                if pressed & (CANCEL | JUMP) != 0 || self.shot_charge >= self.params.charge_steps {
+                if pressed & (CANCEL | GRAB | JUMP) != 0
+                    || self.shot_charge >= self.params.charge_steps
+                {
                     // SpecialNHold_Anim starts colour animation 53 at maximum,
                     // not the firing voice. The stored-charge presenter owns it.
                     self.emit(

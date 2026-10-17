@@ -90,6 +90,15 @@ pub fn select(s: &Sim, input: Input) -> (&'static str, f32) {
     if let Some(m) = s.current_move {
         let clip = match m {
             Move::Jab => "Attack11",
+            Move::Grab => "Catch",
+            Move::DashGrab => "CatchDash",
+            Move::AirGrab => "AirCatch",
+            Move::GrabHold => "CatchWait",
+            Move::Pummel => "CatchAttack",
+            Move::ThrowForward => "ThrowF",
+            Move::ThrowBack => "ThrowB",
+            Move::ThrowUp => "ThrowHi",
+            Move::ThrowDown => "ThrowLw",
             Move::Jab2 => "Attack12",
             Move::BackAir => "AttackAirB",
             Move::SideTilt => "AttackS3S",

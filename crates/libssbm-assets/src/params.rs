@@ -2,6 +2,69 @@
 use crate::{Result, dat::Dat};
 use libssbm::Params;
 use std::path::Path;
+/// Colour-only portion of a common colour-animation cycle. The full-charge
+/// program also animates material parameters; those remain a renderer concern.
+pub fn color_cycle(dir: &Path, index: usize) -> Result<Vec<[f32; 4]>> {
+    let bytes = std::fs::read(dir.join(crate::fighter::COMMON_DATA.file))?;
+    let d = Dat::parse(&bytes)?;
+    let colors = d.required_ptr(d.root(crate::fighter::COMMON_DATA.root)? + 0x18)?;
+    let mut pc = d.required_ptr(colors + index * 8)?;
+    let mut out = Vec::new();
+    let mut color = [0.; 4];
+    let mut target = color;
+    let mut fade = 0u32;
+    let rgba = |v: u32| {
+        [
+            ((v >> 24) & 255) as f32 / 255.,
+            ((v >> 16) & 255) as f32 / 255.,
+            ((v >> 8) & 255) as f32 / 255.,
+            (v & 255) as f32 / 255.,
+        ]
+    };
+    for _ in 0..128 {
+        let word = d.u32(pc)?;
+        pc += 4;
+        match word >> 26 {
+            21 => pc += 16, // material parameter animation (lb_80013BB8)
+            3 => (),        // repeat count; return one cycle at the matching end
+            18 => {
+                color = rgba(d.u32(pc)?);
+                pc += 4;
+                fade = 0;
+            }
+            19 => {
+                target = rgba(d.u32(pc)?);
+                pc += 4;
+                fade = word & 0x03ffffff;
+            }
+            11 => {
+                let count = word & 0x03ffffff;
+                if count > 600 {
+                    return Err("colour wait exceeds budget".into());
+                }
+                for _ in 0..count {
+                    out.push(color);
+                    if fade > 0 {
+                        for c in 0..4 {
+                            color[c] += (target[c] - color[c]) / fade as f32;
+                        }
+                        fade -= 1;
+                    }
+                }
+            }
+            12 => {
+                color = [0.; 4];
+                fade = 0;
+            }
+            0 | 4 | 7 | 10 => break,
+            _ => return Err("unsupported colour cycle command".into()),
+        }
+    }
+    if out.is_empty() {
+        return Err("empty colour cycle".into());
+    }
+    Ok(out)
+}
 pub fn entry(
     dir: &Path,
     profile: &crate::fighter::FighterAssets<'_>,

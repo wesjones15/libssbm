@@ -60,3 +60,8 @@ posed hitboxes, effect cues, PCM and views. Keep Unity types and HP/proc convers
 out of libssbm. Keep general engine services in ror2-common and Melee-specific
 behavior in libssbm. Current ABI 4 and the exported simulation constructor still
 select Samus; they do not yet expose arbitrary character selection.
+
+Selection now plays up-B once and continues idle. Shared MeleeArrival handles
+the Interact-gated figurine arrival; EnemyCapture owns RoR2 enemy capture/AI
+restoration. Core grab/pummel/throw transitions execute source action commands,
+while the Samus adapter supplies its tether assets and physical button binding.

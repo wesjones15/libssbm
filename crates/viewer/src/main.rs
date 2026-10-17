@@ -210,6 +210,8 @@ async fn run() -> libssbm_assets::Result<()> {
                 &libssbm_assets::fighter::SAMUS,
             )?;
             let entry = libssbm::entry::State {
+                waiting: false,
+                started: false,
                 params,
                 frame: pose_frame as u32,
             };

@@ -31,6 +31,8 @@ pub struct Texture {
 }
 #[derive(Clone, Debug)]
 pub struct Batch {
+    pub instance: Option<(usize, usize)>,
+    pub material_dobj: usize,
     pub vertices: Vec<Vertex>,
     pub indices: Vec<u32>,
     pub color: [f32; 4],
@@ -133,8 +135,12 @@ impl Model {
                 bind,
                 inverse: bind.inverse(),
             });
-            if let Some(c) = d.ptr(at + 8)? {
-                walk(d, c, Some(i), j, seen, depth + 1)?;
+            // HSD JOBJ_INSTANCE's child is a reference to another joint, not
+            // an owned subtree. Traversing it here invents a cyclic hierarchy.
+            if d.u32(at + 4)? & (1 << 12) == 0 {
+                if let Some(c) = d.ptr(at + 8)? {
+                    walk(d, c, Some(i), j, seen, depth + 1)?;
+                }
             }
             if let Some(n) = d.ptr(at + 12)? {
                 walk(d, n, parent, j, seen, depth + 1)?;
@@ -150,7 +156,7 @@ impl Model {
         let mut batches = Vec::new();
         let mut dobj_index = 0;
         for (owner, j) in joints.iter().enumerate() {
-            if d.u32(j.address + 4)? & ((1 << 5) | (1 << 14)) != 0 {
+            if d.u32(j.address + 4)? & ((1 << 5) | (1 << 12) | (1 << 14)) != 0 {
                 continue;
             }
             let mut dobj = d.ptr(j.address + 16)?;
@@ -162,6 +168,8 @@ impl Model {
                 let (color, texture, texture_alpha, texture_blend) = material(d, d.ptr(at + 8)?)?;
                 let (blend, lit) = render_flags(d, d.ptr(at + 8)?)?;
                 let mut batch = Batch {
+                    instance: None,
+                    material_dobj: dobj_index,
                     texture_alpha,
                     texture_blend,
                     vertices: vec![],
@@ -189,6 +197,36 @@ impl Model {
                 dobj = d.ptr(at + 4)?;
             }
         }
+        // HSD_JObjDispAll instances apply instance * inverse(target) to the
+        // target geometry. Retain animation joint indices; share the geometry
+        // definition while adding independent render batches for each instance.
+        let templates = batches.clone();
+        for (instance, joint) in joints.iter().enumerate() {
+            if d.u32(joint.address + 4)? & (1 << 12) == 0 {
+                continue;
+            }
+            let target = *lookup
+                .get(&d.required_ptr(joint.address + 8)?)
+                .ok_or("instance target outside joint hierarchy")?;
+            for source in &templates {
+                let mut ancestor = Some(source.owner);
+                let mut belongs = false;
+                while let Some(index) = ancestor {
+                    if index == target {
+                        belongs = true;
+                        break;
+                    }
+                    ancestor = joints[index].parent;
+                }
+                if belongs {
+                    let mut batch = source.clone();
+                    batch.instance = Some((instance, target));
+                    batch.dobj = dobj_index;
+                    dobj_index += 1;
+                    batches.push(batch);
+                }
+            }
+        }
         Ok(Self {
             joints,
             batches,
@@ -210,6 +248,11 @@ impl Model {
                     let m = world[j] * self.joints[j].inverse;
                     p += m.transform_point3(v.position) * w;
                     n += m.inverse().transpose().transform_vector3(v.normal) * w;
+                }
+                if let Some((instance, target)) = self.batches[batch].instance {
+                    let matrix = world[instance] * world[target].inverse();
+                    p = matrix.transform_point3(p);
+                    n = matrix.inverse().transpose().transform_vector3(n);
                 }
                 (p, n.normalize_or_zero())
             })

@@ -99,6 +99,7 @@ pub struct GfxCue {
 }
 #[derive(Clone, Debug, Default)]
 pub struct ActionState {
+    pub throw_hit: Option<Hitbox>,
     pub definitions: BTreeMap<String, ActionDef>,
     pub active: BTreeMap<u32, ActiveHitbox>,
     pub samples: Vec<HitSample>,
@@ -120,6 +121,7 @@ pub struct ActionState {
 }
 impl ActionState {
     pub fn reset(&mut self) {
+        self.throw_hit = None;
         self.active.clear();
         self.variables = [0; 4];
         self.serial = self.serial.wrapping_add(1);

@@ -147,6 +147,8 @@ pub struct Handle {
     poisoned: bool,
 }
 struct Rig {
+    grapple: libssbm_assets::grapple::Tuning,
+    charge_flash: Vec<[f32; 4]>,
     model: libssbm_assets::model::Model,
     animations: libssbm_assets::animation::Animations,
     common_bones: Vec<u8>,
@@ -167,6 +169,8 @@ impl Rig {
         let parts = common.required_ptr(table + 13 * 4)?;
         let mapping = common.required_ptr(parts + 4)?;
         Ok(Self {
+            grapple: libssbm_assets::grapple::tuning(dir)?,
+            charge_flash: libssbm_assets::params::color_cycle(dir, 53)?,
             model: libssbm_assets::model::Model::load(dir, 0)?,
             animations: libssbm_assets::animation::Animations::load(dir)?,
             common_bones: common.bytes(mapping, 53)?.to_vec(),
@@ -180,6 +184,25 @@ impl Rig {
                 Vec::new()
             },
         })
+    }
+    fn grapple_points(&self, clip: &str, frame: f32) -> Vec<Vec3> {
+        let pose = self.animations.pose(&self.model, clip, frame, false);
+        let anchor = pose[50].w_axis.truncate();
+        let air = clip == "AirCatch";
+        let start = if air { 8. } else { 17. };
+        let end = if air { 28. } else { 41. };
+        let age = (frame - start).max(0.);
+        let maximum = self.grapple.length * (self.grapple.links - 1) as f32;
+        let length = (age * self.grapple.speed).min(maximum) * ((end - frame) / 6.).clamp(0., 1.);
+        (0..self.grapple.links)
+            .map(|i| {
+                let u = i as f32 / (self.grapple.links - 1) as f32;
+                anchor + Vec3::Z * length * u
+                    - Vec3::Y
+                        * (self.grapple.gravity * age * age * 0.5).min(length * 0.15)
+                        * (u * (1. - u) * 4.)
+            })
+            .collect()
     }
 }
 #[repr(C)]
@@ -426,6 +449,37 @@ pub unsafe extern "C" fn ssbm_sim_hitboxes(
                 .rig
                 .animations
                 .pose(&h.rig.model, sample.clip, sample.frame, false);
+            if joint == Some(139) {
+                let local = *h
+                    .rig
+                    .grapple_points(sample.clip, sample.frame)
+                    .last()
+                    .unwrap();
+                let result = HitboxSample {
+                    serial: sample.serial,
+                    generation: sample.generation,
+                    group: hit.group,
+                    id: hit.id,
+                    damage: hit.damage * sample.strength,
+                    radius: hit.radius,
+                    local_position: local.into(),
+                    origin: sample.origin.into(),
+                    facing: sample.facing.into(),
+                    angle: hit.angle,
+                    growth: hit.growth,
+                    fixed_knockback: hit.fixed_knockback,
+                    base_knockback: hit.base_knockback,
+                    element: hit.element,
+                    flags: u32::from(hit.ground)
+                        | (u32::from(hit.air) << 1)
+                        | (hit.sfx_kind << 8)
+                        | (hit.sfx_severity << 16),
+                };
+                unsafe {
+                    *out.add(i) = result;
+                }
+                continue;
+            }
             let Some(joint) = joint.filter(|&j| j < pose.len()) else {
                 error("hitbox bone outside Samus rig");
                 return 0;
@@ -541,6 +595,19 @@ pub unsafe extern "C" fn ssbm_sim_bone(handle: *const Handle, bone: u32, out: *m
     }
     let h = unsafe { &*handle };
     guarded(0, || {
+        if bone == 139 {
+            let local = *h
+                .rig
+                .grapple_points(h.sim.motion.clip, h.sim.motion.frame)
+                .last()
+                .unwrap();
+            let matrix =
+                fighter_matrix(h.sim.position, h.sim.facing) * glam::Mat4::from_translation(local);
+            unsafe {
+                std::ptr::copy_nonoverlapping(matrix.to_cols_array().as_ptr(), out, 16);
+            }
+            return 1;
+        }
         let pose =
             h.rig
                 .animations
@@ -553,6 +620,80 @@ pub unsafe extern "C" fn ssbm_sim_bone(handle: *const Handle, bone: u32, out: *m
             std::ptr::copy_nonoverlapping(matrix.to_cols_array().as_ptr(), out, 16);
         }
         1
+    })
+}
+/// # Safety
+/// Unique live fighter; host reports a successful capture/release.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn ssbm_sim_set_grabbed(h: *mut Handle, held: u32) {
+    if !h.is_null() {
+        unsafe {
+            (&mut *h).sim.set_grabbed(held != 0);
+        }
+    }
+}
+/// # Safety
+/// Live fighter or null.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn ssbm_sim_grabbed(h: *const Handle) -> u32 {
+    if h.is_null() {
+        0
+    } else {
+        unsafe { (&*h).sim.grabbed as u32 }
+    }
+}
+/// # Safety
+/// Live fighter or null; read-only source motion clock for accessory posing.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn ssbm_sim_motion_frame(h: *const Handle) -> f32 {
+    if h.is_null() {
+        0.
+    } else {
+        unsafe { (&*h).sim.motion.frame }
+    }
+}
+/// Posed source grapple chain for the RoR2 3D extension policy. Endpoint is also
+/// used by the source virtual hitbox joint 0x8B, so contact follows the model.
+/// # Safety
+/// Live fighter, max writable V3 values or null to query.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn ssbm_sim_grapple_points(h: *const Handle, out: *mut V3, max: u32) -> u32 {
+    if h.is_null() {
+        return 0;
+    }
+    guarded(0, || unsafe {
+        let h = &*h;
+        let clip = h.sim.motion.clip;
+        if !matches!(clip, "Catch" | "CatchDash" | "AirCatch") {
+            return 0;
+        }
+        let start = if clip == "AirCatch" { 8. } else { 17. };
+        let end = if clip == "AirCatch" { 28. } else { 41. };
+        if h.sim.motion.frame < start || h.sim.motion.frame > end {
+            return 0;
+        }
+        let matrix = fighter_matrix(h.sim.position, h.sim.facing);
+        let points: Vec<V3> = h
+            .rig
+            .grapple_points(clip, h.sim.motion.frame)
+            .into_iter()
+            .map(|p| matrix.transform_point3(p).into())
+            .collect();
+        copy(&points, out, max)
+    })
+}
+/// # Safety
+/// Valid cache path; returned native view must be freed once.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn ssbm_grapple_new(dir: *const c_char, part: u32) -> *mut View {
+    guarded(std::ptr::null_mut(), || {
+        match (|| libssbm_assets::grapple::part(unsafe { path(dir) }?, part))() {
+            Ok(p) => Box::into_raw(Box::new(View::new(p))),
+            Err(e) => {
+                error(e);
+                std::ptr::null_mut()
+            }
+        }
     })
 }
 /// # Safety
@@ -591,6 +732,19 @@ pub unsafe extern "C" fn ssbm_sim_charge_visual(h: *const Handle, out: *mut f32)
         std::ptr::copy_nonoverlapping(posed.to_cols_array().as_ptr(), out, 16);
         1
     })
+}
+/// # Safety
+/// Live fighter or null. UI resource amount, independent of the charge article.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn ssbm_sim_charge_fraction(h: *const Handle) -> f32 {
+    if h.is_null() {
+        0.
+    } else {
+        unsafe {
+            let h = &*h;
+            h.sim.shot_charge as f32 / h.sim.params.charge_steps.max(1) as f32
+        }
+    }
 }
 /// # Safety
 /// Writable max u32 IDs (or null). Host presentation supplies completed fighter
@@ -979,6 +1133,30 @@ pub unsafe extern "C" fn ssbm_sim_begin_entry(h: *mut Handle, dir: *const c_char
     })
 }
 /// # Safety
+/// Unique live fighter. kind=0 waits as a figurine; kind=1 starts its original
+/// entry transform. Returns 1 while entry exists, zero once complete.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn ssbm_sim_entry_control(h: *mut Handle, kind: u32) -> u32 {
+    if h.is_null() {
+        return 0;
+    }
+    unsafe {
+        let h = &mut *h;
+        if let Some(entry) = h.sim.entry.as_mut() {
+            if kind == 0 {
+                entry.waiting = true;
+            } else if kind == 1 {
+                entry.waiting = false;
+                entry.frame = entry.frame.max(entry.params.grow);
+                entry.started = false;
+            }
+            1
+        } else {
+            0
+        }
+    }
+}
+/// # Safety
 /// Unique live platform view and live sim. Returns zero once entry ends.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn ssbm_entry_platform_update(v: *mut View, h: *const Handle) -> u32 {
@@ -1016,9 +1194,18 @@ pub unsafe extern "C" fn ssbm_sim_overlay(h: *const Handle, rgba: *mut f32) -> u
         return 0;
     }
     guarded(0, || unsafe {
-        let Some(entry) = (&*h).sim.entry else {
+        let h = &*h;
+        let Some(entry) = h.sim.entry else {
+            if h.sim.shot_charge >= h.sim.params.charge_steps {
+                let color = h.rig.charge_flash[h.sim.frame as usize % h.rig.charge_flash.len()];
+                std::ptr::copy_nonoverlapping(color.as_ptr(), rgba, 4);
+                return (color[3] > 0.) as u32;
+            }
             return 0;
         };
+        if entry.waiting {
+            return 0;
+        }
         if entry.frame >= entry.params.color_frames {
             return 0;
         }
@@ -1163,7 +1350,24 @@ macro_rules! array_export {
 }
 array_export!(ssbm_view_batches, batches, Batch);
 array_export!(ssbm_view_indices, indices, i32);
-array_export!(ssbm_view_uvs, uvs, f32);
+/// # Safety
+/// Live view. `max` counts UV pairs/vertices, not individual floats, matching
+/// IViewSource and the Mario/Olimar ABI. Output has room for 2*max floats.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn ssbm_view_uvs(v: *const View, out: *mut f32, max: u32) -> u32 {
+    if v.is_null() {
+        return 0;
+    }
+    unsafe {
+        let uv = &(&*v).uvs;
+        let count = uv.len() / 2;
+        if !out.is_null() {
+            let n = count.min(max as usize);
+            std::ptr::copy_nonoverlapping(uv.as_ptr(), out, n * 2);
+        }
+        count as u32
+    }
+}
 macro_rules! pointer_export {
     ($name:ident,$field:ident,$ty:ty) => {
         #[doc = "# Safety\nLive view and writable count. Borrowed pointer valid until update/free."]

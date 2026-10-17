@@ -5,6 +5,10 @@ use crate::action::{ActiveHitbox, Command, HitSample, SoundCue};
 
 impl Sim {
     fn finish_disc_action(&mut self) {
+        if self.grabbed {
+            self.set_grabbed(true);
+            return;
+        }
         self.action.active.clear();
         self.current_move = None;
         self.set_phase(if self.release_phase && !self.grounded {
@@ -15,6 +19,27 @@ impl Sim {
     }
     pub(super) fn update_disc_action(&mut self, host: &mut impl Host, input: Input, pressed: u32) {
         let m = self.current_move.unwrap();
+        if m == Move::GrabHold {
+            if pressed & (ATTACK | SPECIAL) != 0 {
+                let m = if input.buttons & UP != 0 {
+                    Move::ThrowUp
+                } else if input.buttons & DOWN != 0 {
+                    Move::ThrowDown
+                } else if input.movement.y > 0.5 {
+                    Move::ThrowUp
+                } else if input.movement.y < -0.5 {
+                    Move::ThrowDown
+                } else if input.movement.x > 0.5 {
+                    Move::ThrowForward
+                } else if input.movement.x < -0.5 {
+                    Move::ThrowBack
+                } else {
+                    Move::Pummel
+                };
+                self.start(host, m, input);
+            }
+            return;
+        }
         if m == Move::Jab && self.action.jab_combo && pressed & ATTACK != 0 {
             self.start(host, Move::Jab2, input);
             return;
@@ -159,6 +184,36 @@ impl Sim {
                     }
                 }
                 Command::ThrowFlag(_) => {
+                    if self.grabbed
+                        && matches!(
+                            self.current_move,
+                            Some(
+                                Move::ThrowForward
+                                    | Move::ThrowBack
+                                    | Move::ThrowUp
+                                    | Move::ThrowDown
+                            )
+                        )
+                        && !self.action.projectile_fired
+                    {
+                        self.action.projectile_fired = true;
+                        if let Some(hit) = self.action.throw_hit.clone() {
+                            let angle = if hit.angle == 361 {
+                                45.
+                            } else {
+                                hit.angle as f32
+                            }
+                            .to_radians();
+                            self.move_aim = self.facing * angle.cos() + Vec3::Y * angle.sin();
+                            self.emit(
+                                host,
+                                EventKind::Throw,
+                                self.current_move.unwrap() as u32,
+                                hit.damage,
+                            );
+                        }
+                        self.grabbed = false;
+                    }
                     if matches!(
                         self.current_move,
                         Some(Move::Missile | Move::SuperMissile | Move::Bomb)
@@ -186,6 +241,20 @@ impl Sim {
                     self.action.visibility.insert(group, choice);
                 }
                 Command::Raw { opcode, words } => {
+                    // lb/types.h set_throw_hitbox_0/1/2 and ftAction_80071E04.
+                    if opcode == 34 && words[0] >> 23 & 7 == 0 {
+                        self.action.throw_hit = Some(crate::action::Hitbox {
+                            damage: (words[0] & 0x7fffff) as f32,
+                            angle: words[1] >> 23,
+                            growth: words[1] >> 14 & 511,
+                            fixed_knockback: words[1] >> 5 & 511,
+                            base_knockback: words[2] >> 23,
+                            element: words[2] >> 19 & 15,
+                            sfx_severity: words[2] >> 16 & 7,
+                            sfx_kind: words[2] >> 12 & 15,
+                            ..Default::default()
+                        });
+                    }
                     if opcode == 10 {
                         let signed = |n: u32| (n as u16 as i16) as f32 / 256.;
                         let bone = if words[0] & (1 << 15) != 0 {
