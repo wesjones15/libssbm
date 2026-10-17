@@ -165,5 +165,42 @@ fn real_assets_decode_all_costumes_and_animation_poses() -> Result<()> {
         let b = std::fs::read(dir.join(format!("PlSs{}.dat", libssbm_assets::COSTUMES[c])))?;
         Dat::parse(&b)?;
     }
+    let model = Model::load(&dir, 0)?;
+    for clip in [
+        "WalkSlow",
+        "WalkMiddle",
+        "WalkFast",
+        "Run",
+        "Fall",
+        "FallF",
+        "FallB",
+        "FallAerial",
+        "DamageFall",
+        "DownBoundU",
+        "DownStandU",
+    ] {
+        assert!(
+            a.clips.contains_key(clip),
+            "missing shared movement/recovery clip {clip}"
+        );
+        let length = a.clips[clip].frames;
+        let mut poses = std::collections::HashSet::new();
+        for sample in 0..20 {
+            let frame = length * sample as f32 / 20.;
+            let pose = a.pose(&model, clip, frame, true);
+            let hash = pose
+                .iter()
+                .flat_map(|m| m.to_cols_array().map(|v| (v * 1000.).round() as i32))
+                .collect::<Vec<_>>();
+            poses.insert(hash);
+        }
+        if clip.starts_with("Walk") || clip == "Run" {
+            assert!(
+                poses.len() >= 18,
+                "{clip} has only {} distinct sampled poses",
+                poses.len()
+            );
+        }
+    }
     Ok(())
 }

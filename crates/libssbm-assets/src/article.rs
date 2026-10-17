@@ -8,6 +8,7 @@ pub struct Article {
     pub common: Vec<f32>,
     pub special: Vec<f32>,
     pub material_tracks: Vec<crate::animation::Track>,
+    pub commands: Vec<libssbm::action::TimedCommand>,
 }
 impl Article {
     pub fn load(dir: &Path, kind: u32, state: u32) -> Result<Self> {
@@ -46,6 +47,18 @@ impl Article {
             .transpose()?
             .flatten();
         let material_tracks = Animations::materials(&d, material, &model)?;
+        let horizon = animations
+            .clips
+            .get("Object")
+            .map_or(600., |c| c.frames.max(600.));
+        let commands = if let Some(array) = d.ptr(article + 12)? {
+            match d.ptr(array + state as usize * 16 + 12)? {
+                Some(script) => crate::action::item_script_commands(&d, script, horizon)?,
+                None => Vec::new(),
+            }
+        } else {
+            Vec::new()
+        };
         let attr = d.required_ptr(article)?;
         let common = (0..16)
             .map(|i| d.f32(attr + i * 4))
@@ -64,6 +77,7 @@ impl Article {
             common,
             special,
             material_tracks,
+            commands,
         })
     }
 }

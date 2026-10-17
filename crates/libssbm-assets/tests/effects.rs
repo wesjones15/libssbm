@@ -74,6 +74,24 @@ fn audit_active_motion_effect_dependencies() -> Result<()> {
         "WalkFast",
         "Run",
         "Dash",
+        "Fall",
+        "FallF",
+        "FallB",
+        "FallAerial",
+        "FallAerialF",
+        "FallAerialB",
+        "FallSpecial",
+        "LandingFallSpecial",
+        "LandingAirN",
+        "LandingAirF",
+        "LandingAirB",
+        "LandingAirHi",
+        "LandingAirLw",
+        "DamageN2",
+        "DamageFlyN",
+        "DamageFall",
+        "DownBoundU",
+        "DownStandU",
         "JumpF",
         "JumpAerialF",
         "Landing",
@@ -167,7 +185,7 @@ fn shared_attack_emitters_execute_their_source_dependencies() -> Result<()> {
         return Ok(());
     }
     let bank = Effects::load(&dir, false)?;
-    for id in [11, 263, 89, 94, 25, 75] {
+    for id in [11, 263, 89, 94, 25, 75, 67, 12, 20, 4, 60] {
         let mut system = libssbm::particle::System::default();
         system.definitions = bank.emitters.clone();
         system.spawn(id, glam::Mat4::IDENTITY, 1)?;

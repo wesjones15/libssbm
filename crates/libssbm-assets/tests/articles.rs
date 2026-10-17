@@ -16,6 +16,18 @@ fn disc_article_meshes_textures_and_object_animations() -> Result<()> {
                 "article {kind}/{state} empty"
             );
             assert!(article.special.iter().all(|x| x.is_finite()));
+            if kind < 3 && !(kind == 1 && state == 0) && !(kind == 2 && state >= 2) {
+                assert!(
+                    article
+                        .commands
+                        .iter()
+                        .any(|c| matches!(c.command, libssbm::action::Command::Hitbox(_))),
+                    "missing item hitbox {kind}/{state}"
+                );
+            }
+            if kind == 0 && state == 1 || kind == 2 && state >= 2 {
+                assert!(article.commands.iter().any(|c|matches!(&c.command,libssbm::action::Command::Raw {opcode:19,words} if words[0]&0x03ffffff!=0)),"missing source explosion end {kind}/{state}");
+            }
             let clip = &article.animations.clips["Object"];
             for frame in [0., clip.frames * 0.5, clip.frames] {
                 let pose = article.animations.pose_object(&article.model, frame);

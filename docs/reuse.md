@@ -14,7 +14,7 @@ special actions. Adding another fighter must not duplicate the Samus plugin.
 | Meshes, particle quads, PCM device output | ror2-common | `ModelView`, `ParticleView`/`IParticleSource`, `PcmStream`; no native DLL name in these components |
 | World collision, input, damage/procs, pause and run cleanup | RoR2 adapter + ror2-common | Reusable primitives exist; parts of the Samus driver still need consolidation |
 | Character file references, costumes, article table bounds | fighter definition | `fighter::SAMUS`; readers accept other `FighterAssets` values |
-| Charge Shot, missiles, bombs, Screw Attack | Samus behavior module | Partial; source projectile physics and remaining presentation are unfinished |
+| Charge Shot, missiles, bombs, Screw Attack | Samus behavior module | Native source article tuning/physics, impact callbacks and held charge; full rendering fidelity/playtest pending |
 | Survivor name, icons, unlocks, skill-slot policy | character plugin | RoR2-specific character choices |
 
 `FighterAssets` contains only metadata. Asset bytes remain in the player's ignored
@@ -32,7 +32,7 @@ renamed files and a renamed fighter symbol, with no canonical Samus files in tha
 test cache. This is reader reuse, not proof of a second fighter's behavior.
 
 Character select follows the shared `ror2-common/MeleeSelectDisplay` rule: play
-the fighter's up-B (LB+B) animation and its source sound cues once when selected.
+the fighter's up-B (LB+B) animation, effects and source sounds, idle and repeat on UI time.
 An `IMeleeSelectSource` supplies native stepping, the view and PCM; the common
 wrapper owns device output and completion/deselection cleanup. Samus supplies
 Screw Attack through her native simulation with a flat preview floor, no damage
@@ -40,9 +40,10 @@ callback and a stationary drawn origin. Portraits use a separate silent idle
 source (`intro:false`) so icon rendering does not play the intro. This preview is
 a host UI policy, not a claim that Melee's original menu uses up-special.
 
-Portrait icons now use the original CSS photo. The character profile defines its
-menu archive, material joint and ICONHUD frame; `portrait::load` samples TIMG and
-TCLT at ICONHUD+costume*30 and decodes the selected image/palette. MnSlChr.usd is a
+Portrait icons now use the original CSS grid tile. The character profile defines
+its menu archive and grid joint. `portrait::load_grid` finds the CI8/TLUT art in
+the joint's DObjs. The separate `portrait::load` retains the large costume photo
+decoder for callers needing that asset. MnSlChr.usd is a
 required extraction dependency, so older caches migrate. Common Portrait's texture
 queue installs the decoded artwork without rendering the preview model.
 
@@ -57,5 +58,5 @@ constants into generic Melee defaults.
 The RoR2 adapter can eventually consume that fighter interface for stepping,
 posed hitboxes, effect cues, PCM and views. Keep Unity types and HP/proc conversion
 out of libssbm. Keep general engine services in ror2-common and Melee-specific
-behavior in libssbm. Current ABI 3 and the exported simulation constructor still
+behavior in libssbm. Current ABI 4 and the exported simulation constructor still
 select Samus; they do not yet expose arbitrary character selection.

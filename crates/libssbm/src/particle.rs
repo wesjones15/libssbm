@@ -485,6 +485,12 @@ impl Particle {
                                 self.rotation = self.rotation_target;
                             }
                         }
+                        // particle.c: random source texture pose, not rotation.
+                        0xbc => {
+                            let base = r.byte()?;
+                            let range = r.byte()?;
+                            self.frame = (base as f32 + range as f32 * rand(rng)) as u8;
+                        }
                         0xbd => {
                             let speed = r.float()? + r.float()? * rand(rng);
                             self.velocity = self.velocity.normalize_or_zero() * speed;

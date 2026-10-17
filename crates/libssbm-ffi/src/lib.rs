@@ -1,17 +1,18 @@
-//! C ABI v3. Main-thread handles; caller owns all pointers passed in.
+//! C ABI v4. Main-thread handles; caller owns all pointers passed in.
 //! Panics poison a handle and never unwind into the host.
 
 use glam::Vec3;
 use libssbm::{Contact, Event, Host, Input, Sim};
 use libssbm_assets::presentation::Presentation;
 mod particles;
+mod projectile;
 use std::{
     cell::RefCell,
     ffi::{CStr, CString, c_char, c_void},
     panic::{AssertUnwindSafe, catch_unwind},
     path::Path,
 };
-pub const SSBM_ABI_VERSION: u32 = 3;
+pub const SSBM_ABI_VERSION: u32 = 4;
 #[repr(C)]
 #[derive(Clone, Copy, Default)]
 pub struct V3 {
@@ -320,6 +321,7 @@ pub unsafe extern "C" fn ssbm_struct_sizes(out: *mut u32, max: u32) -> u32 {
         size_of::<Draw>(),
         size_of::<HitboxSample>(),
         size_of::<particles::Sprite>(),
+        size_of::<projectile::State>(),
     ]
     .map(|s| s as u32);
     unsafe { copy(&sizes, out, max) }
@@ -444,7 +446,10 @@ pub unsafe extern "C" fn ssbm_sim_hitboxes(
                 fixed_knockback: hit.fixed_knockback,
                 base_knockback: hit.base_knockback,
                 element: hit.element,
-                flags: u32::from(hit.ground) | (u32::from(hit.air) << 1),
+                flags: u32::from(hit.ground)
+                    | (u32::from(hit.air) << 1)
+                    | (hit.sfx_kind << 8)
+                    | (hit.sfx_severity << 16),
             };
             unsafe {
                 *out.add(i) = result;
@@ -561,6 +566,33 @@ pub unsafe extern "C" fn ssbm_sim_motion_serial(handle: *const Handle) -> u64 {
     }
 }
 /// # Safety
+/// Live sim and sixteen writable floats. Returns the original held charge
+/// article's posed/scaled matrix, or zero outside the charging state.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn ssbm_sim_charge_visual(h: *const Handle, out: *mut f32) -> u32 {
+    if h.is_null() || out.is_null() {
+        return 0;
+    }
+    guarded(0, || unsafe {
+        let h = &*h;
+        if h.sim.phase != libssbm::Phase::ChargeShot {
+            return 0;
+        }
+        let mut matrix = [0.; 16];
+        if ssbm_sim_bone(h, 50, matrix.as_mut_ptr()) != 1 {
+            return 0;
+        }
+        let p = &h.sim.params;
+        let amount = h.sim.shot_charge as f32 / p.charge_steps.max(1) as f32;
+        let scale = p.charge_visual_min + (p.charge_visual_max - p.charge_visual_min) * amount;
+        let posed = glam::Mat4::from_cols_array(&matrix)
+            * glam::Mat4::from_translation(Vec3::new(0., 0., 4.))
+            * glam::Mat4::from_scale(Vec3::splat(scale));
+        std::ptr::copy_nonoverlapping(posed.to_cols_array().as_ptr(), out, 16);
+        1
+    })
+}
+/// # Safety
 /// Writable max u32 IDs (or null). Host presentation supplies completed fighter
 /// frame range; source accessory policy remains in Rust.
 #[unsafe(no_mangle)]
@@ -595,7 +627,7 @@ pub extern "C" fn ssbm_effect_target(id: u32) -> i32 {
 pub extern "C" fn ssbm_effect_flags(id: u32) -> u32 {
     // Attachment policy from ftCo_8009F834 and efAlt_Spawn.
     match id {
-        1026 | 1027 | 1060 | 1086 | 1154 | 1159 => 1,
+        1026 | 1027 | 1060 | 1086 | 1151 | 1154 | 1159 | 1301 => 1,
         _ => 0,
     }
 }
@@ -607,7 +639,7 @@ pub unsafe extern "C" fn ssbm_sim_free(handle: *mut Handle) {
         guarded((), || drop(unsafe { Box::from_raw(handle) }));
     }
 }
-struct Adapter<'a>(&'a HostTable);
+struct Adapter<'a>(&'a HostTable, &'a Rig);
 impl Host for Adapter<'_> {
     fn collide(&mut self, from: Vec3, to: Vec3) -> Contact {
         let mut c = Collision {
@@ -628,11 +660,25 @@ impl Host for Adapter<'_> {
     }
     fn event(&mut self, e: Event) {
         if let Some(f) = self.0.event {
+            let position = if let Some(bone) = e.attachment {
+                let pose = self
+                    .1
+                    .animations
+                    .pose(&self.1.model, e.clip, e.pose_frame, false);
+                pose.get(bone)
+                    .map(|joint| {
+                        (fighter_matrix(e.position, e.facing) * *joint).transform_point3(Vec3::ZERO)
+                            + e.attachment_offset
+                    })
+                    .unwrap_or(e.position)
+            } else {
+                e.position
+            };
             let e = NativeEvent {
                 kind: e.kind as u32,
                 move_id: e.move_id,
                 strength: e.strength,
-                position: e.position.into(),
+                position: position.into(),
                 direction: e.direction.into(),
             };
             unsafe {
@@ -660,7 +706,7 @@ pub unsafe extern "C" fn ssbm_sim_step(
     match catch_unwind(AssertUnwindSafe(|| {
         let p = unsafe { *pad };
         let ticks = h.sim.advance(
-            &mut Adapter(unsafe { &*host }),
+            &mut Adapter(unsafe { &*host }, &h.rig),
             Input {
                 movement: p.movement.into(),
                 aim: p.aim.into(),
@@ -918,6 +964,10 @@ pub unsafe extern "C" fn ssbm_sim_begin_entry(h: *mut Handle, dir: *const c_char
             Ok(params) => {
                 let h = unsafe { &mut *h };
                 h.sim.interrupt();
+                // Entry is requested only after the host's clear standing probe.
+                // Leaving the platform must enter Wait, not a spurious landing.
+                h.sim.grounded = true;
+                h.sim.jumps_used = 0;
                 h.sim.entry = Some(libssbm::entry::State::new(params));
                 1
             }
@@ -1172,6 +1222,14 @@ pub unsafe extern "C" fn ssbm_sim_interrupt(handle: *mut Handle) {
     }
 }
 /// # Safety
+/// Unique live sim or null. Call outside a native host callback.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn ssbm_sim_hurt(handle: *mut Handle) {
+    if !handle.is_null() {
+        guarded((), || unsafe { (&mut *handle).sim.hurt() });
+    }
+}
+/// # Safety
 /// # Safety
 /// Live unique handle or null; velocity is units/tick, gravity units/tick squared.
 #[unsafe(no_mangle)]
@@ -1269,9 +1327,10 @@ mod tests {
                 size_of::<TextureInfo>(),
                 size_of::<Draw>(),
                 size_of::<HitboxSample>(),
-                size_of::<particles::Sprite>()
+                size_of::<particles::Sprite>(),
+                size_of::<projectile::State>()
             ],
-            [12, 32, 72, 20, 36, 24, 20, 40, 24, 12, 64, 88, 72]
+            [12, 32, 72, 20, 36, 24, 20, 40, 24, 12, 64, 88, 72, 56]
         );
     }
     #[test]

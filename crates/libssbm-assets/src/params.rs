@@ -32,11 +32,19 @@ pub fn entry(
 }
 
 pub fn load(dir: &Path) -> Result<Params> {
-    let fighter_bytes = std::fs::read(dir.join("PlSs.dat"))?;
+    load_for(dir, &crate::fighter::SAMUS)
+}
+pub fn load_for(dir: &Path, profile: &crate::fighter::FighterAssets<'_>) -> Result<Params> {
+    profile.required()?;
+    let fighter_bytes = std::fs::read(dir.join(profile.data.file))?;
     let fighter = Dat::parse(&fighter_bytes)?;
-    let root = fighter.root("ftDataSamus")?;
+    let root = fighter.root(profile.data.root)?;
     let co = fighter.required_ptr(root)?;
     let ss = fighter.required_ptr(root + 4)?;
+    let sounds = fighter.required_ptr(root + 0x4c)?;
+    let articles = fighter.required_ptr(root + 0x48)?;
+    let charge = fighter.required_ptr(articles + 4)?;
+    let charge_attrs = fighter.required_ptr(charge + 4)?;
     let common_bytes = std::fs::read(dir.join("PlCo.dat"))?;
     let common = Dat::parse(&common_bytes)?;
     let common_root = common.root("ftLoadCommonData")?;
@@ -61,6 +69,12 @@ pub fn load(dir: &Path) -> Result<Params> {
         run_speed: fighter.f32(co + 0x28)?,
         jump_squat: fighter.f32(co + 0x38)?.round() as u32,
         jump_speed: fighter.f32(co + 0x40)?,
+        jump_horizontal: fighter.f32(co + 0x3c)?,
+        jump_momentum: fighter.f32(co + 0x44)?,
+        jump_horizontal_max: fighter.f32(co + 0x48)?,
+        air_jump_horizontal: fighter.f32(co + 0x54)?,
+        jump_sound: fighter.u32(sounds + 0x10)?,
+        air_jump_sound: fighter.u32(sounds + 0x14)?,
         short_hop_speed: fighter.f32(co + 0x4c)?,
         air_jump_scale: fighter.f32(co + 0x50)?,
         jumps: fighter.u32(co + 0x58)?,
@@ -69,11 +83,21 @@ pub fn load(dir: &Path) -> Result<Params> {
         air_accel: fighter.f32(co + 0x64)?,
         air_base: fighter.f32(co + 0x68)?,
         air_speed: fighter.f32(co + 0x6c)?,
+        air_horizontal_max: fighter.f32(co + 0x78)?,
+        fall_pose_threshold: common.f32(global + 0x444)?,
         air_friction: fighter.f32(co + 0x70)?,
         fast_fall: fighter.f32(co + 0x74)?,
         charge_steps: fighter.f32(ss + 0x18)?.round() as u32,
+        charge_visual_min: fighter.f32(charge_attrs + 0x18)?,
+        charge_visual_max: fighter.f32(charge_attrs + 0x1c)?,
         charge_interval: fighter.u32(ss + 0x20)?.saturating_add(1),
         missile_smash_window: fighter.f32(ss + 0x28)?.round() as u32,
+        missile_spawn_offset: fighter.f32(ss + 0x34)?,
+        bomb_spawn_offset: [
+            fighter.f32(ss + 0x74)?,
+            fighter.f32(ss + 0x78)?,
+            fighter.f32(ss + 0x7c)?,
+        ],
         screw_velocity: fighter.f32(ss + 0x44)?,
         bomb_velocity: fighter.f32(ss + 0x58)?,
         smash_threshold: common.f32(global + 0x3c)?,

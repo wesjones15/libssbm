@@ -17,6 +17,8 @@ pub struct Hitbox {
     pub fixed_knockback: u32,
     pub base_knockback: u32,
     pub element: u32,
+    pub sfx_kind: u32,
+    pub sfx_severity: u32,
     pub ground: bool,
     pub air: bool,
 }

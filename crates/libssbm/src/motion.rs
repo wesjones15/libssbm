@@ -43,6 +43,8 @@ impl MotionState {
             let gait = |s: &str| s.starts_with("Walk") || s == "Run";
             self.frame = if gait(self.clip) && gait(clip) {
                 (self.frame / self.length(self.clip)).fract() * self.length(clip)
+            } else if self.clip.starts_with("Fall") && clip.starts_with("Fall") {
+                self.frame.min(self.length(clip))
             } else {
                 0.
             };
@@ -70,6 +72,9 @@ impl MotionState {
 }
 
 pub fn select(s: &Sim, input: Input) -> (&'static str, f32) {
+    if let Some(stage) = s.reaction {
+        return (stage.clip(), 1.);
+    }
     if s.phase == Phase::JumpSquat {
         return ("KneeBend", 1.);
     }
@@ -155,11 +160,20 @@ pub fn select(s: &Sim, input: Input) -> (&'static str, f32) {
         if s.motion.clip.starts_with("Jump") && !s.motion.finished() {
             return (s.motion.clip, 1.);
         }
+        let drift = s.velocity.with_y(0.).dot(s.facing)
+            / (s.params.air_speed * s.options.speed_scale).max(0.001);
         return (
-            if s.jumps_used > 1 {
-                "FallAerialF"
-            } else {
-                "Fall"
+            match (
+                s.jumps_used > 1,
+                drift > s.params.fall_pose_threshold,
+                drift < -s.params.fall_pose_threshold,
+            ) {
+                (true, true, _) => "FallAerialF",
+                (true, _, true) => "FallAerialB",
+                (true, _, _) => "FallAerial",
+                (false, true, _) => "FallF",
+                (false, _, true) => "FallB",
+                _ => "Fall",
             },
             1.,
         );

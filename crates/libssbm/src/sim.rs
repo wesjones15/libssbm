@@ -86,6 +86,11 @@ pub struct Event {
     pub strength: f32,
     pub position: Vec3,
     pub direction: Vec3,
+    pub facing: Vec3,
+    pub clip: &'static str,
+    pub pose_frame: f32,
+    pub attachment: Option<usize>,
+    pub attachment_offset: Vec3,
 }
 #[derive(Clone, Copy, Debug)]
 pub struct Contact {
@@ -134,6 +139,7 @@ impl Default for Options {
 }
 
 pub struct Sim {
+    pub reaction: Option<crate::reaction::Stage>,
     pub entry: Option<crate::entry::State>,
     pub action: crate::action::ActionState,
     pub motion: crate::motion::MotionState,
@@ -152,6 +158,7 @@ pub struct Sim {
     pub smash_charge: u32,
     pub facing: Vec3,
     accumulator: f64,
+    suppress_initial_landing: bool,
     sampled_buttons: u32,
     pending_pressed: u32,
     previous: Input,
@@ -167,6 +174,7 @@ pub struct Sim {
 impl Sim {
     pub fn new(params: Params, position: Vec3) -> Self {
         Self {
+            reaction: None,
             entry: None,
             action: crate::action::ActionState::default(),
             motion: crate::motion::MotionState::default(),
@@ -185,6 +193,7 @@ impl Sim {
             smash_charge: 0,
             facing: Vec3::X,
             accumulator: 0.,
+            suppress_initial_landing: true,
             sampled_buttons: 0,
             pending_pressed: 0,
             previous: Input::idle(),
@@ -221,6 +230,11 @@ impl Sim {
         ticks
     }
     pub fn teleport(&mut self, position: Vec3) {
+        self.suppress_initial_landing = true;
+        self.action.reset();
+        self.motion.select("Wait", 1.);
+        self.motion.frame = 0.;
+        self.reaction = None;
         self.entry = None;
         self.pad_gravity = None;
         self.position = position;
@@ -238,6 +252,7 @@ impl Sim {
     /// Host-only ballistic jump pad: preserve all momentum and host gravity until
     /// contact, rather than applying Melee's steering/terminal velocity.
     pub fn launch_pad(&mut self, velocity: Vec3, gravity: Vec3) {
+        self.reaction = None;
         self.launch(velocity);
         self.pad_gravity = Some(gravity);
     }
@@ -248,18 +263,87 @@ impl Sim {
         self.release_phase = false;
         self.set_phase(Phase::Free);
     }
+    /// Host damage notification, deliberately independent of engine health types.
+    pub fn hurt(&mut self) {
+        if self.entry.is_some() {
+            return;
+        }
+        self.interrupt();
+        let stage = if self.grounded {
+            crate::reaction::Stage::GroundHit
+        } else {
+            crate::reaction::Stage::AirHit
+        };
+        self.reaction = Some(stage);
+        self.motion.select(stage.clip(), 1.);
+        self.motion.frame = 0.;
+        self.action.active.clear();
+    }
     fn emit(&self, host: &mut impl Host, kind: EventKind, move_id: u32, strength: f32) {
+        let attachment = if kind == EventKind::Hit {
+            match move_id {
+                20 => Some(51),
+                21 | 22 => Some(56),
+                24 => Some(0),
+                _ => None,
+            }
+        } else {
+            None
+        };
+        let attachment_offset = if kind == EventKind::Hit {
+            match move_id {
+                21 | 22 => self.facing * self.params.missile_spawn_offset,
+                24 => {
+                    self.facing * self.params.bomb_spawn_offset[0]
+                        + Vec3::Y * self.params.bomb_spawn_offset[1]
+                        + Vec3::new(-self.facing.z, 0., self.facing.x)
+                            * self.params.bomb_spawn_offset[2]
+                }
+                _ => Vec3::ZERO,
+            }
+        } else {
+            Vec3::ZERO
+        };
         host.event(Event {
             kind,
             move_id,
             strength,
             position: self.position,
             direction: self.move_aim,
+            facing: self.facing,
+            clip: self.motion.clip,
+            pose_frame: self.motion.frame,
+            attachment,
+            attachment_offset,
         });
     }
     fn set_phase(&mut self, phase: Phase) {
+        if self.phase == Phase::ChargeShot && phase != Phase::ChargeShot {
+            self.action.sounds.push(crate::action::SoundCue {
+                sound: 0,
+                volume: 127,
+                pan: 64,
+                channel: 6,
+                stop: true,
+            });
+        }
         self.phase = phase;
         self.phase_frame = 0;
+        if phase == Phase::ChargeShot {
+            self.action.effects.push(crate::action::GfxCue {
+                id: 1151,
+                bone: 50,
+                common: false,
+                cycle: 0,
+                destroy_on_change: true,
+                offset: Vec3::new(0., 0., 4.),
+                param: 0.,
+                clip: "SpecialNHold",
+                frame: 0.,
+                origin: self.position,
+                facing: self.facing,
+            });
+        }
     }
     fn start(&mut self, host: &mut impl Host, m: Move, input: Input) {
         if input.allowed & (1 << m.slot()) == 0 {
@@ -286,7 +370,7 @@ impl Sim {
             self.action.effects.push(crate::action::GfxCue {
                 id: 1154,
                 bone: 3,
-                common: true,
+                common: false,
                 cycle: 0,
                 destroy_on_change: true,
                 offset: Vec3::ZERO,
@@ -360,9 +444,43 @@ impl Sim {
             Move::Jab
         }
     }
-    fn jump(&mut self, host: &mut impl Host, aerial: bool) {
-        self.motion
-            .select(if aerial { "JumpAerialF" } else { "JumpF" }, 1.);
+    fn jump(&mut self, host: &mut impl Host, aerial: bool, input: Input) {
+        let stick = input.movement.with_y(0.).clamp_length_max(1.);
+        let backwards = stick.dot(self.facing) < -0.3;
+        self.motion.select(
+            match (aerial, backwards) {
+                (true, true) => "JumpAerialB",
+                (true, false) => "JumpAerialF",
+                (false, true) => "JumpB",
+                _ => "JumpF",
+            },
+            1.,
+        );
+        // ftCo_Jump_Enter / ftCo_JumpAerial_Enter_Basic: ground momentum and
+        // stick impulse are distinct; the aerial jump replaces horizontal speed.
+        let horizontal = if aerial {
+            stick * self.params.air_jump_horizontal * self.options.speed_scale
+        } else {
+            (self.velocity.with_y(0.) * self.params.jump_momentum
+                + stick * self.params.jump_horizontal * self.options.speed_scale)
+                .clamp_length_max(self.params.jump_horizontal_max * self.options.speed_scale)
+        };
+        self.velocity.x = horizontal.x;
+        self.velocity.z = horizontal.z;
+        let sound = if aerial {
+            self.params.air_jump_sound
+        } else {
+            self.params.jump_sound
+        };
+        if sound != u32::MAX && sound != 0x83d60 {
+            self.action.sounds.push(crate::action::SoundCue {
+                sound,
+                volume: 127,
+                pan: 64,
+                channel: 0,
+                stop: false,
+            });
+        }
         self.pad_gravity = None;
         self.grounded = false;
         self.velocity.y = if aerial {
@@ -417,6 +535,11 @@ impl Sim {
             return;
         }
         self.phase_frame = self.phase_frame.saturating_add(1);
+        if let Some(stage) = self.reaction {
+            if self.motion.finished() {
+                self.reaction = stage.after();
+            }
+        }
         self.flick_age = self.flick_age.saturating_add(1);
         self.modifier_age = self.modifier_age.saturating_add(1);
         let movement = input.movement.with_y(0.).clamp_length_max(1.);
@@ -430,18 +553,26 @@ impl Sim {
         if pressed & (UP | DOWN) != 0 {
             self.modifier_age = 0;
         }
-        if movement.length_squared() > 0.01 {
+        if self.grounded
+            && self.reaction.is_none()
+            && self.phase == Phase::Free
+            && movement.length_squared() > 0.01
+        {
             self.facing = movement.normalize();
         }
         let phase = self.phase;
         match phase {
             Phase::Free => {
-                if pressed & JUMP != 0 {
+                if self.reaction.is_some()
+                    || self.motion.clip.starts_with("Landing") && !self.motion.finished()
+                {
+                    // Damage/down and authored landing clips finish before control.
+                } else if pressed & JUMP != 0 {
                     if self.grounded {
                         self.short_hop = false;
                         self.set_phase(Phase::JumpSquat);
                     } else if self.jumps_used < self.params.jumps + self.options.extra_jumps {
-                        self.jump(host, true);
+                        self.jump(host, true, input);
                     }
                 } else if pressed & SPECIAL != 0 {
                     let m = if input.buttons & UP != 0 {
@@ -467,7 +598,7 @@ impl Sim {
                     self.short_hop = true;
                 }
                 if self.phase_frame >= self.params.jump_squat {
-                    self.jump(host, false);
+                    self.jump(host, false, input);
                 }
             }
             Phase::Startup => {
@@ -572,32 +703,21 @@ impl Sim {
                 }
             }
         }
-        let movable = matches!(self.phase, Phase::Free | Phase::JumpSquat | Phase::Helpless)
+        let movable = self.reaction.is_none()
+            && matches!(self.phase, Phase::Free | Phase::JumpSquat | Phase::Helpless)
             || !self.grounded;
         if let Some(gravity) = self.pad_gravity {
             self.velocity += gravity;
         } else {
             let horizontal = self.velocity.with_y(0.);
-            let (speed, accel, friction) = if self.grounded {
+            let (speed, friction) = if self.grounded {
                 if input.buttons & SPRINT != 0 {
-                    (
-                        self.params.run_speed,
-                        self.params.dash_accel + self.params.dash_base,
-                        self.params.friction,
-                    )
+                    (self.params.run_speed, self.params.friction)
                 } else {
-                    (
-                        self.params.walk_speed,
-                        self.params.walk_accel + self.params.walk_base,
-                        self.params.friction,
-                    )
+                    (self.params.walk_speed, self.params.friction)
                 }
             } else {
-                (
-                    self.params.air_speed,
-                    self.params.air_accel + self.params.air_base,
-                    self.params.air_friction,
-                )
+                (self.params.air_speed, self.params.air_friction)
             };
             let target = if movable {
                 movement * speed * self.options.speed_scale
@@ -606,11 +726,61 @@ impl Sim {
             };
             let difference = target - horizontal;
             let step = if movable && target.length_squared() > 0.001 {
-                accel * self.options.speed_scale
+                // The source scales the stick component, then adds base accel.
+                let (mul, base) = if self.grounded {
+                    if input.buttons & SPRINT != 0 {
+                        (self.params.dash_accel, self.params.dash_base)
+                    } else {
+                        (self.params.walk_accel, self.params.walk_base)
+                    }
+                } else {
+                    (self.params.air_accel, self.params.air_base)
+                };
+                (mul * movement.length() + base) * self.options.speed_scale
             } else {
                 friction
             };
-            let horizontal = horizontal + difference.clamp_length_max(step.max(0.));
+            let horizontal = if self.grounded {
+                horizontal + difference.clamp_length_max(step.max(0.))
+            } else {
+                // ftCommon_CalcSelfAccel_DriftFrom / AccelToVelClampedFrom.
+                // Apply the source's signed drift independently on the host's
+                // horizontal axes. Neutral input decelerates by air friction.
+                let drift = |vel: f32, stick: f32| {
+                    let scale = self.options.speed_scale;
+                    let target = stick * self.params.air_speed * scale;
+                    let friction = self.params.air_friction * scale;
+                    if target.abs() < 0.00001 {
+                        return vel - sign_deceleration(vel, friction);
+                    }
+                    let accel = (stick * self.params.air_accel
+                        + stick.signum() * self.params.air_base)
+                        * scale;
+                    if vel * accel < 0. {
+                        return vel + accel;
+                    }
+                    if (accel > 0. && vel + accel > target) || (accel < 0. && vel + accel < target)
+                    {
+                        let next = if accel > 0. {
+                            (vel - friction).max(target)
+                        } else {
+                            (vel + friction).min(target)
+                        };
+                        next.clamp(
+                            -self.params.air_horizontal_max * scale,
+                            self.params.air_horizontal_max * scale,
+                        )
+                    } else {
+                        vel + accel
+                    }
+                };
+                let stick = if movable { movement } else { Vec3::ZERO };
+                Vec3::new(
+                    drift(horizontal.x, stick.x),
+                    0.,
+                    drift(horizontal.z, stick.z),
+                )
+            };
             self.velocity.x = horizontal.x;
             self.velocity.z = horizontal.z;
             if !self.grounded {
@@ -624,7 +794,10 @@ impl Sim {
                 self.velocity.y = self.velocity.y.min(0.);
             }
         }
-        let before = self.grounded;
+        // Initial placement/warp is already a standing host placement. Its
+        // first support probe must not invent landing lag or fall damage.
+        let before = self.grounded || self.suppress_initial_landing;
+        self.suppress_initial_landing = false;
         let contact = host.collide(self.position, self.position + self.velocity);
         self.position = contact.position;
         self.grounded = contact.grounded && self.velocity.y <= 0.;
@@ -634,7 +807,35 @@ impl Sim {
         if self.grounded {
             self.pad_gravity = None;
             if !before {
-                self.motion.select("Landing", 1.);
+                if matches!(
+                    self.reaction,
+                    Some(crate::reaction::Stage::AirHit | crate::reaction::Stage::Fall)
+                ) {
+                    self.reaction = Some(crate::reaction::Stage::Bound);
+                    self.motion.select("DownBoundU", 1.);
+                } else {
+                    let landing = match self.current_move {
+                        Some(Move::NeutralAir) => "LandingAirN",
+                        Some(Move::ForwardAir) => "LandingAirF",
+                        Some(Move::BackAir) => "LandingAirB",
+                        Some(Move::UpAir) => "LandingAirHi",
+                        Some(Move::DownAir) => "LandingAirLw",
+                        Some(Move::ScrewAttack) => "LandingFallSpecial",
+                        _ => {
+                            if self.phase == Phase::Helpless {
+                                "LandingFallSpecial"
+                            } else {
+                                "Landing"
+                            }
+                        }
+                    };
+                    if landing != "Landing" {
+                        self.current_move = None;
+                        self.action.active.clear();
+                        self.set_phase(Phase::Free);
+                    }
+                    self.motion.select(landing, 1.);
+                }
                 self.emit(host, EventKind::Land, 0, -self.velocity.y);
             }
             self.velocity.y = 0.;
@@ -670,6 +871,10 @@ impl Sim {
         self.release_phase = m == Move::ScrewAttack;
         self.set_phase(Phase::Recovery);
     }
+}
+
+fn sign_deceleration(velocity: f32, friction: f32) -> f32 {
+    velocity.signum() * velocity.abs().min(friction)
 }
 
 // Prototype schedules, NOT purported frame-perfect Melee command data.

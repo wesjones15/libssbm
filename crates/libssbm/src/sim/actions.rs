@@ -56,7 +56,7 @@ impl Sim {
         }
         self.action.projectile_fired = true;
         let cue = match m {
-            Move::ChargeShot => Some((1158, 51, true)),
+            Move::ChargeShot => Some((1158, 51, false)),
             Move::Missile | Move::SuperMissile => Some((1155, 56, false)),
             _ => None,
         };
@@ -138,6 +138,18 @@ impl Sim {
                 }
                 Command::Variable(index, value) => {
                     self.action.variables[index as usize] = value;
+                    // SpecialNHold_Anim selects one of five source charge voices
+                    // when cmd_var2 requests it; replace the tracked charge slot.
+                    if index == 2 && value == 1 && self.phase == Phase::ChargeShot {
+                        let band = (self.shot_charge * 5 / self.params.charge_steps.max(1)).min(4);
+                        self.action.sounds.push(SoundCue {
+                            sound: 260006 + band * 3,
+                            volume: 127,
+                            pan: 64,
+                            channel: 6,
+                            stop: false,
+                        });
+                    }
                     if value == 1
                         && index == 1
                         && self.current_move == Some(Move::ChargeShot)

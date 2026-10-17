@@ -12,6 +12,10 @@ pub fn resolve(id: u32) -> Target {
     use Target::*;
     match id {
         0..=591 => Particle(id),
+        1000 => Model(10),
+        1001 => Particle(12),
+        1002 => Particle(20),
+        1004 => Model(8),
         1011 => Particle(11),
         1015 => Model(18),
         1016 => Model(19),
@@ -22,7 +26,9 @@ pub fn resolve(id: u32) -> Target {
         1027 => Particle(94),
         1028 => Model(24),
         1030 => Model(4),
+        1031 => Particle(60),
         1036 => Particle(25),
+        1038 => Particle(67),
         1041 => Particle(75),
         1060 => Model(2),
         1086 => Model(36),
@@ -37,6 +43,7 @@ pub fn resolve(id: u32) -> Target {
         1159 => Model(2002),
         // ftCo_8009F834 routes this to Camera_RequestQuake, before efsync.
         1299 => CameraShake(2),
+        1301 => Particle(4),
         _ => Unknown,
     }
 }

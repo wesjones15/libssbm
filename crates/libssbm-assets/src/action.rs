@@ -87,6 +87,14 @@ fn signed(value: u32, bits: u32) -> i32 {
 }
 
 pub fn script_commands(dat: &Dat, start: usize, horizon: f32) -> Result<Vec<TimedCommand>> {
+    decode_script(dat, start, horizon, false)
+}
+/// Item records share Command_Execute control flow, but not fighter opcodes.
+/// Widths and bitfields follow itanimlist.c::it_803F22A8 and lb/types.h.
+pub fn item_script_commands(dat: &Dat, start: usize, horizon: f32) -> Result<Vec<TimedCommand>> {
+    decode_script(dat, start, horizon, true)
+}
+fn decode_script(dat: &Dat, start: usize, horizon: f32, item: bool) -> Result<Vec<TimedCommand>> {
     let mut pc = start;
     let mut frame = 0.;
     let mut loops: Vec<(usize, u32)> = Vec::new();
@@ -154,52 +162,98 @@ pub fn script_commands(dat: &Dat, start: usize, horizon: f32) -> Result<Vec<Time
             }
             _ => (),
         }
-        let count = event_words(opcode)?;
+        let count = if item {
+            match opcode {
+                10 => 5,
+                11 => 6,
+                16 => 3,
+                12..=25 => 1,
+                _ => return Err(format!("unsupported item command {opcode}").into()),
+            }
+        } else {
+            event_words(opcode)?
+        };
         let words = (0..count)
             .map(|i| dat.u32(pc + i * 4))
             .collect::<Result<Vec<_>>>()?;
-        let command = match opcode {
-            11 => Command::Hitbox(Hitbox {
-                id: word >> 23 & 7,
-                group: word >> 20 & 7,
-                bone: (word >> 11 & 255) as usize,
-                common_bone: word & 0x400 != 0,
-                damage: (word & 1023) as f32,
-                radius: (words[1] >> 16) as f32 / 256.,
-                // Model coordinates follow the source joint; the host owns axis conversion.
-                offset: Vec3::new(
-                    signed(words[1] & 65535, 16) as f32,
-                    signed(words[2] >> 16, 16) as f32,
-                    signed(words[2] & 65535, 16) as f32,
-                ) / 256.,
-                angle: words[3] >> 23,
-                growth: words[3] >> 14 & 511,
-                fixed_knockback: words[3] >> 5 & 511,
-                base_knockback: words[4] >> 23,
-                element: words[4] >> 18 & 31,
-                ground: words[4] & 2 != 0,
-                air: words[4] & 1 != 0,
-            }),
-            12 => Command::HitboxDamage(word >> 23 & 7, (word & 0x7fffff) as f32),
-            13 => Command::HitboxRadius(word >> 23 & 7, (word & 0x7fffff) as f32 / 256.),
-            15 => Command::ClearHitbox(value),
-            16 => Command::ClearHitboxes,
-            19 => Command::Variable(word >> 24 & 3, word & 0xffffff),
-            20 => Command::ThrowFlag(value),
-            21 => Command::ThrowFlag(3),
-            22 => Command::ThrowFlag(4),
-            23 => Command::Interrupt,
-            24 => Command::ThrowFlag(0),
-            29 => Command::JabCombo(value == 0),
-            31 => Command::Visibility {
-                group: signed(word >> 19 & 127, 7),
-                choice: signed(word & 0x7ffff, 19),
-            },
-            56 => Command::SmashCharge {
-                max_frames: word >> 16 & 1023,
-                damage_per_frame: (word & 65535) as f32 / 256.,
-            },
-            _ => Command::Raw { opcode, words },
+        let command = if item {
+            match opcode {
+                11 => Command::Hitbox(Hitbox {
+                    id: word >> 23 & 7,
+                    group: word >> 20 & 7,
+                    bone: (word >> 13 & 127) as usize,
+                    common_bone: false,
+                    damage: (word & 8191) as f32,
+                    radius: (words[1] >> 16) as f32 / 256.,
+                    offset: Vec3::new(
+                        signed(words[1] & 65535, 16) as f32,
+                        signed(words[2] >> 16, 16) as f32,
+                        signed(words[2] & 65535, 16) as f32,
+                    ) / 256.,
+                    angle: words[3] >> 23,
+                    growth: words[3] >> 14 & 511,
+                    fixed_knockback: words[3] >> 5 & 511,
+                    base_knockback: words[4] >> 23,
+                    element: words[4] >> 18 & 31,
+                    sfx_kind: words[4] >> 2 & 15,
+                    sfx_severity: words[4] >> 6 & 7,
+                    ground: true,
+                    air: true,
+                }),
+                12 => Command::HitboxDamage(word >> 23 & 7, (word & 8191) as f32),
+                13 => Command::HitboxRadius(word >> 23 & 7, (word & 0x7fffff) as f32 / 256.),
+                14 => Command::ClearHitbox(value),
+                15 => Command::ClearHitboxes,
+                // Normalize sound opcode only; item GFX has its own bone encoding.
+                16 => Command::Raw { opcode: 17, words },
+                _ => Command::Raw { opcode, words },
+            }
+        } else {
+            match opcode {
+                11 => Command::Hitbox(Hitbox {
+                    id: word >> 23 & 7,
+                    group: word >> 20 & 7,
+                    bone: (word >> 11 & 255) as usize,
+                    common_bone: word & 0x400 != 0,
+                    damage: (word & 1023) as f32,
+                    radius: (words[1] >> 16) as f32 / 256.,
+                    // Model coordinates follow the source joint; the host owns axis conversion.
+                    offset: Vec3::new(
+                        signed(words[1] & 65535, 16) as f32,
+                        signed(words[2] >> 16, 16) as f32,
+                        signed(words[2] & 65535, 16) as f32,
+                    ) / 256.,
+                    angle: words[3] >> 23,
+                    growth: words[3] >> 14 & 511,
+                    fixed_knockback: words[3] >> 5 & 511,
+                    base_knockback: words[4] >> 23,
+                    element: words[4] >> 18 & 31,
+                    sfx_kind: words[4] >> 2 & 31,
+                    sfx_severity: words[4] >> 7 & 7,
+                    ground: words[4] & 2 != 0,
+                    air: words[4] & 1 != 0,
+                }),
+                12 => Command::HitboxDamage(word >> 23 & 7, (word & 0x7fffff) as f32),
+                13 => Command::HitboxRadius(word >> 23 & 7, (word & 0x7fffff) as f32 / 256.),
+                15 => Command::ClearHitbox(value),
+                16 => Command::ClearHitboxes,
+                19 => Command::Variable(word >> 24 & 3, word & 0xffffff),
+                20 => Command::ThrowFlag(value),
+                21 => Command::ThrowFlag(3),
+                22 => Command::ThrowFlag(4),
+                23 => Command::Interrupt,
+                24 => Command::ThrowFlag(0),
+                29 => Command::JabCombo(value == 0),
+                31 => Command::Visibility {
+                    group: signed(word >> 19 & 127, 7),
+                    choice: signed(word & 0x7ffff, 19),
+                },
+                56 => Command::SmashCharge {
+                    max_frames: word >> 16 & 1023,
+                    damage_per_frame: (word & 65535) as f32 / 256.,
+                },
+                _ => Command::Raw { opcode, words },
+            }
         };
         result.push(TimedCommand { frame, command });
         pc += count * 4;

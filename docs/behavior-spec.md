@@ -1,5 +1,49 @@
 # Samus / Melee behavior specification
 
+## Current checkpoint: 0.2.2, 2026-10-17
+
+The incremental notes below retain implementation history; this checkpoint
+supersedes their earlier prototype and pending-integration statements.
+
+ABI 4 pins fourteen layouts. The native C# harness passes sixty simulated seconds
+consuming 174 attack GFX cues, posed attachments, source effect models, particle
+programs and PCM. All 207 GFX cues in the disc's action scripts resolve physical,
+common, alternate and cycling bones. Generated callback cues use physical joints
+(Screw Attack 3, held charge 50, fired charge 51, missile 56), not common-bone IDs.
+Native projectile callbacks emit from the original posed joint and disc offsets.
+Presentation failures are isolated from the host character simulation.
+
+The native article runtime reads item hitboxes and attributes. Source references:
+`itsamuschargeshot.c`, `itsamusmissile.c`, `itsamusbomb.c`, `itanimlist.c` and
+`it_2725.c::it_80272A60/it_80272B40`. Speed, bomb gravity/launch, missile homing
+window/turn/decay, super missile acceleration, life and explosion end command are
+native 60-Hz behavior. Host supplies radial 3D targeting/collision and RoR2 damage.
+Bomb/normal missile use common generator 25, super missile 67, source sound 116.
+Electric/fire/contact feedback routes source effect IDs and hit sound metadata.
+Held Charge Shot has article 0, source generator 2004 and disc charge scale.
+No procedural explosion spheres remain. Rates 30/60/144 produce equal flight.
+The bomb blast follows its source radius mutations/clear window and remembers
+victims across host collision checks.
+
+Shared movement adds disc ground-to-air momentum, horizontal jump impulses/caps,
+aerial jump horizontal speed, signed air drift and source jump voice IDs.
+`ftCo_Jump`, `ftCo_JumpAerial`, `ftCommon_CalcSelfAccel_DriftFrom` specify these
+updates. Air-facing is preserved; directional fall and aerial landing clips run.
+Initial placement does not invent landing lag. A RoR2 damage/impulse notification
+runs shared hurt -> DamageFall -> DownBoundU -> DownStandU presentation; automatic
+get-up and the RoR2 health/force model are explicit adaptations. Full directional
+pose blending and Melee percent/hitstun/tech rules are not implemented.
+
+All clips and five costumes decode; sampled walk/run cycles have at least 18
+distinct poses across 20 samples. Trophy entry uses original platform, tuning,
+sound and effect, with collision feet held at a safe host position. Entry colour
+animation 0x75 is missing. Character select repeats up-B/effects/audio using UI
+time; its original CSS grid tile replaces the large selected-character photo.
+
+Full TEV/animated texture and UV fidelity, particle trail/mirror/alpha-compare
+semantics, transition blending and in-game visual/listening validation remain
+open. These headless checks are not a claim of complete gameplay fidelity.
+
 Source: local `melee-master/melee-master`, GALE01 revision 2. Its
 `config/GALE01/config.yml` and `build.sha1` both specify main.dol SHA-1
 `08e0bf20134dfcb260699671004527b2d6bb1a45`, exactly the hash reported by

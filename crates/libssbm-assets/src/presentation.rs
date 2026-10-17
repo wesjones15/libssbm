@@ -11,6 +11,7 @@ pub struct Presentation {
     pub ball: bool,
     pub material_tracks: Vec<crate::animation::Track>,
     pub duration: f32,
+    pub commands: Vec<libssbm::action::TimedCommand>,
 }
 impl Presentation {
     pub fn platform(dir: &Path) -> Result<Self> {
@@ -32,6 +33,7 @@ impl Presentation {
             ball: false,
             material_tracks: Vec::new(),
             duration: 0.,
+            commands: Vec::new(),
         })
     }
     pub fn effect(dir: &Path, id: u32) -> Result<Self> {
@@ -64,6 +66,7 @@ impl Presentation {
             ball: false,
             material_tracks: model.material_tracks,
             duration: model.lifetime,
+            commands: Vec::new(),
         })
     }
     pub fn article(dir: &Path, kind: u32, state: u32) -> Result<Self> {
@@ -92,6 +95,7 @@ impl Presentation {
             ball: false,
             material_tracks: a.material_tracks,
             duration,
+            commands: a.commands,
         })
     }
     pub fn object_pose(&mut self, frame: f32) {
@@ -117,6 +121,7 @@ impl Presentation {
             ball: false,
             material_tracks: Vec::new(),
             duration: 0.,
+            commands: Vec::new(),
         })
     }
     pub fn update(&mut self, sim: &Sim, _dt: f32) {
