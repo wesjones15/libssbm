@@ -1,6 +1,25 @@
 # Samus / Melee behavior specification
 
-## Current checkpoint: 0.2.3, 2026-10-17
+## Current checkpoint: 0.2.9, 2026-10-17
+
+The RoR2 camera/facing adaptation now delegates ordinary yaw to the installed
+game's CharacterDirection and CharacterBody.shouldAim, rather than forcing camera
+facing in Rust. The optional host-facing sample is independent of velocity and
+the full 3D aim ray. Dash, back-air, spins, captures/throws, entry and reactions
+retain their authored heading; other actions may follow the game's smooth turn.
+Hosts that omit the optional facing sample retain the previous movement-facing
+policy. The ABI-4 facing/lock exports are additive; layout sizes are unchanged.
+
+Shared directional selection uses camera pitch only with LS magnitude >0.3:
+up from +20 degrees, down from -50 degrees; shoulders override with pure up/down.
+New camera-band entry counts as a directional flick. Neutral attacks/specials
+and captured raw-axis throws retain their controls. These are requested 3D host
+adaptations, not original Melee or vanilla RoR2 rules. Core tests cover directional
+normals/specials, shoulder priority, throws, host-facing/backpedal and heading
+locks at 30/60/144 Hz. The host camera ray uses RoR2's own aim correction and
+ignores owner colliders when converging from the cannon. Unity playtest pending.
+
+## Earlier checkpoint: 0.2.3
 
 Source entry colour program 0x75 now decodes from PlCo and
 reaches the common renderer's colour-overlay input. A null-safe optional ABI-4

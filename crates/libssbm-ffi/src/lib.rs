@@ -982,6 +982,27 @@ pub unsafe extern "C" fn ssbm_sim_place(handle: *mut Handle, v: V3, kind: u32) {
         }
     }
 }
+/// Supply the host's resolved horizontal heading without changing momentum or
+/// the aim ray. Existing ABI-4 layouts are unchanged.
+/// # Safety
+/// Unique live handle or null. No concurrent calls.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn ssbm_sim_facing(handle: *mut Handle, facing: V3) {
+    if let Some(h) = unsafe { handle.as_mut() } {
+        if !h.poisoned {
+            h.sim.set_host_facing(facing.into());
+        }
+    }
+}
+/// Whether authored motion/capture currently owns yaw. Null is unlocked.
+/// # Safety
+/// Live handle or null; no concurrent mutation.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn ssbm_sim_facing_locked(handle: *const Handle) -> u32 {
+    unsafe { handle.as_ref() }
+        .map(|h| h.sim.facing_locked() as u32)
+        .unwrap_or(0)
+}
 
 impl View {
     fn refresh(&mut self) {

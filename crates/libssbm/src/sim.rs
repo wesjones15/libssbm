@@ -26,6 +26,29 @@ pub struct Input {
     pub allowed: u32,
 }
 impl Input {
+    /// RoR2 3D adaptation, not original Melee stick thresholds: a directional
+    /// modifier enables camera pitch. Up starts at 20 degrees; down requires 50
+    /// degrees to avoid turning ordinary ground aiming into downward attacks.
+    /// Physical shoulders remain unconditional up/down and take priority over LS.
+    pub fn attack_vertical(self) -> i8 {
+        if self.buttons & UP != 0 {
+            return 1;
+        }
+        if self.buttons & DOWN != 0 {
+            return -1;
+        }
+        if self.movement.with_y(0.).length_squared() <= 0.09 {
+            return 0;
+        }
+        let y = self.aim.normalize_or_zero().y;
+        if y >= 0.34202015 {
+            1
+        } else if y <= -0.76604444 {
+            -1
+        } else {
+            0
+        }
+    }
     pub fn idle() -> Self {
         Self {
             aim: Vec3::X,
@@ -170,6 +193,7 @@ pub struct Sim {
     pub shot_charge: u32,
     pub smash_charge: u32,
     pub facing: Vec3,
+    host_facing: Option<Vec3>,
     accumulator: f64,
     pub fall_blend: f32,
     suppress_initial_landing: bool,
@@ -208,6 +232,7 @@ impl Sim {
             shot_charge: 0,
             smash_charge: 0,
             facing: Vec3::X,
+            host_facing: None,
             accumulator: 0.,
             fall_blend: 0.,
             suppress_initial_landing: true,
@@ -245,6 +270,39 @@ impl Sim {
             ticks += 1;
         }
         ticks
+    }
+    /// Optional host-owned yaw (e.g. RoR2 CharacterDirection). It changes heading,
+    /// never velocity, and cannot twist an authored dash/throw/spin action.
+    pub fn set_host_facing(&mut self, facing: Vec3) {
+        if facing.is_finite() && facing.with_y(0.).length_squared() > 0.001 {
+            self.host_facing = Some(facing.with_y(0.).normalize());
+        }
+    }
+    pub fn facing_locked(&self) -> bool {
+        self.entry.is_some()
+            || self.reaction.is_some()
+            || self
+                .rebirth
+                .as_ref()
+                .is_some_and(|state| state.flags() & 1 != 0)
+            || matches!(
+                self.current_move,
+                Some(
+                    Move::DashAttack
+                        | Move::BackAir
+                        | Move::ScrewAttack
+                        | Move::Bomb
+                        | Move::Grab
+                        | Move::DashGrab
+                        | Move::AirGrab
+                        | Move::Pummel
+                        | Move::ThrowForward
+                        | Move::ThrowBack
+                        | Move::ThrowUp
+                        | Move::ThrowDown
+                        | Move::GrabHold
+                )
+            )
     }
     pub fn teleport(&mut self, position: Vec3) {
         self.grabbed = false;
@@ -371,6 +429,7 @@ impl Sim {
         }
         self.current_move = Some(m);
         if matches!(m, Move::ChargeShot | Move::Missile | Move::SuperMissile)
+            && self.host_facing.is_none()
             && input.aim.with_y(0.).length_squared() > 0.001
         {
             self.facing = input.aim.with_y(0.).normalize();
@@ -379,7 +438,10 @@ impl Sim {
         self.motion.frame = 0.;
         self.move_started_grounded = self.grounded;
         self.release_phase = m == Move::ScrewAttack;
-        if m == Move::BackAir && input.aim.with_y(0.).length_squared() > 0.01 {
+        if m == Move::BackAir
+            && self.host_facing.is_none()
+            && input.aim.with_y(0.).length_squared() > 0.01
+        {
             self.facing = input.aim.with_y(0.).normalize();
         }
         self.smash_charge = 0;
@@ -442,8 +504,9 @@ impl Sim {
         self.action.serial != serial
     }
     fn choose_attack(&self, input: Input) -> Move {
-        let up = input.buttons & UP != 0;
-        let down = input.buttons & DOWN != 0;
+        let vertical = input.attack_vertical();
+        let up = vertical > 0;
+        let down = vertical < 0;
         let magnitude = input.movement.with_y(0.).length();
         if !self.grounded {
             return if up {
@@ -460,7 +523,7 @@ impl Sim {
                 Move::NeutralAir
             };
         }
-        let flick = if up || down {
+        let flick = if input.buttons & (UP | DOWN) != 0 {
             self.modifier_age < self.params.smash_window
         } else {
             magnitude >= self.params.smash_threshold && self.flick_age < self.params.smash_window
@@ -607,15 +670,22 @@ impl Sim {
         {
             self.flick_age = 0;
         }
+        // A camera band change while LS is held is also a new direction flick.
+        if input.buttons & (UP | DOWN) == 0
+            && input.attack_vertical() != self.previous.attack_vertical()
+        {
+            self.flick_age = 0;
+        }
         if pressed & (UP | DOWN) != 0 {
             self.modifier_age = 0;
         }
-        if self.grounded
-            && self.reaction.is_none()
-            && self.phase == Phase::Free
-            && movement.length_squared() > 0.01
-        {
-            self.facing = movement.normalize();
+        if !self.facing_locked() {
+            if let Some(facing) = self.host_facing {
+                self.facing = facing;
+            } else if self.phase == Phase::Free && self.grounded && movement.length_squared() > 0.01
+            {
+                self.facing = movement.normalize();
+            }
         }
         let phase = self.phase;
         if matches!(
@@ -625,7 +695,9 @@ impl Sim {
         {
             self.move_aim = input.aim.normalize();
             if input.aim.with_y(0.).length_squared() > 0.001 {
-                self.facing = input.aim.with_y(0.).normalize();
+                self.facing = self
+                    .host_facing
+                    .unwrap_or_else(|| input.aim.with_y(0.).normalize());
             }
         }
         match phase {
@@ -651,9 +723,9 @@ impl Sim {
                     };
                     self.start(host, m, input);
                 } else if pressed & SPECIAL != 0 {
-                    let m = if input.buttons & UP != 0 {
+                    let m = if input.attack_vertical() > 0 {
                         Move::ScrewAttack
-                    } else if input.buttons & DOWN != 0 {
+                    } else if input.attack_vertical() < 0 {
                         Move::Bomb
                     } else if movement.length() > 0.3 {
                         if self.flick_age < self.params.missile_smash_window {
