@@ -285,3 +285,10 @@ figure materializes on its original platform at a safe standing point, waits for
 Interact, then releases via the original entry effect/sound/platform animation.
 The waiting figurine and Interact gate are RoR2 adaptations. Native/real-disc
 tests and C# boundary checks pass; these changes still require gameplay testing.
+
+Charge Shot presentation also now honors the static HSD texture matrix, repeat
+counts and per-axis mirror wrapping that turn its quarter texture into a full
+orb. JOBJ billboard/rotational billboard joints face the model-space camera and
+retain their authored spin. Source sprite matrices, mirror metadata and camera
+pose changes cross the tested C# boundary. The complete orb and Screw Attack
+electrical shell were inspected in the viewer; Unity playtest remains pending.

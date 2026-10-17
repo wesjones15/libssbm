@@ -56,6 +56,8 @@ pub fn load_grid(dir: &Path, fighter: &crate::fighter::FighterAssets<'_>) -> Res
                             let width = d.u16(image + 4)?;
                             let height = d.u16(image + 6)?;
                             return Ok(Texture {
+                                wrap_s: 1,
+                                wrap_t: 1,
                                 width,
                                 height,
                                 rgba: crate::texture::decode(
@@ -159,6 +161,8 @@ pub fn load(
             let width = d.u16(image + 4)?;
             let height = d.u16(image + 6)?;
             return Ok(Texture {
+                wrap_s: 1,
+                wrap_t: 1,
                 width,
                 height,
                 rgba: crate::texture::decode(

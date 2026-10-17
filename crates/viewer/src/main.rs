@@ -270,7 +270,7 @@ async fn run() -> libssbm_assets::Result<()> {
             actor.object_pose(pose_frame);
         }
         let object = article.is_some() || effect.is_some() || emitter.is_some();
-        let center = gv(sim.position)
+        let mut center = gv(sim.position)
             + vec3(
                 0.,
                 if effect == Some(2000) {
@@ -282,13 +282,32 @@ async fn run() -> libssbm_assets::Result<()> {
                 },
                 0.,
             );
-        let distance = if effect == Some(2000) {
+        let mut distance: f32 = if effect == Some(2000) {
             65.
         } else if object {
             25.
         } else {
             65.
         };
+        if article.is_some() {
+            let points: Vec<_> = (0..actor.model.batches.len())
+                .flat_map(|i| {
+                    actor
+                        .model
+                        .skin(i, &actor.world)
+                        .into_iter()
+                        .map(|(p, _)| p)
+                })
+                .collect();
+            let lo = points
+                .iter()
+                .fold(::glam::Vec3::splat(f32::INFINITY), |a, p| a.min(*p));
+            let hi = points
+                .iter()
+                .fold(::glam::Vec3::splat(f32::NEG_INFINITY), |a, p| a.max(*p));
+            center = gv((lo + hi) * 0.5 + sim.position);
+            distance = distance.max((hi - lo).max_element() * 1.7);
+        }
         let camera = center
             + vec3(
                 camera_yaw.sin() * distance,
@@ -326,6 +345,14 @@ async fn run() -> libssbm_assets::Result<()> {
         } else {
             ::glam::Vec3::ZERO
         };
+        if object {
+            actor.face_camera(
+                rotation
+                    .inverse()
+                    .transform_point3(sv(camera) - sim.position)
+                    - preview_offset,
+            );
+        }
         for (i, mesh) in meshes.iter_mut().enumerate() {
             if emitter.is_some() {
                 continue;
@@ -506,6 +533,16 @@ fn make_meshes(actor: &Presentation) -> Vec<Mesh> {
             texture: b.texture.as_ref().map(|t| {
                 let tex = Texture2D::from_rgba8(t.width, t.height, &t.rgba);
                 tex.set_filter(FilterMode::Linear);
+                let wrap = |w| match w {
+                    1 => miniquad::TextureWrap::Clamp,
+                    2 => miniquad::TextureWrap::Mirror,
+                    _ => miniquad::TextureWrap::Repeat,
+                };
+                unsafe {
+                    macroquad::window::get_internal_gl()
+                        .quad_context
+                        .texture_set_wrap(tex.raw_miniquad_id(), wrap(t.wrap_s), wrap(t.wrap_t));
+                }
                 tex
             }),
         })

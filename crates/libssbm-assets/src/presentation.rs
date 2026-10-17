@@ -117,6 +117,9 @@ impl Presentation {
             }
         }
     }
+    pub fn face_camera(&mut self, camera: glam::Vec3) {
+        self.model.face_camera(&mut self.world, camera);
+    }
     pub fn load(dir: &Path, costume: usize) -> Result<Self> {
         Self::load_for(dir, costume, &crate::fighter::SAMUS)
     }

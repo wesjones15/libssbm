@@ -173,6 +173,8 @@ impl Effects {
                         palette,
                     )?;
                     images.push(Texture {
+                        wrap_s: 1,
+                        wrap_t: 1,
                         width,
                         height,
                         rgba,

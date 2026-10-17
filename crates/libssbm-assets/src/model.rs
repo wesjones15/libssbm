@@ -8,6 +8,7 @@ use std::{
 };
 #[derive(Clone, Debug)]
 pub struct Joint {
+    pub flags: u32,
     pub address: usize,
     pub parent: Option<usize>,
     pub translation: Vec3,
@@ -25,6 +26,8 @@ pub struct Vertex {
 }
 #[derive(Clone, Debug)]
 pub struct Texture {
+    pub wrap_s: u8,
+    pub wrap_t: u8,
     pub width: u16,
     pub height: u16,
     pub rgba: Vec<u8>,
@@ -127,6 +130,7 @@ impl Model {
             }
             let i = j.len();
             j.push(Joint {
+                flags: d.u32(at + 4)?,
                 address: at,
                 parent,
                 translation: t,
@@ -167,6 +171,7 @@ impl Model {
                 }
                 let (color, texture, texture_alpha, texture_blend) = material(d, d.ptr(at + 8)?)?;
                 let (blend, lit) = render_flags(d, d.ptr(at + 8)?)?;
+                let uv_matrix = texture_matrix(d, d.ptr(at + 8)?)?;
                 let mut batch = Batch {
                     instance: None,
                     material_dobj: dobj_index,
@@ -192,6 +197,10 @@ impl Model {
                     pobj = d.ptr(p + 4)?;
                 }
                 if !batch.indices.is_empty() {
+                    for vertex in &mut batch.vertices {
+                        let uv = uv_matrix.transform_point3(vertex.uv.extend(0.));
+                        vertex.uv = uv.truncate();
+                    }
                     batches.push(batch);
                 }
                 dobj = d.ptr(at + 4)?;
@@ -257,6 +266,46 @@ impl Model {
                 (p, n.normalize_or_zero())
             })
             .collect()
+    }
+    /// HSD camera-facing joint modes. RBILLBOARD retains the authored Z spin;
+    /// the host supplies the camera in this model's coordinate space.
+    pub fn face_camera(&self, world: &mut [Mat4], camera: Vec3) {
+        for i in 0..self.joints.len() {
+            let mode = self.joints[i].flags & 0xe00;
+            if mode == 0 {
+                continue;
+            }
+            let old = world[i];
+            let (scale, rotation, position) = old.to_scale_rotation_translation();
+            let mut look = camera - position;
+            if mode == 0x400 || mode == 0x600 {
+                look.y = 0.;
+            }
+            let Some(forward) = look.try_normalize() else {
+                continue;
+            };
+            let right = Vec3::Y.cross(forward).try_normalize().unwrap_or(Vec3::X);
+            let up = forward.cross(right).normalize_or_zero();
+            let facing = Quat::from_mat3(&glam::Mat3::from_cols(right, up, forward));
+            let spin = if mode == 0x800 {
+                Quat::from_rotation_z(rotation.to_euler(EulerRot::YXZ).2)
+            } else {
+                Quat::IDENTITY
+            };
+            let next = Mat4::from_scale_rotation_translation(scale, facing * spin, position);
+            let delta = next * old.inverse();
+            world[i] = next;
+            for j in i + 1..self.joints.len() {
+                let mut parent = self.joints[j].parent;
+                while let Some(p) = parent {
+                    if p == i {
+                        world[j] = delta * world[j];
+                        break;
+                    }
+                    parent = self.joints[p].parent;
+                }
+            }
+        }
     }
 }
 // ftParts_8007487C / 80074B6C: costume fallback and high-detail DObj alternatives.
@@ -338,6 +387,8 @@ fn material(d: &Dat, at: Option<usize>) -> Result<([f32; 4], Option<Texture>, u8
             return Ok((
                 color,
                 Some(Texture {
+                    wrap_s: wrap_mode(d.u32(t + 0x34)?),
+                    wrap_t: wrap_mode(d.u32(t + 0x38)?),
                     width,
                     height,
                     rgba,
@@ -349,6 +400,54 @@ fn material(d: &Dat, at: Option<usize>) -> Result<([f32; 4], Option<Texture>, u8
         tex = d.ptr(t + 4)?;
     }
     Ok((color, None, 3, 1.))
+}
+fn wrap_mode(gx: u32) -> u8 {
+    match gx {
+        0 => 1,
+        2 => 2,
+        _ => 0,
+    }
+}
+/// baselib/tobj.c MakeTextureMtx: repeat/scale * rotation * translation,
+/// including the mirrored-T offset. A quarter texture repeated/mirrored twice
+/// is the complete Charge Shot core, rather than a cropped rectangular patch.
+fn texture_matrix(d: &Dat, material: Option<usize>) -> Result<Mat4> {
+    let Some(material) = material else {
+        return Ok(Mat4::IDENTITY);
+    };
+    let mut at = d.ptr(material + 8)?;
+    let mut seen = HashSet::new();
+    while let Some(t) = at {
+        if !seen.insert(t) || seen.len() > 16 {
+            return Err("cyclic texture matrix chain".into());
+        }
+        if d.u32(t + 0x40)? & 15 == 0 {
+            let r = vector(d, t + 0x10)?;
+            let s = vector(d, t + 0x1c)?;
+            let tr = vector(d, t + 0x28)?;
+            let repeat = d.bytes(t + 0x3c, 2)?;
+            let x = if s.x.abs() < f32::EPSILON {
+                0.
+            } else {
+                repeat[0] as f32 / s.x
+            };
+            let y = if s.y.abs() < f32::EPSILON {
+                0.
+            } else {
+                repeat[1] as f32 / s.y
+            };
+            let mirror = if d.u32(t + 0x38)? == 2 && y != 0. {
+                1. / y
+            } else {
+                0.
+            };
+            return Ok(Mat4::from_scale(Vec3::new(x, y, s.z))
+                * Mat4::from_quat(Quat::from_euler(EulerRot::ZYX, -r.z, r.y, r.x))
+                * Mat4::from_translation(Vec3::new(-tr.x, -tr.y - mirror, tr.z)));
+        }
+        at = d.ptr(t + 4)?;
+    }
+    Ok(Mat4::IDENTITY)
 }
 fn render_flags(d: &Dat, at: Option<usize>) -> Result<(u8, u8)> {
     let Some(at) = at else {

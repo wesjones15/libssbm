@@ -1,6 +1,54 @@
 use libssbm_assets::{Result, effects::Effects};
 use std::path::PathBuf;
 #[test]
+fn charged_shot_keeps_its_spinning_core_facing_cameras_from_all_sides() -> Result<()> {
+    let dir = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../assets");
+    if !dir.join("PlSs.dat").exists() {
+        eprintln!("SKIP: article archive absent");
+        return Ok(());
+    }
+    let mut p = libssbm_assets::presentation::Presentation::article(&dir, 1, 8)?;
+    for batch in &p.model.batches {
+        let texture = batch.texture.as_ref().unwrap();
+        assert_eq!((texture.wrap_s, texture.wrap_t), (2, 2));
+        let lo = batch
+            .vertices
+            .iter()
+            .fold(glam::Vec2::splat(f32::INFINITY), |a, v| a.min(v.uv));
+        let hi = batch
+            .vertices
+            .iter()
+            .fold(glam::Vec2::splat(f32::NEG_INFINITY), |a, v| a.max(v.uv));
+        assert!(
+            (hi.x - lo.x - 2.).abs() < 0.001 && (hi.y - lo.y - 2.).abs() < 0.001,
+            "quarter texture was not mirrored into the complete shot"
+        );
+    }
+    let billboard = p
+        .model
+        .joints
+        .iter()
+        .position(|j| j.flags & 0xe00 == 0x800)
+        .expect("source rotational billboard");
+    for camera in [
+        glam::Vec3::new(100., 0., 0.),
+        glam::Vec3::new(-80., 30., 25.),
+        glam::Vec3::new(20., 75., -50.),
+    ] {
+        p.object_pose(12.);
+        let scale = p.world[billboard].to_scale_rotation_translation().0;
+        p.face_camera(camera);
+        let normal = p.world[billboard].z_axis.truncate().normalize();
+        let look = (camera - p.world[billboard].w_axis.truncate()).normalize();
+        assert!(
+            normal.dot(look) > 0.999,
+            "charge core remains edge-on to camera"
+        );
+        assert!((p.world[billboard].to_scale_rotation_translation().0 - scale).length() < 0.0001);
+    }
+    Ok(())
+}
+#[test]
 fn screw_attack_keeps_its_texture_alpha_and_animated_fade() -> Result<()> {
     let dir = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../assets");
     if !dir.join("EfSsData.dat").exists() {

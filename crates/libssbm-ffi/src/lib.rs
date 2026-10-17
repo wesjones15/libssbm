@@ -1247,6 +1247,20 @@ pub unsafe extern "C" fn ssbm_object_update(v: *mut View, frame: f32) -> u32 {
     }
 }
 /// # Safety
+/// Unique live object view; camera is in its unmirrored model coordinates.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn ssbm_object_camera(v: *mut View, camera: V3) -> u32 {
+    if v.is_null() || !Vec3::from(camera).is_finite() {
+        return 0;
+    }
+    guarded(0, || unsafe {
+        let v = &mut *v;
+        v.actor.face_camera(camera.into());
+        v.refresh();
+        1
+    })
+}
+/// # Safety
 /// Pose a named fighter clip without running gameplay physics or landing state.
 /// Used by silent menu portraits; no sound or hit events are executed.
 /// # Safety
@@ -1415,8 +1429,8 @@ pub unsafe extern "C" fn ssbm_view_texture(
         *out = TextureInfo {
             width: t.width as u32,
             height: t.height as u32,
-            wrap_s: 0,
-            wrap_t: 0,
+            wrap_s: t.wrap_s,
+            wrap_t: t.wrap_t,
             pad0: 0,
             pad1: 0,
         };

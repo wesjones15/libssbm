@@ -117,6 +117,49 @@ fn main() -> Result<()> {
             "article {kind} state {state}: common {:?} special {:?} commands {:?}",
             a.common, a.special, a.commands
         );
+        if kind == 1 {
+            let bytes = std::fs::read(dir.join("PlSs.dat"))?;
+            let d = libssbm_assets::dat::Dat::parse(&bytes)?;
+            let pose = a.animations.pose_object(&a.model, 12.);
+            for (i, j) in a.model.joints.iter().enumerate() {
+                println!(
+                    "joint {i} flags {:x} local {:?} posed {:?}",
+                    d.u32(j.address + 4)?,
+                    j.scale,
+                    pose[i].to_scale_rotation_translation()
+                );
+            }
+            for i in 0..a.model.batches.len() {
+                let b = &a.model.batches[i];
+                let obj = d.required_ptr(a.model.joints[b.owner].address + 16)?;
+                let m = d.required_ptr(obj + 8)?;
+                let t = d.required_ptr(m + 8)?;
+                println!(
+                    "UV {:?} scale/trans {:?} repeat {:?} wrap {:?}",
+                    b.vertices.iter().fold(
+                        (
+                            glam::Vec2::splat(f32::INFINITY),
+                            glam::Vec2::splat(f32::NEG_INFINITY)
+                        ),
+                        |(lo, hi), v| (lo.min(v.uv), hi.max(v.uv))
+                    ),
+                    (0..9).map(|i| d.f32(t + 16 + i * 4)).collect::<Vec<_>>(),
+                    d.bytes(t + 0x3c, 2)?,
+                    (d.u32(t + 0x34)?, d.u32(t + 0x38)?)
+                );
+                let points = a.model.skin(i, &pose);
+                println!(
+                    "bounds {:?}",
+                    points.iter().fold(
+                        (
+                            glam::Vec3::splat(f32::INFINITY),
+                            glam::Vec3::splat(f32::NEG_INFINITY)
+                        ),
+                        |(lo, hi), (p, _)| (lo.min(*p), hi.max(*p))
+                    )
+                );
+            }
+        }
         for b in &a.model.batches {
             println!(
                 " alpha {} mode {} blending {}",
