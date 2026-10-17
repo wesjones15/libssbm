@@ -176,7 +176,7 @@ impl Presentation {
             self.model.normal_visible[b.dobj]
         }
     }
-    pub fn color(&self, batch: usize) -> [f32; 4] {
+    fn material_color(&self, batch: usize) -> ([f32; 4], f32) {
         let b = &self.model.batches[batch];
         let mut color = b.color;
         let mut blending = b.texture_blend;
@@ -192,6 +192,27 @@ impl Presentation {
                 }
             }
         }
+        (color, blending)
+    }
+    /// Normalized source metadata for the common host alpha adapter. The
+    /// viewer keeps the same resolution below; no HSD flags cross into Unity.
+    pub fn alpha_source(&self, batch: usize) -> [f32; 3] {
+        let b = &self.model.batches[batch];
+        let (color, blending) = self.material_color(batch);
+        let mode = if b.texture.is_some() {
+            match b.texture_alpha {
+                2 => 1.,
+                4 => 2.,
+                _ => 0.,
+            }
+        } else {
+            0.
+        };
+        [color[3], blending, mode]
+    }
+    pub fn color(&self, batch: usize) -> [f32; 4] {
+        let b = &self.model.batches[batch];
+        let (mut color, blending) = self.material_color(batch);
         if b.texture.is_some() {
             // baselib/tobj.c::MakeTExp: TEX_ALPHAMAP_BLEND interpolates
             // material and sampled alpha. Multiplying a zero material alpha

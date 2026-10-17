@@ -303,3 +303,10 @@ returning to Wait, with no extra velocity added. Real-disc checks cover 30/60/14
 Hz, collision against a wall and removal of duplicate pose displacement; viewer
 captures cover the attack and completed idle. Other action-specific animation
 velocity policies (including secondary TransN blending) remain incomplete.
+
+The native view now exports normalized raw-alpha/texture-blend/mode triplets
+beside its existing resolved colours. Samus's C# view runs those through common
+MaterialAlphaBuffer, shared with future ports of other formats. The viewer and
+common output agree for Screw Attack's zero material alpha, visible middle and
+animated fade frames. This additive export preserves the existing ABI-4 layouts;
+older pre-resolved views can omit it. Full TEV compositing remains incomplete.

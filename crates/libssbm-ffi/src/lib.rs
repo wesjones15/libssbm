@@ -234,6 +234,7 @@ pub struct View {
     positions: Vec<V3>,
     normals: Vec<V3>,
     colors: Vec<[f32; 4]>,
+    alpha_sources: Vec<[f32; 3]>,
     texture_ids: Vec<i32>,
 }
 thread_local! {static ERROR:RefCell<CString>=RefCell::new(CString::default());}
@@ -986,6 +987,7 @@ impl View {
         for i in 0..self.actor.model.batches.len() {
             let visible = self.actor.visible(i);
             self.colors[i] = self.actor.color(i);
+            self.alpha_sources[i] = self.actor.alpha_source(i);
             for (p, n) in self.actor.model.skin(i, &self.actor.world) {
                 self.positions[offset] = if visible { p.into() } else { V3::default() };
                 self.normals[offset] = n.into();
@@ -1004,6 +1006,7 @@ impl View {
             positions: vec![],
             normals: vec![],
             colors: vec![],
+            alpha_sources: vec![],
             texture_ids: vec![],
         };
         let mut lo = Vec3::splat(f32::INFINITY);
@@ -1032,6 +1035,7 @@ impl View {
                 hi = hi.max(vertex.position);
             }
             v.colors.push(b.color);
+            v.alpha_sources.push([b.color[3], 0., 0.]);
             v.texture_ids.push(texture);
         }
         v.info = ModelInfo {
@@ -1327,6 +1331,11 @@ pub unsafe extern "C" fn ssbm_view_update(v: *mut View, h: *const Handle, dt: f3
             } else {
                 v.actor.color(i)
             };
+            v.alpha_sources[i] = if flash {
+                [1., 0., 0.]
+            } else {
+                v.actor.alpha_source(i)
+            };
         }
         1
     })) {
@@ -1401,6 +1410,7 @@ macro_rules! pointer_export {
 pointer_export!(ssbm_view_positions, positions, V3);
 pointer_export!(ssbm_view_normals, normals, V3);
 pointer_export!(ssbm_view_colors, colors, [f32; 4]);
+pointer_export!(ssbm_view_alpha_sources, alpha_sources, [f32; 3]);
 pointer_export!(ssbm_view_texture_ids, texture_ids, i32);
 /// # Safety
 /// Live view; texture id is batch index. Null pixels queries dimensions.
