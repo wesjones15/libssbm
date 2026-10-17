@@ -40,6 +40,12 @@ callback and a stationary drawn origin. Portraits use a separate silent idle
 source (`intro:false`) so icon rendering does not play the intro. This preview is
 a host UI policy, not a claim that Melee's original menu uses up-special.
 
+Portrait icons now use the original CSS photo. The character profile defines its
+menu archive, material joint and ICONHUD frame; `portrait::load` samples TIMG and
+TCLT at ICONHUD+costume*30 and decodes the selected image/palette. MnSlChr.usd is a
+required extraction dependency, so older caches migrate. Common Portrait's texture
+queue installs the decoded artwork without rendering the preview model.
+
 Next, split `Params` into common fighter attributes and Samus special attributes,
 then move Samus's action selection/transitions behind a fighter behavior module.
 Normal attack clips and script-driven hit windows can share the executor; each

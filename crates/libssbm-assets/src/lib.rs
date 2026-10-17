@@ -10,13 +10,14 @@ pub mod effects;
 pub mod fighter;
 pub mod model;
 pub mod params;
+pub mod portrait;
 pub mod presentation;
 pub mod texture;
 
 pub type Result<T> = std::result::Result<T, Box<dyn std::error::Error + Send + Sync>>;
 
 pub use fighter::COSTUMES;
-pub const REQUIRED: [&str; 13] = [
+pub const REQUIRED: [&str; 14] = [
     "PlSs.dat",
     "PlCo.dat",
     "PlSsAJ.dat",
@@ -27,6 +28,7 @@ pub const REQUIRED: [&str; 13] = [
     "PlSsLa.dat",
     "EfSsData.dat",
     "EfCoData.dat",
+    "MnSlChr.usd",
     "audio/us/samus.ssm",
     "audio/us/main.ssm",
     "audio/us/smash2.sem",

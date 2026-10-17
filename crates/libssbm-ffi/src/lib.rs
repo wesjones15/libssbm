@@ -233,6 +233,58 @@ unsafe fn copy<T: Copy>(data: &[T], out: *mut T, max: u32) -> u32 {
 pub extern "C" fn ssbm_abi_version() -> u32 {
     SSBM_ABI_VERSION
 }
+/// Decode the player's original character-select photo, rows top first.
+/// # Safety
+/// Valid cache path, writable info, and `len` writable output bytes (or null).
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn ssbm_portrait(
+    dir: *const c_char,
+    costume: u32,
+    info: *mut TextureInfo,
+    rgba: *mut u8,
+    len: u32,
+) -> u32 {
+    if info.is_null() {
+        return 0;
+    }
+    guarded(0, || {
+        let result = (|| -> libssbm_assets::Result<_> {
+            libssbm_assets::portrait::load(
+                unsafe { path(dir) }?,
+                &libssbm_assets::fighter::SAMUS,
+                costume as usize,
+            )
+        })();
+        match result {
+            Ok(photo) => {
+                unsafe {
+                    *info = TextureInfo {
+                        width: photo.width as u32,
+                        height: photo.height as u32,
+                        wrap_s: 1,
+                        wrap_t: 1,
+                        pad0: 0,
+                        pad1: 0,
+                    };
+                }
+                if !rgba.is_null() {
+                    if (len as usize) < photo.rgba.len() {
+                        error("portrait output buffer too small");
+                        return 0;
+                    }
+                    unsafe {
+                        std::ptr::copy_nonoverlapping(photo.rgba.as_ptr(), rgba, photo.rgba.len());
+                    }
+                }
+                1
+            }
+            Err(e) => {
+                error(e);
+                0
+            }
+        }
+    })
+}
 #[unsafe(no_mangle)]
 pub extern "C" fn ssbm_last_error() -> *const c_char {
     ERROR.with(|e| e.borrow().as_ptr())
@@ -843,6 +895,36 @@ pub unsafe extern "C" fn ssbm_object_update(v: *mut View, frame: f32) -> u32 {
             0
         }
     }
+}
+/// # Safety
+/// Pose a named fighter clip without running gameplay physics or landing state.
+/// Used by silent menu portraits; no sound or hit events are executed.
+/// # Safety
+/// Unique live view, NUL-terminated UTF-8 clip name, finite nonnegative frame.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn ssbm_view_pose(v: *mut View, clip: *const c_char, frame: f32) -> u32 {
+    if v.is_null() || clip.is_null() || !frame.is_finite() || frame < 0. {
+        return 0;
+    }
+    let v = unsafe { &mut *v };
+    if v.poisoned {
+        return 0;
+    }
+    guarded(0, || {
+        let Ok(clip) = unsafe { CStr::from_ptr(clip) }.to_str() else {
+            return 0;
+        };
+        if !v.actor.animations.clips.contains_key(clip) {
+            error("unknown portrait clip");
+            return 0;
+        }
+        v.actor.clip = clip.into();
+        v.actor.frame = frame;
+        v.actor.ball = false;
+        v.actor.world = v.actor.animations.pose(&v.actor.model, clip, frame, false);
+        v.refresh();
+        1
+    })
 }
 /// # Safety
 /// Unique live view or null; consume exactly once.

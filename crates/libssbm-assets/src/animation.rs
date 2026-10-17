@@ -75,7 +75,7 @@ impl Reader<'_> {
         })
     }
 }
-fn keys(bytes: &[u8], value: u8, slope: u8, start: f32) -> Result<Vec<Key>> {
+pub(crate) fn keys(bytes: &[u8], value: u8, slope: u8, start: f32) -> Result<Vec<Key>> {
     let mut r = Reader { data: bytes, at: 0 };
     let mut keys: Vec<Key> = Vec::new();
     let mut time = -start;

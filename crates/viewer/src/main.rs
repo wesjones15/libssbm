@@ -113,7 +113,13 @@ async fn run() -> libssbm_assets::Result<()> {
     sim.action.definitions =
         libssbm_assets::action::load(std::path::Path::new(&path), &fighter_animations)?;
     let mut shots = Vec::<Shot>::new();
-    let mut camera_yaw = 0.7f32;
+    let mut camera_yaw = args
+        .iter()
+        .position(|s| s == "--camera-yaw")
+        .and_then(|i| args.get(i + 1))
+        .map(|s| s.parse::<f32>())
+        .transpose()?
+        .unwrap_or(0.7);
     let mut costume = 0;
     let mut rendered = 0;
     let mut meshes = make_meshes(&actor);
@@ -240,7 +246,14 @@ async fn run() -> libssbm_assets::Result<()> {
         );
         let yaw = sim.facing.z.atan2(sim.facing.x);
         // Samus's authored locomotion faces +Z; Melee supplies fighter heading.
-        let rotation = ::glam::Mat4::from_rotation_y(std::f32::consts::FRAC_PI_2 - yaw);
+        let model_yaw = args
+            .iter()
+            .position(|s| s == "--model-yaw")
+            .and_then(|i| args.get(i + 1))
+            .map(|s| s.parse::<f32>())
+            .transpose()?;
+        let rotation =
+            ::glam::Mat4::from_rotation_y(model_yaw.unwrap_or(std::f32::consts::FRAC_PI_2 - yaw));
         // The common RoR2 selection policy anchors the body while up-special
         // plays. Match that policy here so jump poses stay in the preview camera.
         let preview_offset = if selection {

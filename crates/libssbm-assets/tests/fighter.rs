@@ -65,6 +65,7 @@ fn renamed_profile_loads_without_any_canonical_samus_asset_names() -> Result<()>
         (SAMUS.samples[1], fighter.samples[1]),
         (SAMUS.sequences, fighter.sequences),
         ("PlCo.dat", "PlCo.dat"),
+        ("MnSlChr.usd", "MnSlChr.usd"),
         ("EfCoData.dat", "EfCoData.dat"),
     ] {
         let target = dir.join(to);

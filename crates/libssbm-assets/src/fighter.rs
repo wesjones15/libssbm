@@ -27,6 +27,7 @@ pub struct FighterAssets<'a> {
     pub common_index: usize,
     /// Optional alternate DObj choice; Samus uses choice 1 for the morph ball.
     pub morph_visibility: Option<usize>,
+    pub portrait: crate::portrait::Portrait<'a>,
 }
 pub const COMMON_DATA: Archive<'static> = Archive {
     file: "PlCo.dat",
@@ -76,6 +77,14 @@ pub const SAMUS: FighterAssets<'static> = FighterAssets {
     ],
     common_index: 13,
     morph_visibility: Some(1),
+    portrait: crate::portrait::Portrait {
+        archive: Archive {
+            file: "MnSlChr.usd",
+            root: "MnSelectChrDataTable",
+        },
+        joint: 51,
+        frame: 16,
+    },
 };
 impl<'a> FighterAssets<'a> {
     /// Exact dependencies for first-run extraction and old-cache migration.
@@ -84,6 +93,7 @@ impl<'a> FighterAssets<'a> {
         let mut paths = vec![self.data.file, COMMON_DATA.file, self.animations];
         paths.extend_from_slice(self.costumes);
         paths.extend([self.effects.file, COMMON_EFFECTS.file]);
+        paths.push(self.portrait.archive.file);
         paths.extend_from_slice(self.samples);
         paths.push(self.sequences);
         if self.costumes.is_empty()
@@ -93,6 +103,9 @@ impl<'a> FighterAssets<'a> {
             || self.common_index >= 33
             || self.data.root.is_empty()
             || self.effects.root.is_empty()
+            || self.portrait.archive.root.is_empty()
+            || self.portrait.frame >= 30
+            || self.portrait.joint >= 2048
             || self
                 .articles
                 .iter()
