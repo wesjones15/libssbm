@@ -1,6 +1,19 @@
 # Samus / Melee behavior specification
 
-## Current checkpoint: 0.2.9, 2026-10-17
+## Current checkpoint: 0.2.10, 2026-10-17
+
+Initial spawn now enters `begin_arrival`, the same Figurine phase used after the
+falloff KO, without playing that KO. Both use identical source Entry parameters,
+movement/timeout release, transformation/sound and flashing protection. No initial
+Interact prompt is involved. The additive `ssbm_sim_begin_arrival` export retains
+ABI-4 layouts. Core and native tests cover initial/falloff return at 30/60/144 Hz.
+Common `Unstuck.FellEarly` starts falloff at Mario's TOO BAD onset: more than 20m
+below remembered safe ground with no floor within 2000m, or a valid stage return
+zone. Long drops onto lower terrain do not fire the distance fallback. Native KO
+and return animation timings remain source driven. This supersedes earlier notes
+describing an initial Start prompt and the old 150m Melee falloff fallback.
+
+## Earlier checkpoint: 0.2.9
 
 The RoR2 camera/facing adaptation now delegates ordinary yaw to the installed
 game's CharacterDirection and CharacterBody.shouldAim, rather than forcing camera

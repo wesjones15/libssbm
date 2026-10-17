@@ -74,6 +74,28 @@ impl Sim {
         });
         true
     }
+    /// Initial spawn enters the same figurine return as a fall, without a KO.
+    pub fn begin_arrival(&mut self, params: Params, entry: crate::entry::Params) -> bool {
+        if !self.begin_rebirth(params, entry, self.position) {
+            return false;
+        }
+        let mut state = self.rebirth.take().unwrap();
+        self.return_as_figurine(&mut state);
+        self.rebirth = Some(state);
+        true
+    }
+    fn return_as_figurine(&mut self, state: &mut State) {
+        self.position = state.destination;
+        self.grounded = true;
+        self.jumps_used = 0;
+        let mut entry = crate::entry::State::new(state.entry);
+        entry.waiting = true;
+        self.entry = Some(entry);
+        self.motion.select("Entry", 0.);
+        self.motion.frame = 0.;
+        state.phase = Phase::Figurine;
+        state.frame = 0;
+    }
     /// True while the KO phase owns the tick; entry owns figurine/transform.
     pub(crate) fn tick_rebirth(&mut self, input: Input) -> bool {
         let Some(mut state) = self.rebirth.take() else {
@@ -108,16 +130,7 @@ impl Sim {
                 }
                 state.frame += 1;
                 if state.frame >= state.params.ko_frames {
-                    self.position = state.destination;
-                    self.grounded = true;
-                    self.jumps_used = 0;
-                    let mut entry = crate::entry::State::new(state.entry);
-                    entry.waiting = true;
-                    self.entry = Some(entry);
-                    self.motion.select("Entry", 0.);
-                    self.motion.frame = 0.;
-                    state.phase = Phase::Figurine;
-                    state.frame = 0;
+                    self.return_as_figurine(&mut state);
                 }
                 self.rebirth = Some(state);
                 return true;

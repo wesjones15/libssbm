@@ -111,3 +111,46 @@ fn another_fall_during_invulnerability_can_recover_and_external_teleport_cleans_
     sim.teleport(Vec3::X);
     assert!(sim.rebirth.is_none() && sim.entry.is_none());
 }
+
+#[test]
+fn initial_arrival_reuses_return_without_ko_or_interaction_at_all_rates() {
+    for fps in [30, 60, 144] {
+        for moving in [false, true] {
+            let (mut sim, p, e) = setup();
+            let mut host = FlatHost::default();
+            sim.teleport(Vec3::ZERO);
+            assert!(sim.begin_arrival(p, e));
+            assert_eq!(sim.rebirth.as_ref().unwrap().phase, Phase::Figurine);
+            let mut ko = 0;
+            let mut transform = 0;
+            let mut protected = false;
+            for _ in 0..fps * 2 {
+                let input = Input {
+                    movement: if moving { Vec3::X } else { Vec3::ZERO },
+                    ..Input::idle()
+                };
+                sim.advance(&mut host, input, 1. / fps as f64);
+                ko += sim
+                    .action
+                    .effects
+                    .iter()
+                    .filter(|cue| cue.id == 0x42b)
+                    .count();
+                transform += sim
+                    .action
+                    .effects
+                    .iter()
+                    .filter(|cue| cue.id == 0x43e)
+                    .count();
+                assert!(!sim.action.sounds.iter().any(|cue| cue.sound == 0x61));
+                protected |= sim
+                    .rebirth
+                    .as_ref()
+                    .is_some_and(|state| state.phase == Phase::Protected);
+            }
+            assert_eq!((ko, transform), (0, 1));
+            assert!(protected);
+            assert!(sim.entry.is_none() && sim.rebirth.is_none());
+        }
+    }
+}

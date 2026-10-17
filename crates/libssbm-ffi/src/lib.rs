@@ -1159,7 +1159,7 @@ pub unsafe extern "C" fn ssbm_sim_begin_entry(h: *mut Handle, dir: *const c_char
         }
     })
 }
-/// Shared Melee falloff: caller supplies a destination from common Unstuck.Fell.
+/// Shared Melee falloff: caller supplies a destination from common Unstuck.FellEarly.
 /// # Safety
 /// Unique live fighter, valid UTF-8 cache path and finite destination.
 #[unsafe(no_mangle)]
@@ -1168,6 +1168,16 @@ pub unsafe extern "C" fn ssbm_sim_begin_rebirth(
     dir: *const c_char,
     destination: V3,
 ) -> u32 {
+    unsafe { begin_return(h, dir, destination, false) }
+}
+/// Initial spawn uses the same automatic figurine return, without the fall KO.
+/// # Safety
+/// Unique live fighter, valid UTF-8 cache path. Host has placed it on safe ground.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn ssbm_sim_begin_arrival(h: *mut Handle, dir: *const c_char) -> u32 {
+    unsafe { begin_return(h, dir, V3::default(), true) }
+}
+unsafe fn begin_return(h: *mut Handle, dir: *const c_char, destination: V3, initial: bool) -> u32 {
     if h.is_null() {
         return 0;
     }
@@ -1182,7 +1192,12 @@ pub unsafe extern "C" fn ssbm_sim_begin_rebirth(
         match result {
             Ok((params, entry)) => {
                 let h = unsafe { &mut *h };
-                if h.sim.begin_rebirth(params, entry, destination.into()) {
+                let started = if initial {
+                    h.sim.begin_arrival(params, entry)
+                } else {
+                    h.sim.begin_rebirth(params, entry, destination.into())
+                };
+                if started {
                     h.audio.clear();
                     1
                 } else {
