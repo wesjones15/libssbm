@@ -26,18 +26,38 @@ fn synthetic_disc() -> Vec<u8> {
     b[7] = 2;
     word(&mut b, 0x1c, 0xc2339f3d);
     word(&mut b, 0x424, 0x1000);
-    let mut fst = vec![0; 12 * (REQUIRED.len() + 1)];
+    // Real FSTs use directory entries, rather than slash-containing names.
+    let count = REQUIRED.len() + 3;
+    let mut fst = vec![0; 12 * count];
     fst[0] = 1;
-    word(&mut fst, 8, REQUIRED.len() + 1);
+    word(&mut fst, 8, count);
     let mut names = Vec::new();
-    let payload = synthetic_dat();
+    let mut entry = 1;
     for (i, name) in REQUIRED.iter().enumerate() {
-        word(&mut fst, (i + 1) * 12, names.len());
-        word(&mut fst, (i + 1) * 12 + 4, 0x2000 + i * 64);
-        word(&mut fst, (i + 1) * 12 + 8, payload.len());
-        names.extend(name.as_bytes());
+        if *name == "audio/us/samus.ssm" {
+            for (dir, parent) in [("audio", 0), ("us", entry)] {
+                word(&mut fst, entry * 12, (1 << 24) | names.len());
+                word(&mut fst, entry * 12 + 4, parent);
+                word(&mut fst, entry * 12 + 8, count);
+                names.extend(dir.as_bytes());
+                names.push(0);
+                entry += 1;
+            }
+        }
+        let payload = if name.ends_with(".ssm") {
+            vec![0; 32]
+        } else if name.ends_with(".sem") {
+            vec![0; 20]
+        } else {
+            synthetic_dat()
+        };
+        word(&mut fst, entry * 12, names.len());
+        word(&mut fst, entry * 12 + 4, 0x2000 + i * 128);
+        word(&mut fst, entry * 12 + 8, payload.len());
+        names.extend(name.rsplit('/').next().unwrap().as_bytes());
         names.push(0);
-        b[0x2000 + i * 64..0x2000 + i * 64 + payload.len()].copy_from_slice(&payload);
+        b[0x2000 + i * 128..0x2000 + i * 128 + payload.len()].copy_from_slice(&payload);
+        entry += 1;
     }
     fst.extend(names);
     word(&mut b, 0x428, fst.len());
@@ -60,6 +80,12 @@ fn iso_ciso_roundtrip_and_invalid_images() -> Result<()> {
         let mut disc = Disc::open(&path.join(name))?;
         assert_eq!(disc.file("PlSs.dat")?, synthetic_dat());
         extract(&path.join(name), &path.join("out"))?;
+        assert!(libssbm_assets::complete(&path.join("out")));
+        // Version-1 caches must trigger DLL extraction of new dependencies.
+        std::fs::remove_file(path.join("out/audio/us/samus.ssm"))?;
+        assert!(!libssbm_assets::complete(&path.join("out")));
+        extract(&path.join(name), &path.join("out"))?;
+        assert!(libssbm_assets::complete(&path.join("out")));
     }
     let mut wrong = iso.clone();
     wrong[..6].copy_from_slice(b"GMSE01");

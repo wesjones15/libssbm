@@ -201,6 +201,7 @@ impl Sim {
     }
     pub fn advance(&mut self, host: &mut impl Host, input: Input, dt: f64) -> u32 {
         self.action.samples.clear();
+        self.action.sounds.clear();
         if !dt.is_finite() || dt < 0. || !input.movement.is_finite() || !input.aim.is_finite() {
             return 0;
         }

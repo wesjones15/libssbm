@@ -149,17 +149,14 @@ pub fn extract(disc_path: &Path, out: &Path) -> Result<()> {
     let mut blobs = Vec::new();
     for name in REQUIRED {
         let bytes = disc.file(name)?;
-        if name != "PlSsAJ.dat" {
-            crate::dat::Dat::parse(&bytes)?;
-        }
+        crate::validate_asset(name, &bytes)?;
         blobs.push((name, bytes));
     }
     fs::create_dir_all(out)?;
     for (name, bytes) in blobs {
         let target = out.join(name);
-        if target.is_symlink() {
-            return Err("asset output is a symlink".into());
-        }
+        guard_output(&target)?;
+        fs::create_dir_all(target.parent().ok_or("asset path has no parent")?)?;
         fs::write(target, bytes)?;
     }
     fs::write(

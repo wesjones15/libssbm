@@ -1,7 +1,7 @@
 //! Runtime command execution. ftAction_80073240, ftCo_Attack1/AttackAir and
 //! ftSamus's SpecialN/S/Hi/Lw animation callbacks are the behavioral spec.
 use super::*;
-use crate::action::{ActiveHitbox, Command, HitSample};
+use crate::action::{ActiveHitbox, Command, HitSample, SoundCue};
 
 impl Sim {
     fn finish_disc_action(&mut self) {
@@ -153,7 +153,31 @@ impl Sim {
                 Command::Visibility { group, choice } => {
                     self.action.visibility.insert(group, choice);
                 }
-                Command::Raw { .. } => (),
+                Command::Raw { opcode, words } => {
+                    // ftAction_80071B50: play/replace/stop a fighter sound slot.
+                    // 54/55 supply the stored footstep/landing cue; world-surface
+                    // substitution remains a host adaptation, using the disc cue.
+                    if matches!(opcode, 17 | 54 | 55) {
+                        let behavior = if opcode == 17 {
+                            words[0] >> 18 & 255
+                        } else {
+                            0
+                        };
+                        if behavior <= 6 || (10..=15).contains(&behavior) {
+                            self.action.sounds.push(SoundCue {
+                                sound: words[1],
+                                volume: (words[2] >> 8) as u8,
+                                pan: words[2] as u8,
+                                channel: if behavior >= 10 {
+                                    behavior - 9
+                                } else {
+                                    behavior
+                                },
+                                stop: behavior >= 10,
+                            });
+                        }
+                    }
+                }
             }
         }
         if self.current_move.is_some() {

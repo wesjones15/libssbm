@@ -141,6 +141,7 @@ pub struct Draw {
 pub struct Handle {
     sim: Sim,
     rig: Rig,
+    audio: libssbm_assets::audio::Mixer,
     poisoned: bool,
 }
 struct Rig {
@@ -284,7 +285,7 @@ pub unsafe extern "C" fn ssbm_extract(disc: *const c_char, dir: *const c_char) -
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn ssbm_sim_new(dir: *const c_char, pos: V3) -> *mut Handle {
     guarded(std::ptr::null_mut(), || {
-        let result = (|| -> libssbm_assets::Result<(Sim, Rig)> {
+        let result = (|| -> libssbm_assets::Result<(Sim, Rig, libssbm_assets::audio::Mixer)> {
             let dir = unsafe { path(dir) }?;
             let mut sim = Sim::new(libssbm_assets::params::load(dir)?, pos.into());
             let rig = Rig::load(dir)?;
@@ -295,14 +296,18 @@ pub unsafe extern "C" fn ssbm_sim_new(dir: *const c_char, pos: V3) -> *mut Handl
                     motion.looping |= action.looping;
                 }
             }
-            Ok((sim, rig))
+            let audio = libssbm_assets::audio::Mixer::new(libssbm_assets::audio::Bank::load(dir)?);
+            Ok((sim, rig, audio))
         })();
         match result {
-            Ok((sim, rig)) if Vec3::from(pos).is_finite() => Box::into_raw(Box::new(Handle {
-                sim,
-                rig,
-                poisoned: false,
-            })),
+            Ok((sim, rig, audio)) if Vec3::from(pos).is_finite() => {
+                Box::into_raw(Box::new(Handle {
+                    sim,
+                    rig,
+                    audio,
+                    poisoned: false,
+                }))
+            }
             Ok(_) => {
                 error("invalid position");
                 std::ptr::null_mut()
@@ -436,7 +441,7 @@ pub unsafe extern "C" fn ssbm_sim_step(
     }
     match catch_unwind(AssertUnwindSafe(|| {
         let p = unsafe { *pad };
-        h.sim.advance(
+        let ticks = h.sim.advance(
             &mut Adapter(unsafe { &*host }),
             Input {
                 movement: p.movement.into(),
@@ -445,7 +450,15 @@ pub unsafe extern "C" fn ssbm_sim_step(
                 allowed: p.allowed,
             },
             dt,
-        )
+        );
+        for cue in &h.sim.action.sounds {
+            if cue.stop {
+                h.audio.stop(cue.channel);
+            } else if let Err(e) = h.audio.play(cue.sound, cue.volume, cue.pan, cue.channel) {
+                error(e);
+            }
+        }
+        ticks
     })) {
         Ok(n) => n,
         Err(_) => {
@@ -454,6 +467,28 @@ pub unsafe extern "C" fn ssbm_sim_step(
             0
         }
     }
+}
+/// Render stereo float PCM at 32 kHz. Call after stepping, outside host callbacks.
+/// # Safety
+/// Unique live handle and `frames * 2` writable f32 slots. No concurrent calls.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn ssbm_sim_audio(handle: *mut Handle, out: *mut f32, frames: u32) -> u32 {
+    if handle.is_null() || out.is_null() || frames > 32000 {
+        return 0;
+    }
+    let h = unsafe { &mut *handle };
+    if h.poisoned {
+        return 0;
+    }
+    guarded(0, || {
+        h.audio
+            .render(unsafe { std::slice::from_raw_parts_mut(out, frames as usize * 2) });
+        if let Some(e) = h.audio.errors.pop() {
+            error(e);
+            return 0;
+        }
+        frames
+    })
 }
 /// # Safety
 /// Live handle and writable State pointer. Returns 0 for poisoned handles.

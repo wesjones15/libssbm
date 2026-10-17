@@ -72,11 +72,21 @@ pub struct HitSample {
     pub facing: Vec3,
     pub strength: f32,
 }
+#[derive(Clone, Copy, Debug)]
+pub struct SoundCue {
+    pub sound: u32,
+    pub volume: u8,
+    pub pan: u8,
+    /// 0 = untracked one-shot, 1..6 = fighter replaceable SFX slots.
+    pub channel: u32,
+    pub stop: bool,
+}
 #[derive(Clone, Debug, Default)]
 pub struct ActionState {
     pub definitions: BTreeMap<String, ActionDef>,
     pub active: BTreeMap<u32, ActiveHitbox>,
     pub samples: Vec<HitSample>,
+    pub sounds: Vec<SoundCue>,
     pub variables: [u32; 4],
     pub serial: u64,
     pub interrupt: bool,

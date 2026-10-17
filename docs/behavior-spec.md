@@ -59,7 +59,7 @@ asset discovery also runs on the RoR2 plugin's first-launch worker.
 
 ## Native and RoR2 adapter status
 
-libssbm-ffi exports ABI 1 with eleven pinned layouts. The real DLL was exercised
+libssbm-ffi exports ABI 2 with twelve pinned layouts. The real DLL was exercised
 from ror2-samus/NativeCheck through the plugin's exact Native.cs: callbacks,
 jumps/landing/attack, five costumes, mesh indices and texture copies pass.
 The adapter compiles against the installed RoR2 DLC4 assemblies. The survivor,
@@ -114,3 +114,16 @@ ABI 2 adds the 88-byte HitboxSample as the twelfth pinned layout; the C# harness
 validates real posed hitbox transfer and rejects the old placeholder hit event.
 HP/proc/force conversion remains a RoR2 adapter policy. Projectile art/behavior,
 all movement transitions and complete attack regression coverage remain underway.
+
+Audio: native extraction now requires thirteen files, including EfSsData/EfCoData,
+Samus/main SSM and smash2 SEM. Old eight-file caches fail the completeness check
+and are migrated by the same C# worker -> DLL extraction route. The bounded SSM
+reader decodes mono/stereo DSP ADPCM with per-sample rate, histories and loop data;
+SEM bank/sequence commands select samples and drive waits, loops, gain, pan,
+pitch and key-off at AX's 160-sample/32-kHz clock (Dolphin AXOut.c). Fighter sound
+commands and footstep/landing cues route into the mixer after simulation stepping;
+the host reads stereo PCM without callback reentry. Shared PcmStream owns WinMM
+buffers, and the adapter applies GameSettings gain, pause and run cleanup. Source
+surround/aux bus routing is approximated to stereo. Synthetic decoding/interpreter
+checks and 271 real samples/checked sound sequences pass; device playback and
+movement/attack sound synchronization still need listening verification.
