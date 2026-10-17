@@ -7,6 +7,7 @@ pub mod params;
 pub mod particle;
 pub mod projectile;
 pub mod reaction;
+pub mod rebirth;
 pub use params::Params;
 pub mod sim;
 pub use sim::*;

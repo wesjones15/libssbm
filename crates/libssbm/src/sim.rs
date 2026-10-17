@@ -153,6 +153,7 @@ pub struct Sim {
     pub grabbed: bool,
     pub reaction: Option<crate::reaction::Stage>,
     pub entry: Option<crate::entry::State>,
+    pub rebirth: Option<crate::rebirth::State>,
     pub action: crate::action::ActionState,
     pub motion: crate::motion::MotionState,
     pub move_started_grounded: bool,
@@ -190,6 +191,7 @@ impl Sim {
             grabbed: false,
             reaction: None,
             entry: None,
+            rebirth: None,
             action: crate::action::ActionState::default(),
             motion: crate::motion::MotionState::default(),
             move_started_grounded: false,
@@ -252,6 +254,7 @@ impl Sim {
         self.motion.frame = 0.;
         self.reaction = None;
         self.entry = None;
+        self.rebirth = None;
         self.pad_gravity = None;
         self.position = position;
         self.velocity = Vec3::ZERO;
@@ -282,7 +285,7 @@ impl Sim {
     }
     /// Host damage notification, deliberately independent of engine health types.
     pub fn hurt(&mut self) {
-        if self.entry.is_some() {
+        if self.entry.is_some() || self.rebirth.is_some() {
             return;
         }
         self.interrupt();
@@ -534,6 +537,10 @@ impl Sim {
     }
     fn tick(&mut self, host: &mut impl Host, input: Input, pressed: u32) {
         self.frame += 1;
+        if self.tick_rebirth(input) {
+            self.previous = input;
+            return;
+        }
         if let Some(mut entry) = self.entry {
             if entry.waiting {
                 self.current_move = None;

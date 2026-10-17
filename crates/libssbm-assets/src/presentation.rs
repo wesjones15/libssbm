@@ -9,6 +9,7 @@ pub struct Presentation {
     pub frame: f32,
     pub world: Vec<Mat4>,
     pub ball: bool,
+    pub hidden: bool,
     pub material_tracks: Vec<crate::animation::Track>,
     pub duration: f32,
     pub commands: Vec<libssbm::action::TimedCommand>,
@@ -32,6 +33,7 @@ impl Presentation {
             clip: "Object".into(),
             frame: 0.,
             ball: false,
+            hidden: false,
             material_tracks: Vec::new(),
             duration: 0.,
             commands: Vec::new(),
@@ -44,7 +46,11 @@ impl Presentation {
         } else {
             crate::fighter::COMMON_EFFECTS
         };
-        Self::effect_from(dir, archive, if id >= 2000 { id - 2000 } else { id })
+        let mut effect = Self::effect_from(dir, archive, if id >= 2000 { id - 2000 } else { id })?;
+        if id == 25 {
+            crate::effects::ko_palette(dir, &mut effect.model, 0)?;
+        }
+        Ok(effect)
     }
     /// A bank-local model index, independent of the fighter's source effect IDs.
     pub fn effect_from(
@@ -66,6 +72,7 @@ impl Presentation {
             frame: 0.,
             world,
             ball: false,
+            hidden: false,
             material_tracks: model.material_tracks,
             duration: model.lifetime,
             commands: Vec::new(),
@@ -101,6 +108,7 @@ impl Presentation {
             frame: 0.,
             world,
             ball: false,
+            hidden: false,
             material_tracks: a.material_tracks,
             duration,
             commands: a.commands,
@@ -137,6 +145,7 @@ impl Presentation {
             frame: 0.,
             world,
             ball: false,
+            hidden: false,
             material_tracks: Vec::new(),
             duration: 0.,
             commands: Vec::new(),
@@ -148,6 +157,10 @@ impl Presentation {
         self.clip = clip.into();
         self.frame = sim.motion.render_frame(sim.alpha());
         self.ball = sim.current_move == Some(Move::Bomb);
+        self.hidden = sim
+            .rebirth
+            .as_ref()
+            .is_some_and(|s| s.phase == libssbm::rebirth::Phase::Ko);
         self.world = self
             .animations
             .pose(&self.model, clip, self.frame, sim.motion.looping());
@@ -169,6 +182,9 @@ impl Presentation {
         }
     }
     pub fn visible(&self, batch: usize) -> bool {
+        if self.hidden {
+            return false;
+        }
         let b = &self.model.batches[batch];
         if self.ball {
             self.model.ball_visible[b.dobj]

@@ -1136,6 +1136,53 @@ pub unsafe extern "C" fn ssbm_sim_begin_entry(h: *mut Handle, dir: *const c_char
         }
     })
 }
+/// Shared Melee falloff: caller supplies a destination from common Unstuck.Fell.
+/// # Safety
+/// Unique live fighter, valid UTF-8 cache path and finite destination.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn ssbm_sim_begin_rebirth(
+    h: *mut Handle,
+    dir: *const c_char,
+    destination: V3,
+) -> u32 {
+    if h.is_null() {
+        return 0;
+    }
+    guarded(0, || {
+        let result = (|| -> libssbm_assets::Result<_> {
+            let dir = unsafe { path(dir) }?;
+            Ok((
+                libssbm_assets::params::rebirth(dir)?,
+                libssbm_assets::params::entry(dir, &libssbm_assets::fighter::SAMUS)?,
+            ))
+        })();
+        match result {
+            Ok((params, entry)) => {
+                let h = unsafe { &mut *h };
+                if h.sim.begin_rebirth(params, entry, destination.into()) {
+                    h.audio.clear();
+                    1
+                } else {
+                    0
+                }
+            }
+            Err(e) => {
+                error(e);
+                0
+            }
+        }
+    })
+}
+/// # Safety
+/// Live fighter or null. Bits: 1 recovering, 2 invulnerable, 4 hidden KO,
+/// 8 waiting figurine. Zero means normal play. Existing ABI layouts unchanged.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn ssbm_sim_rebirth_flags(h: *const Handle) -> u32 {
+    if h.is_null() {
+        return 0;
+    }
+    unsafe { (&*h).sim.rebirth.as_ref().map_or(0, |s| s.flags()) }
+}
 /// # Safety
 /// Unique live fighter. kind=0 waits as a figurine; kind=1 starts its original
 /// entry transform. Returns 1 while entry exists, zero once complete.
@@ -1199,6 +1246,10 @@ pub unsafe extern "C" fn ssbm_sim_overlay(h: *const Handle, rgba: *mut f32) -> u
     }
     guarded(0, || unsafe {
         let h = &*h;
+        if let Some(color) = h.sim.rebirth.as_ref().and_then(|s| s.overlay()) {
+            std::ptr::copy_nonoverlapping(color.as_ptr(), rgba, 4);
+            return (color[3] > 0.) as u32;
+        }
         let Some(entry) = h.sim.entry else {
             if h.sim.shot_charge >= h.sim.params.charge_steps {
                 let color = h.rig.charge_flash[h.sim.frame as usize % h.rig.charge_flash.len()];
@@ -1289,6 +1340,7 @@ pub unsafe extern "C" fn ssbm_view_pose(v: *mut View, clip: *const c_char, frame
         v.actor.clip = clip.into();
         v.actor.frame = frame;
         v.actor.ball = false;
+        v.actor.hidden = false;
         v.actor.world = v.actor.animations.pose(&v.actor.model, clip, frame, false);
         v.refresh();
         1

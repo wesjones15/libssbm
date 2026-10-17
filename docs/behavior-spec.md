@@ -310,3 +310,28 @@ MaterialAlphaBuffer, shared with future ports of other formats. The viewer and
 common output agree for Screw Attack's zero material alpha, visible middle and
 animated fade frames. This additive export preserves the existing ABI-4 layouts;
 older pre-resolved views can omit it. Full TEV compositing remains incomplete.
+
+Shared falloff recovery now replaces the plain rescue teleport for Melee hosts.
+Common Unstuck.Fell still chooses the trigger (map zones or AnyDrop) and verified
+safe point. The native rebirth module uses PlCo x500 KO delay (60 frames), x5D0
+minimum return (60), rebirth_wait (240), x5D8 post-release protection (120), and
+x4F4 KO scale. Source references: ft_0D31::spawnDeadEffect/DeadDown, ft_0D4D's
+Rebirth/RebirthWait callbacks, ftColl_8007B7A4. Downward effect 0x42B loads common
+model 25; sound 0x61 plays once. The source P1 konst/tev0 palette comes from PlCo
+x48/x4C; its colour interpolation is baked without changing texture alpha.
+The fighter is hidden during KO, then returns on its source trophy platform.
+After minimum arrival, movement releases the figurine early; otherwise the
+source wait expires. Entry transformation/effect/sound plays once and source
+colour program 9 flashes during the following two seconds of invulnerability.
+Common MeleeRecovery owns only its own HiddenInvincibility buff and removes it
+on expiry, death or cleanup. Captured enemies/old attached attack effects are
+released. Jump-pad/knockback movement is ignored during the locked return.
+
+The safe-ground figurine, rather than Melee's aerial revival platform, is the
+requested RoR2 adaptation; no stock/percent reset or HP penalty is introduced.
+Normal collision unsticking and wall correction do not count as a falloff. An
+initial game spawn still waits for the vanilla Start interaction. Native/core
+checks cover 30/60/144 Hz, visibility, sounds/cues, early/timeout release, flash,
+protection expiry, repeated falls and external placement cleanup. Common checks
+cover threshold ownership and buff balancing. Viewer captures show the source KO
+model, waiting figurine and released fighter; Unity playtest remains pending.

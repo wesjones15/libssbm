@@ -72,6 +72,7 @@ pub fn part(dir: &Path, part: u32) -> Result<Presentation> {
         frame: 0.,
         world,
         ball: false,
+        hidden: false,
         material_tracks,
         duration: 0.,
         commands: vec![],

@@ -26,6 +26,58 @@ pub struct Effects {
     pub emitters: BTreeMap<u32, Emitter>,
     pub textures: Vec<Option<TextureGroup>>,
 }
+/// efasync.c 0x42B and efLib_SetTevKonstColor: KO colour interpolation.
+/// Bake the source's (tev0*(1-texture)+konst*texture) stage into the texture;
+/// alpha and source animation remain separate. Offline local fighter uses P1.
+pub fn ko_palette(dir: &Path, model: &mut Model, player: usize) -> Result<()> {
+    if player >= 4 {
+        return Err("KO player palette outside common table".into());
+    }
+    let bytes = std::fs::read(dir.join(crate::fighter::COMMON_DATA.file))?;
+    let common = Dat::parse(&bytes)?;
+    let root = common.root(crate::fighter::COMMON_DATA.root)?;
+    let primary = common.bytes(common.required_ptr(root + 0x48)? + player * 4, 3)?;
+    let secondary = common.bytes(common.required_ptr(root + 0x4c)? + player * 4, 3)?;
+    let bytes = std::fs::read(dir.join(crate::fighter::COMMON_EFFECTS.file))?;
+    let d = Dat::parse(&bytes)?;
+    for batch in &mut model.batches {
+        let Some(dobj) = d.ptr(model.joints[batch.owner].address + 16)? else {
+            continue;
+        };
+        let m = d.required_ptr(dobj + 8)?;
+        let t = d.required_ptr(m + 8)?;
+        let Some(tev) = d.ptr(t + 0x58)? else {
+            continue;
+        };
+        if d.u32(tev + 28)? & (1 << 30) == 0 {
+            continue;
+        }
+        if d.bytes(tev, 1)?[0] != 0
+            || d.bytes(tev + 2, 1)?[0] != 0
+            || d.bytes(tev + 4, 1)?[0] != 0
+            || d.bytes(tev + 8, 4)? != [133, 128, 8, 15]
+        {
+            return Err("unsupported KO colour combiner".into());
+        }
+        let (konst, tev0) = if batch.owner == 1 {
+            (primary, secondary)
+        } else {
+            (d.bytes(tev + 16, 3)?, d.bytes(tev + 20, 3)?)
+        };
+        if let Some(texture) = batch.texture.as_mut() {
+            for pixel in texture.rgba.chunks_exact_mut(4) {
+                for channel in 0..3 {
+                    let amount = pixel[channel] as u32;
+                    pixel[channel] = ((tev0[channel] as u32 * (255 - amount)
+                        + konst[channel] as u32 * amount
+                        + 127)
+                        / 255) as u8;
+                }
+            }
+        }
+    }
+    Ok(())
+}
 impl Effects {
     pub fn shared(dir: &Path, samus: bool) -> Result<std::sync::Arc<Self>> {
         Self::shared_archive(

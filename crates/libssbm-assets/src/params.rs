@@ -112,6 +112,34 @@ pub fn entry(
     Ok(p)
 }
 
+pub fn rebirth(dir: &Path) -> Result<libssbm::rebirth::Params> {
+    let bytes = std::fs::read(dir.join(crate::fighter::COMMON_DATA.file))?;
+    let d = Dat::parse(&bytes)?;
+    let attrs = d.required_ptr(d.root(crate::fighter::COMMON_DATA.root)?)?;
+    let params = libssbm::rebirth::Params {
+        ko_frames: d.u32(attrs + 0x500)?,
+        arrival_frames: d.u32(attrs + 0x5d0)?,
+        wait_frames: d.u32(attrs + 0x5d4)?,
+        invulnerable_frames: d.u32(attrs + 0x5d8)?,
+        ko_scale: d.f32(attrs + 0x4f4)?,
+        flash: color_cycle(dir, 9)?,
+    };
+    if [
+        params.ko_frames,
+        params.arrival_frames,
+        params.wait_frames,
+        params.invulnerable_frames,
+    ]
+    .iter()
+    .any(|&n| n == 0 || n > 3600)
+        || !params.ko_scale.is_finite()
+        || params.ko_scale <= 0.
+    {
+        return Err("invalid common rebirth parameters".into());
+    }
+    Ok(params)
+}
+
 pub fn load(dir: &Path) -> Result<Params> {
     load_for(dir, &crate::fighter::SAMUS)
 }

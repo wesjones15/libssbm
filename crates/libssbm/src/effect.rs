@@ -31,6 +31,8 @@ pub fn resolve(id: u32) -> Target {
         1038 => Particle(67),
         1041 => Particle(75),
         1060 => Model(2),
+        1067 => Model(25), // efasync.c 0x42B: standard blast-zone KO
+        1068 => Model(26), // alternate KO presentation
         1086 => Model(36),
         1151 => Particle(2004),
         1152 => Particle(2002),

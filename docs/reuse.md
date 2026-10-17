@@ -65,3 +65,12 @@ Selection now plays up-B once and continues idle. Shared MeleeArrival handles
 the Interact-gated figurine arrival; EnemyCapture owns RoR2 enemy capture/AI
 restoration. Core grab/pummel/throw transitions execute source action commands,
 while the Samus adapter supplies its tether assets and physical button binding.
+
+Falloff recovery is shared in `libssbm::rebirth` and common `MeleeRecovery`.
+`Unstuck.Fell` retains ownership of the map-zone/AnyDrop threshold and safe
+destination. Implement `IMeleeRecovery` in the host driver; the native core owns
+the downward KO model/sound, hidden interval, figurine return, movement/timeout
+release and source colour-program-9 protection. The common component balances
+its own invulnerability buff. Initial Start-prompt arrival remains distinct;
+normal wall/unstuck correction remains immediate. Samus is the current adapter,
+not a separate implementation of those timers or effects.

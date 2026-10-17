@@ -47,6 +47,13 @@ async fn run() -> libssbm_assets::Result<()> {
         .cloned();
     let selection = args.iter().any(|s| s == "--selection");
     let dash_preview = args.iter().any(|s| s == "--dash-preview");
+    let rebirth_preview = args.iter().any(|s| s == "--rebirth-preview");
+    let move_after = args
+        .iter()
+        .position(|s| s == "--move-after")
+        .and_then(|i| args.get(i + 1))
+        .map(|s| s.parse::<usize>())
+        .transpose()?;
     let entry_mode = args.iter().any(|s| s == "--entry");
     let effect = args
         .iter()
@@ -136,7 +143,7 @@ async fn run() -> libssbm_assets::Result<()> {
     let mut meshes = make_meshes(&actor);
     let model_alpha = models::blended(false)?;
     let model_additive = models::blended(true)?;
-    let mut platform = if entry_mode {
+    let mut platform = if entry_mode || rebirth_preview {
         Some(Presentation::platform(std::path::Path::new(&path))?)
     } else {
         None
@@ -153,6 +160,25 @@ async fn run() -> libssbm_assets::Result<()> {
         println!(
             "Dash preview tick {}: {:?}, position {:?}",
             pose_frame, sim.motion.clip, sim.position
+        );
+    }
+    if rebirth_preview {
+        let dir = std::path::Path::new(&path);
+        sim.begin_rebirth(
+            libssbm_assets::params::rebirth(dir)?,
+            libssbm_assets::params::entry(dir, &libssbm_assets::fighter::SAMUS)?,
+            ::glam::Vec3::ZERO,
+        );
+        for tick in 0..pose_frame as usize {
+            let mut input = Input::idle();
+            if move_after.is_some_and(|frame| tick >= frame) {
+                input.movement = ::glam::Vec3::X;
+            }
+            sim.advance(&mut host, input, 1. / 60.);
+        }
+        println!(
+            "Rebirth preview tick {pose_frame}: {:?}",
+            sim.rebirth.as_ref().map(|s| (&s.phase, s.frame, s.flags()))
         );
     }
     loop {
@@ -214,10 +240,24 @@ async fn run() -> libssbm_assets::Result<()> {
             input.buttons |= SPECIAL;
         }
         read_pad(&mut input, forward, right);
-        if !dash_preview {
+        if !dash_preview && !rebirth_preview {
             sim.advance(&mut host, input, dt as f64);
         }
         actor.update(&sim, dt);
+        if rebirth_preview && let (Some(entry), Some(platform)) = (sim.entry, platform.as_mut()) {
+            let scale = entry.params.platform;
+            let transform = ::glam::Mat4::from_scale(::glam::Vec3::new(
+                scale,
+                (scale * entry.platform_y()).max(0.001),
+                scale,
+            ));
+            platform.world = platform
+                .model
+                .bind_world()
+                .into_iter()
+                .map(|m| transform * m)
+                .collect();
+        }
         if entry_mode {
             let params = libssbm_assets::params::entry(
                 std::path::Path::new(&path),
@@ -303,7 +343,7 @@ async fn run() -> libssbm_assets::Result<()> {
         } else {
             65.
         };
-        if article.is_some() {
+        if article.is_some() || effect == Some(25) {
             let points: Vec<_> = (0..actor.model.batches.len())
                 .flat_map(|i| {
                     actor
@@ -376,7 +416,13 @@ async fn run() -> libssbm_assets::Result<()> {
             }
             let skin = actor.model.skin(i, &actor.world);
             let batch = &actor.model.batches[i];
-            let color = actor.color(i);
+            let mut color = actor.color(i);
+            if rebirth_preview && let Some(overlay) = sim.rebirth.as_ref().and_then(|s| s.overlay())
+            {
+                for i in 0..3 {
+                    color[i] = color[i] * (1. - overlay[3]) + overlay[i] * overlay[3];
+                }
+            }
             for (v, ((p, n), original)) in mesh
                 .vertices
                 .iter_mut()
@@ -416,7 +462,9 @@ async fn run() -> libssbm_assets::Result<()> {
         for s in &shots {
             draw_sphere(s.at, s.radius, None, s.color);
         }
-        if let (Some(platform), Some(meshes)) = (&platform, &mut platform_meshes) {
+        if let (Some(platform), Some(meshes)) = (&platform, &mut platform_meshes)
+            && (!rebirth_preview || sim.entry.is_some())
+        {
             for (i, mesh) in meshes.iter_mut().enumerate() {
                 for (v, (p, n)) in mesh
                     .vertices
