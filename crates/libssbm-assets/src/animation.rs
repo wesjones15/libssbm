@@ -23,6 +23,7 @@ pub struct Track {
 #[derive(Clone, Debug)]
 pub struct Clip {
     pub frames: f32,
+    pub looping: bool,
     pub tracks: Vec<Track>,
 }
 pub struct Animations {
@@ -150,6 +151,34 @@ impl Track {
     }
 }
 impl Animations {
+    pub fn motion_definitions(&self) -> BTreeMap<String, libssbm::motion::MotionDef> {
+        self.clips
+            .iter()
+            .map(|(name, clip)| {
+                (
+                    name.clone(),
+                    libssbm::motion::MotionDef {
+                        frames: clip.frames,
+                        looping: clip.looping
+                            || matches!(
+                                name.as_str(),
+                                "Wait"
+                                    | "WalkSlow"
+                                    | "WalkMiddle"
+                                    | "WalkFast"
+                                    | "Run"
+                                    | "SquatWait"
+                                    | "SpecialNHold"
+                                    | "Fall"
+                                    | "FallAerialF"
+                                    | "FallAerialB"
+                                    | "FallSpecial"
+                            ),
+                    },
+                )
+            })
+            .collect()
+    }
     pub fn load(dir: &Path) -> Result<Self> {
         Self::parse(&std::fs::read(dir.join("PlSsAJ.dat"))?)
     }
@@ -206,7 +235,14 @@ impl Animations {
                         });
                     }
                 }
-                clips.insert(name.to_owned(), Clip { frames, tracks });
+                clips.insert(
+                    name.to_owned(),
+                    Clip {
+                        frames,
+                        looping: d.u32(root + 4)? & (1 << 29) != 0,
+                        tracks,
+                    },
+                );
             }
             at = (at + size + 31) & !31;
         }

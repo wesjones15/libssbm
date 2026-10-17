@@ -43,12 +43,25 @@ async fn run() -> libssbm_assets::Result<()> {
         .position(|s| s == "--capture")
         .and_then(|i| args.get(i + 1))
         .cloned();
+    let pose_clip = args
+        .iter()
+        .position(|s| s == "--clip")
+        .and_then(|i| args.get(i + 1))
+        .cloned();
+    let pose_frame = args
+        .iter()
+        .position(|s| s == "--pose-frame")
+        .and_then(|i| args.get(i + 1))
+        .map(|s| s.parse::<f32>())
+        .transpose()?
+        .unwrap_or(0.);
     let mut actor = Presentation::load(std::path::Path::new(&path), 0)?;
     let mut sim = Sim::new(
         libssbm_assets::params::load(std::path::Path::new(&path))?,
         ::glam::Vec3::ZERO,
     );
     let mut host = FlatHost::default();
+    sim.motion.definitions = actor.animations.motion_definitions();
     let mut shots = Vec::<Shot>::new();
     let mut camera_yaw = 0.7f32;
     let mut costume = 0;
@@ -116,6 +129,14 @@ async fn run() -> libssbm_assets::Result<()> {
         read_pad(&mut input, forward, right);
         sim.advance(&mut host, input, dt as f64);
         actor.update(&sim, dt);
+        if let Some(clip) = pose_clip.as_deref() {
+            if !actor.animations.clips.contains_key(clip) {
+                return Err(format!("Unknown clip {clip}").into());
+            }
+            actor.clip = clip.into();
+            actor.frame = pose_frame;
+            actor.world = actor.animations.pose(&actor.model, clip, pose_frame, false);
+        }
         for e in host.events.drain(..) {
             if e.kind == EventKind::Hit {
                 last_hit = format!("Move {} strength {:.2}", e.move_id, e.strength);
@@ -156,7 +177,8 @@ async fn run() -> libssbm_assets::Result<()> {
             Color::from_rgba(24, 36, 49, 255),
         );
         let yaw = sim.facing.z.atan2(sim.facing.x);
-        let rotation = ::glam::Mat4::from_rotation_y(-yaw);
+        // Samus's authored locomotion faces +Z; Melee supplies fighter heading.
+        let rotation = ::glam::Mat4::from_rotation_y(std::f32::consts::FRAC_PI_2 - yaw);
         for (i, mesh) in meshes.iter_mut().enumerate() {
             if !actor.visible(i) {
                 continue;

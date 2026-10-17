@@ -243,10 +243,16 @@ pub unsafe extern "C" fn ssbm_extract(disc: *const c_char, dir: *const c_char) -
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn ssbm_sim_new(dir: *const c_char, pos: V3) -> *mut Handle {
     guarded(std::ptr::null_mut(), || {
-        let result = (|| libssbm_assets::params::load(unsafe { path(dir) }?))();
+        let result = (|| -> libssbm_assets::Result<Sim> {
+            let dir = unsafe { path(dir) }?;
+            let mut sim = Sim::new(libssbm_assets::params::load(dir)?, pos.into());
+            sim.motion.definitions =
+                libssbm_assets::animation::Animations::load(dir)?.motion_definitions();
+            Ok(sim)
+        })();
         match result {
-            Ok(params) if Vec3::from(pos).is_finite() => Box::into_raw(Box::new(Handle {
-                sim: Sim::new(params, pos.into()),
+            Ok(sim) if Vec3::from(pos).is_finite() => Box::into_raw(Box::new(Handle {
+                sim,
                 poisoned: false,
             })),
             Ok(_) => {

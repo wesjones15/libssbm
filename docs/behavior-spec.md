@@ -84,3 +84,14 @@ disc's FtPartsDesc tables; the morph-ball alternative is selected for Bomb.
 Full visibility commands, animated materials, inverse-bind edge cases, animation
 blending and root-motion fidelity remain partial. All costumes and all animation
 poses are checked for finite transforms when a real-disc cache is present.
+
+Movement animation correction in progress: the simulation now advances the
+animation clock at 60 Hz; presentation samples it with the simulation remainder,
+so repeated render calls cannot advance or restart it. Walk/run playback divides
+actual speed by the disc's animation scaling attributes (ftwalkcommon_800DFDDC,
+ftCo_Run_Anim), and gait changes preserve normalized cycle phase. Jump clips
+continue through the apex until completion, then enter Fall. Samus's authored
+forward is +Z; the Unity adapter applies its heading after ModelView's X mirror.
+Headless tests compare 30/60/144 Hz and check descending jump/gait continuity.
+Attack command timing, movement transitions and combat replacement remain active
+work; these corrections do not establish a complete port.

@@ -18,6 +18,14 @@ pub fn load(dir: &Path) -> Result<Params> {
         walk_accel: fighter.f32(co)?,
         walk_base: fighter.f32(co + 4)?,
         walk_speed: fighter.f32(co + 8)?,
+        // ftwalkcommon::ftWalkCommon_800DFDDC and ftCo_Run_Anim.
+        walk_animation_rates: [
+            fighter.f32(co + 0xc)?,
+            fighter.f32(co + 0x10)?,
+            fighter.f32(co + 0x14)?,
+        ],
+        walk_animation_thresholds: [common.f32(global + 0x28)?, common.f32(global + 0x2c)?],
+        run_animation_rate: fighter.f32(co + 0x2c)?,
         friction: fighter.f32(co + 0x18)?,
         dash_initial: fighter.f32(co + 0x1c)?,
         dash_accel: fighter.f32(co + 0x20)?,

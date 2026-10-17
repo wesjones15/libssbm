@@ -1,0 +1,193 @@
+//! Animation state advances on fighter ticks, independently of renderer calls.
+//! ftwalkcommon::{800DFDDC,800DFEC8}, ftCo_Run_Anim, ftCo_Jump_Anim and
+//! ftCo_JumpAerial_Anim specify speed scaling, gait phase and clip completion.
+use crate::{DOWN, Input, Move, Phase, SPRINT, Sim};
+use std::collections::BTreeMap;
+
+#[derive(Clone, Debug)]
+pub struct MotionDef {
+    pub frames: f32,
+    pub looping: bool,
+}
+#[derive(Clone, Debug)]
+pub struct MotionState {
+    pub clip: &'static str,
+    pub frame: f32,
+    pub rate: f32,
+    pub serial: u64,
+    pub definitions: BTreeMap<String, MotionDef>,
+}
+impl Default for MotionState {
+    fn default() -> Self {
+        Self {
+            clip: "Wait",
+            frame: 0.,
+            rate: 1.,
+            serial: 0,
+            definitions: BTreeMap::new(),
+        }
+    }
+}
+impl MotionState {
+    pub fn length(&self, clip: &str) -> f32 {
+        self.definitions.get(clip).map_or(1., |d| d.frames.max(1.))
+    }
+    pub fn looping(&self) -> bool {
+        self.definitions.get(self.clip).is_some_and(|d| d.looping)
+    }
+    pub fn finished(&self) -> bool {
+        self.frame >= self.length(self.clip)
+    }
+    pub fn select(&mut self, clip: &'static str, rate: f32) {
+        if clip != self.clip {
+            let gait = |s: &str| s.starts_with("Walk") || s == "Run";
+            self.frame = if gait(self.clip) && gait(clip) {
+                (self.frame / self.length(self.clip)).fract() * self.length(clip)
+            } else {
+                0.
+            };
+            self.clip = clip;
+            self.serial = self.serial.wrapping_add(1);
+        }
+        self.rate = rate.max(0.);
+    }
+    pub fn advance(&mut self) {
+        self.frame += self.rate;
+        if self.looping() {
+            self.frame = self.frame.rem_euclid(self.length(self.clip));
+        } else {
+            self.frame = self.frame.min(self.length(self.clip));
+        }
+    }
+    pub fn render_frame(&self, alpha: f32) -> f32 {
+        let value = self.frame + alpha * self.rate;
+        if self.looping() {
+            value.rem_euclid(self.length(self.clip))
+        } else {
+            value.min(self.length(self.clip))
+        }
+    }
+}
+
+pub fn select(s: &Sim, input: Input) -> (&'static str, f32) {
+    if s.phase == Phase::JumpSquat {
+        return ("KneeBend", 1.);
+    }
+    if s.phase == Phase::ChargeShot {
+        return ("SpecialNHold", 1.);
+    }
+    if s.phase == Phase::Helpless {
+        return ("FallSpecial", 1.);
+    }
+    if let Some(m) = s.current_move {
+        let clip = match m {
+            Move::Jab => "Attack11",
+            Move::SideTilt => "AttackS3S",
+            Move::UpTilt => "AttackHi3",
+            Move::DownTilt => "AttackLw3",
+            Move::DashAttack => "AttackDash",
+            Move::NeutralAir => "AttackAirN",
+            Move::ForwardAir => "AttackAirF",
+            Move::UpAir => "AttackAirHi",
+            Move::DownAir => "AttackAirLw",
+            Move::SideSmash => "AttackS4S",
+            Move::UpSmash => "AttackHi4",
+            Move::DownSmash => "AttackLw4",
+            Move::ChargeShot => {
+                if s.phase == Phase::Startup {
+                    if s.move_started_grounded {
+                        "SpecialNStart"
+                    } else {
+                        "SpecialAirNStart"
+                    }
+                } else if s.grounded {
+                    "SpecialN"
+                } else {
+                    "SpecialAirN"
+                }
+            }
+            Move::Missile => {
+                if s.grounded {
+                    "SpecialS"
+                } else {
+                    "SpecialAirS"
+                }
+            }
+            Move::SuperMissile => {
+                if s.grounded {
+                    "Special"
+                } else {
+                    "SpecialAir"
+                }
+            }
+            Move::ScrewAttack => {
+                if s.move_started_grounded {
+                    "SpecialHi"
+                } else {
+                    "SpecialAirHi"
+                }
+            }
+            Move::Bomb => {
+                if s.grounded {
+                    "SpecialLw"
+                } else {
+                    "SpecialAirLw"
+                }
+            }
+        };
+        return (
+            clip,
+            if s.phase == Phase::SmashCharge {
+                0.
+            } else {
+                1.
+            },
+        );
+    }
+    let speed = s.velocity.with_y(0.).length();
+    if !s.grounded {
+        // Jump animation completion, not the sign of vertical velocity, enters Fall.
+        if s.motion.clip.starts_with("Jump") && !s.motion.finished() {
+            return (s.motion.clip, 1.);
+        }
+        return (
+            if s.jumps_used > 1 {
+                "FallAerialF"
+            } else {
+                "Fall"
+            },
+            1.,
+        );
+    }
+    if s.motion.clip.starts_with("Landing") && !s.motion.finished() {
+        return (s.motion.clip, 1.);
+    }
+    if speed > 0.05 {
+        let scaled = speed / s.options.speed_scale.max(0.01);
+        if input.buttons & SPRINT != 0 {
+            return ("Run", speed / s.params.run_animation_rate);
+        }
+        let gait = if scaled >= s.params.walk_speed * s.params.walk_animation_thresholds[1] {
+            2
+        } else if scaled >= s.params.walk_speed * s.params.walk_animation_thresholds[0] {
+            1
+        } else {
+            0
+        };
+        return (
+            ["WalkSlow", "WalkMiddle", "WalkFast"][gait],
+            speed / s.params.walk_animation_rates[gait],
+        );
+    }
+    if input.buttons & DOWN != 0 {
+        return (
+            if s.motion.clip == "Squat" && s.motion.finished() || s.motion.clip == "SquatWait" {
+                "SquatWait"
+            } else {
+                "Squat"
+            },
+            1.,
+        );
+    }
+    ("Wait", 1.)
+}

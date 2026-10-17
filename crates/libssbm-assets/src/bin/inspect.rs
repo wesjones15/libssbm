@@ -32,5 +32,48 @@ fn main() -> libssbm_assets::Result<()> {
         a.clips.len(),
         a.clips.get("Wait").map(|c| (c.frames, c.tracks.len()))
     );
+    let m = libssbm_assets::model::Model::load(dir, 0)?;
+    for name in [
+        "Wait",
+        "WalkSlow",
+        "WalkMiddle",
+        "WalkFast",
+        "Run",
+        "Attack11",
+        "AttackS3S",
+        "SpecialNStart",
+        "SpecialN",
+        "SpecialS",
+        "Special",
+        "SpecialHi",
+    ] {
+        let Some(clip) = a.clips.get(name) else {
+            println!("MISSING {name}");
+            continue;
+        };
+        println!("CLIP {name} frames {}", clip.frames);
+        for frame in [
+            0.,
+            clip.frames * 0.25,
+            clip.frames * 0.5,
+            clip.frames * 0.75,
+        ] {
+            let pose = a.pose(&m, name, frame, true);
+            println!(
+                "  {frame}: pelvis {:?}, X axis {:?}",
+                pose[4].w_axis.truncate(),
+                pose[4].x_axis.truncate()
+            );
+        }
+        for t in clip.tracks.iter().filter(|t| t.joint < 4) {
+            println!(
+                "  joint {} channel {} keys {} first {:?}",
+                t.joint,
+                t.channel,
+                t.keys.len(),
+                t.keys.first()
+            );
+        }
+    }
     Ok(())
 }

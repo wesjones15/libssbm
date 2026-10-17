@@ -130,6 +130,8 @@ impl Default for Options {
 }
 
 pub struct Sim {
+    pub motion: crate::motion::MotionState,
+    pub move_started_grounded: bool,
     pub params: Params,
     pub options: Options,
     pub position: Vec3,
@@ -159,6 +161,8 @@ pub struct Sim {
 impl Sim {
     pub fn new(params: Params, position: Vec3) -> Self {
         Self {
+            motion: crate::motion::MotionState::default(),
+            move_started_grounded: false,
             params,
             options: Options::default(),
             position,
@@ -250,6 +254,7 @@ impl Sim {
             return;
         }
         self.current_move = Some(m);
+        self.move_started_grounded = self.grounded;
         self.smash_charge = 0;
         self.move_strength = 1.;
         self.move_aim = if input.aim.length_squared() > 0.01 {
@@ -310,6 +315,8 @@ impl Sim {
         }
     }
     fn jump(&mut self, host: &mut impl Host, aerial: bool) {
+        self.motion
+            .select(if aerial { "JumpAerialF" } else { "JumpF" }, 1.);
         self.pad_gravity = None;
         self.grounded = false;
         self.velocity.y = if aerial {
@@ -512,6 +519,7 @@ impl Sim {
         if self.grounded {
             self.pad_gravity = None;
             if !before {
+                self.motion.select("Landing", 1.);
                 self.emit(host, EventKind::Land, 0, -self.velocity.y);
             }
             self.velocity.y = 0.;
@@ -520,6 +528,9 @@ impl Sim {
                 self.set_phase(Phase::Free);
             }
         }
+        let (clip, rate) = crate::motion::select(self, input);
+        self.motion.select(clip, rate);
+        self.motion.advance();
         self.previous = input;
     }
     fn fire(&mut self, host: &mut impl Host) {
