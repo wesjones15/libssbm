@@ -8,6 +8,23 @@ use std::collections::BTreeMap;
 pub struct MotionDef {
     pub frames: f32,
     pub looping: bool,
+    /// Source TransN forward positions at 60 Hz, when motion extraction is enabled.
+    pub root_forward: Option<Vec<f32>>,
+}
+impl MotionDef {
+    pub fn forward_delta(&self, frame: f32, rate: f32) -> Option<f32> {
+        let samples = self.root_forward.as_ref()?;
+        if samples.is_empty() {
+            return Some(0.);
+        }
+        let sample = |frame: f32| {
+            let frame = frame.clamp(0., self.frames);
+            let index = (frame.floor() as usize).min(samples.len() - 1);
+            let next = (index + 1).min(samples.len() - 1);
+            samples[index] + (samples[next] - samples[index]) * frame.fract()
+        };
+        Some(sample(frame + rate) - sample(frame))
+    }
 }
 #[derive(Clone, Debug)]
 pub struct MotionState {

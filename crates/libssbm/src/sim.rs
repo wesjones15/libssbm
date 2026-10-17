@@ -858,6 +858,27 @@ impl Sim {
                 self.velocity.y = self.velocity.y.min(0.);
             }
         }
+        // ftCo_AttackDash_Phys -> ft_80085030 uses the flagged TransN delta as
+        // ground velocity. It replaces friction velocity; never add a second
+        // visual dash or teleport at clip completion. Collision owns the result.
+        if self.grounded && self.current_move == Some(Move::DashAttack) {
+            let (clip, rate) = crate::motion::select(self, input);
+            let frame = if clip == self.motion.clip {
+                self.motion.frame
+            } else {
+                0.
+            };
+            if let Some(distance) = self
+                .motion
+                .definitions
+                .get(clip)
+                .and_then(|d| d.forward_delta(frame, rate))
+            {
+                let velocity = self.facing * distance * self.options.speed_scale;
+                self.velocity.x = velocity.x;
+                self.velocity.z = velocity.z;
+            }
+        }
         // Initial placement/warp is already a standing host placement. Its
         // first support probe must not invent landing lag or fall damage.
         let before = self.grounded || self.suppress_initial_landing;

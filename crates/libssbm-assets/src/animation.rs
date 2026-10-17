@@ -25,6 +25,8 @@ pub struct Clip {
     pub frames: f32,
     pub looping: bool,
     pub tracks: Vec<Track>,
+    /// TransN is consumed by fighter physics when animCurrFlags bit 31 is set.
+    pub motion_joint: Option<usize>,
 }
 #[derive(Clone)]
 pub struct Animations {
@@ -287,6 +289,7 @@ impl Animations {
             clips: BTreeMap::from([(
                 "Object".into(),
                 Clip {
+                    motion_joint: None,
                     frames,
                     looping,
                     tracks,
@@ -301,6 +304,17 @@ impl Animations {
                 (
                     name.clone(),
                     libssbm::motion::MotionDef {
+                        root_forward: clip.motion_joint.map(|joint| {
+                            let track = clip
+                                .tracks
+                                .iter()
+                                .find(|t| t.joint == joint && t.channel == 7);
+                            (0..=clip.frames.ceil() as usize)
+                                .map(|frame| {
+                                    track.and_then(|t| t.sample(frame as f32)).unwrap_or(0.)
+                                })
+                                .collect()
+                        }),
                         frames: clip.frames,
                         looping: clip.looping
                             || name.starts_with("Fall")
@@ -328,7 +342,47 @@ impl Animations {
     }
     pub fn load_for(dir: &Path, fighter: &crate::fighter::FighterAssets<'_>) -> Result<Self> {
         fighter.required()?;
-        Self::parse(&std::fs::read(dir.join(fighter.animations))?)
+        let mut animations = Self::parse(&std::fs::read(dir.join(fighter.animations))?)?;
+        // Fighter_ChangeMotionState / ftAnim_8006E9B4 select TransN from the
+        // common bone map and extract it only for flagged motion descriptors.
+        let bytes = std::fs::read(dir.join(fighter.data.file))?;
+        let d = Dat::parse(&bytes)?;
+        let root = d.root(fighter.data.root)?;
+        let start = d.required_ptr(root + 0xc)?;
+        let end = d.required_ptr(root + 0x14)?;
+        if end <= start || !(end - start).is_multiple_of(24) || (end - start) / 24 > 2048 {
+            return Err("invalid fighter motion descriptor table".into());
+        }
+        let bytes = std::fs::read(dir.join(crate::fighter::COMMON_DATA.file))?;
+        let common = Dat::parse(&bytes)?;
+        let table = common.required_ptr(common.root(crate::fighter::COMMON_DATA.root)? + 0x10)?;
+        let parts = common.required_ptr(table + fighter.common_index * 4)?;
+        let mapping = common.required_ptr(parts + 4)?;
+        let joint = common.bytes(mapping + 1, 1)?[0] as usize;
+        for at in (start..end).step_by(24) {
+            if d.u32(at + 16)? & 0x80000000 == 0 {
+                continue;
+            }
+            let Some(name_at) = d.ptr(at)? else {
+                continue;
+            };
+            let tail = d.data.get(name_at..).ok_or("motion name outside DAT")?;
+            let len = tail
+                .iter()
+                .take(256)
+                .position(|&b| b == 0)
+                .ok_or("unterminated motion name")?;
+            let name = std::str::from_utf8(&tail[..len])?;
+            if let Some(name) = name
+                .split("_ACTION_")
+                .nth(1)
+                .and_then(|s| s.strip_suffix("_figatree"))
+                && let Some(clip) = animations.clips.get_mut(name)
+            {
+                clip.motion_joint = Some(joint);
+            }
+        }
+        Ok(animations)
     }
     pub fn parse(bytes: &[u8]) -> Result<Self> {
         let mut at = 0;
@@ -386,6 +440,7 @@ impl Animations {
                 clips.insert(
                     name.to_owned(),
                     Clip {
+                        motion_joint: None,
                         frames,
                         looping: d.u32(root + 4)? & (1 << 29) != 0,
                         tracks,
@@ -454,6 +509,13 @@ impl Animations {
         // Root translation is movement, already owned by the gameplay sim.
         if remove_root_motion && !t.is_empty() {
             t[0] = model.joints[0].translation;
+            if let Some(joint) = self.clips.get(name).and_then(|clip| clip.motion_joint)
+                && joint < t.len()
+            {
+                // ftAnim_8006E054 zeros the extracted translation in the pose.
+                // Hitbox/effect attachments use this same pose, avoiding double travel.
+                t[joint] = glam::Vec3::ZERO;
+            }
         }
         let mut world = Vec::with_capacity(model.joints.len());
         for (i, j) in model.joints.iter().enumerate() {

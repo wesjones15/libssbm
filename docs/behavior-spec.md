@@ -292,3 +292,14 @@ orb. JOBJ billboard/rotational billboard joints face the model-space camera and
 retain their authored spin. Source sprite matrices, mirror metadata and camera
 pose changes cross the tested C# boundary. The complete orb and Screw Attack
 electrical shell were inspected in the viewer; Unity playtest remains pending.
+
+Dash Attack now transfers the source TransN forward delta into collision-resolved
+ground velocity instead of letting the skeleton slide away from the body. The
+motion descriptor flag and common-bone mapping are read per fighter; the generic
+animation reader removes extracted TransN from both rendered and attachment
+poses. References: ftAnim_8006E054/8006E9B4, ftCo_AttackDash_Phys and ft_80085030.
+The shared fixed-step motion sampler retains the 45 source-unit Samus dash after
+returning to Wait, with no extra velocity added. Real-disc checks cover 30/60/144
+Hz, collision against a wall and removal of duplicate pose displacement; viewer
+captures cover the attack and completed idle. Other action-specific animation
+velocity policies (including secondary TransN blending) remain incomplete.

@@ -15,9 +15,14 @@ fn fighter() -> Sim {
         ("Landing", 4., false),
         ("KneeBend", 3., false),
     ] {
-        sim.motion
-            .definitions
-            .insert(name.into(), MotionDef { frames, looping });
+        sim.motion.definitions.insert(
+            name.into(),
+            MotionDef {
+                frames,
+                looping,
+                root_forward: None,
+            },
+        );
     }
     sim
 }

@@ -46,6 +46,7 @@ async fn run() -> libssbm_assets::Result<()> {
         .and_then(|i| args.get(i + 1))
         .cloned();
     let selection = args.iter().any(|s| s == "--selection");
+    let dash_preview = args.iter().any(|s| s == "--dash-preview");
     let entry_mode = args.iter().any(|s| s == "--entry");
     let effect = args
         .iter()
@@ -143,6 +144,17 @@ async fn run() -> libssbm_assets::Result<()> {
     let mut platform_meshes = platform.as_ref().map(make_meshes);
     let mut last_hit = String::new();
     let mut particle_clock = 0f64;
+    if dash_preview {
+        sim.grounded = true;
+        sim.start_move(&mut host, libssbm::Move::DashAttack, Input::idle());
+        for _ in 0..pose_frame as usize {
+            sim.advance(&mut host, Input::idle(), 1. / 60.);
+        }
+        println!(
+            "Dash preview tick {}: {:?}, position {:?}",
+            pose_frame, sim.motion.clip, sim.position
+        );
+    }
     loop {
         let dt = if capture.is_some() {
             1. / 60.
@@ -202,7 +214,9 @@ async fn run() -> libssbm_assets::Result<()> {
             input.buttons |= SPECIAL;
         }
         read_pad(&mut input, forward, right);
-        sim.advance(&mut host, input, dt as f64);
+        if !dash_preview {
+            sim.advance(&mut host, input, dt as f64);
+        }
         actor.update(&sim, dt);
         if entry_mode {
             let params = libssbm_assets::params::entry(

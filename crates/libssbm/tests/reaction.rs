@@ -13,6 +13,7 @@ fn airborne_damage_falls_bounces_and_stands_before_releasing_control() {
         s.motion.definitions.insert(
             clip.into(),
             MotionDef {
+                root_forward: None,
                 frames,
                 looping: clip == "Wait" || clip == "DamageFall",
             },
