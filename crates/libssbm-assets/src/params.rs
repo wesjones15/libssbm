@@ -13,11 +13,29 @@ pub fn entry(
     let b = std::fs::read(dir.join(crate::fighter::COMMON_DATA.file))?;
     let common = Dat::parse(&b)?;
     let attrs = common.required_ptr(common.root(crate::fighter::COMMON_DATA.root)?)?;
+    // ftCo_800C6408 starts common colour animation 0x75. GALE01's
+    // lb_80014014 / lb_80013BB8 program sets RGBA, waits, then finishes.
+    let colors = common.required_ptr(common.root(crate::fighter::COMMON_DATA.root)? + 0x18)?;
+    let program = common.required_ptr(colors + 0x75 * 8)?;
+    if common.u32(program)? >> 26 != 18
+        || common.u32(program + 8)? >> 26 != 11
+        || common.u32(program + 12)? >> 26 != 10
+    {
+        return Err("unsupported common entry colour program".into());
+    }
+    let rgba = common.u32(program + 4)?;
     let p = libssbm::entry::Params {
         grow: common.u32(attrs + 0x6bc)?,
         release: common.u32(attrs + 0x6c0)?,
         flat: common.f32(attrs + 0x6c4)?,
         platform: fighter.f32(co + 0x110)?,
+        color: [
+            ((rgba >> 24) & 255) as f32 / 255.,
+            ((rgba >> 16) & 255) as f32 / 255.,
+            ((rgba >> 8) & 255) as f32 / 255.,
+            (rgba & 255) as f32 / 255.,
+        ],
+        color_frames: common.u32(program + 8)? & 0x03ffffff,
     };
     if p.grow == 0
         || p.grow > 600
@@ -85,6 +103,7 @@ pub fn load_for(dir: &Path, profile: &crate::fighter::FighterAssets<'_>) -> Resu
         air_speed: fighter.f32(co + 0x6c)?,
         air_horizontal_max: fighter.f32(co + 0x78)?,
         fall_pose_threshold: common.f32(global + 0x444)?,
+        fall_blend_response: common.f32(global + 0x448)?,
         air_friction: fighter.f32(co + 0x70)?,
         fast_fall: fighter.f32(co + 0x74)?,
         charge_steps: fighter.f32(ss + 0x18)?.round() as u32,

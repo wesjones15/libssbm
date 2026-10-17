@@ -158,6 +158,7 @@ pub struct Sim {
     pub smash_charge: u32,
     pub facing: Vec3,
     accumulator: f64,
+    pub fall_blend: f32,
     suppress_initial_landing: bool,
     sampled_buttons: u32,
     pending_pressed: u32,
@@ -193,6 +194,7 @@ impl Sim {
             smash_charge: 0,
             facing: Vec3::X,
             accumulator: 0.,
+            fall_blend: 0.,
             suppress_initial_landing: true,
             sampled_buttons: 0,
             pending_pressed: 0,
@@ -845,6 +847,21 @@ impl Sim {
             }
         }
         let (clip, rate) = crate::motion::select(self, input);
+        if clip.starts_with("Fall") {
+            if !self.motion.clip.starts_with("Fall") {
+                self.fall_blend = 0.;
+            }
+            let drift = (self.velocity.with_y(0.).dot(self.facing)
+                / (self.params.air_speed * self.options.speed_scale).max(0.001))
+            .abs()
+            .min(1.);
+            let target = ((drift - self.params.fall_pose_threshold)
+                / (1. - self.params.fall_pose_threshold))
+                .max(0.);
+            self.fall_blend += self.params.fall_blend_response * (target - self.fall_blend);
+        } else {
+            self.fall_blend = 0.;
+        }
         self.motion.select(clip, rate);
         self.motion.advance();
         if !self.action.definitions.is_empty() {

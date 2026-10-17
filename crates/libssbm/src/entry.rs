@@ -7,6 +7,8 @@ pub struct Params {
     pub release: u32,
     pub flat: f32,
     pub platform: f32,
+    pub color: [f32; 4],
+    pub color_frames: u32,
 }
 #[derive(Clone, Copy, Debug)]
 pub struct State {

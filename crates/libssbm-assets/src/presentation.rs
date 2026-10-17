@@ -132,6 +132,16 @@ impl Presentation {
         self.world = self
             .animations
             .pose(&self.model, clip, self.frame, sim.motion.looping());
+        let neutral = match clip {
+            "FallF" | "FallB" => Some("Fall"),
+            "FallAerialF" | "FallAerialB" => Some("FallAerial"),
+            "FallSpecialF" | "FallSpecialB" => Some("FallSpecial"),
+            _ => None,
+        };
+        if let Some(neutral) = neutral {
+            let base = self.animations.pose(&self.model, neutral, self.frame, true);
+            self.world = blend_pose(&self.model, &base, &self.world, sim.fall_blend);
+        }
         if let Some(entry) = sim.entry {
             let transform = entry.transform();
             for world in &mut self.world {
@@ -166,4 +176,26 @@ impl Presentation {
 }
 pub fn clip_name(s: &Sim) -> &'static str {
     s.motion.clip
+}
+/// ftCo_Fall_Anim_Inner blends local joint transforms, then concatenates the
+/// hierarchy. Blending world matrices would shorten limbs during rotations.
+pub fn blend_pose(model: &Model, a: &[Mat4], b: &[Mat4], amount: f32) -> Vec<Mat4> {
+    let amount = amount.clamp(0., 1.);
+    let mut world = Vec::with_capacity(model.joints.len());
+    for (i, joint) in model.joints.iter().enumerate() {
+        let local = |pose: &[Mat4]| {
+            joint
+                .parent
+                .map_or(pose[i], |parent| pose[parent].inverse() * pose[i])
+        };
+        let (sa, ra, ta) = local(a).to_scale_rotation_translation();
+        let (sb, rb, tb) = local(b).to_scale_rotation_translation();
+        let matrix = Mat4::from_scale_rotation_translation(
+            sa.lerp(sb, amount),
+            ra.slerp(rb, amount),
+            ta.lerp(tb, amount),
+        );
+        world.push(joint.parent.map_or(matrix, |parent| world[parent] * matrix));
+    }
+    world
 }

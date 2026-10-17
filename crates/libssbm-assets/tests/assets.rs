@@ -166,6 +166,24 @@ fn real_assets_decode_all_costumes_and_animation_poses() -> Result<()> {
         Dat::parse(&b)?;
     }
     let model = Model::load(&dir, 0)?;
+    let neutral = a.pose(&model, "Fall", 3., true);
+    let forward = a.pose(&model, "FallF", 3., true);
+    for amount in [0., 0.5, 1.] {
+        let blended = libssbm_assets::presentation::blend_pose(&model, &neutral, &forward, amount);
+        assert!(blended.iter().all(|m| m.is_finite()));
+        if amount == 0. || amount == 1. {
+            let expected = if amount == 0. { &neutral } else { &forward };
+            for (actual, expected) in blended.iter().zip(expected) {
+                for (a, b) in actual
+                    .to_cols_array()
+                    .into_iter()
+                    .zip(expected.to_cols_array())
+                {
+                    assert!((a - b).abs() < 0.001);
+                }
+            }
+        }
+    }
     for clip in [
         "WalkSlow",
         "WalkMiddle",

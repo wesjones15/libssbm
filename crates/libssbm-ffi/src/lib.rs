@@ -1007,6 +1007,25 @@ pub unsafe extern "C" fn ssbm_entry_platform_update(v: *mut View, h: *const Hand
         1
     })
 }
+/// Optional ABI-4 presentation extension. Entry colour overlay from PlCo.
+/// # Safety
+/// Live sim and four writable floats, or null for a capability query (returns 0).
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn ssbm_sim_overlay(h: *const Handle, rgba: *mut f32) -> u32 {
+    if h.is_null() || rgba.is_null() {
+        return 0;
+    }
+    guarded(0, || unsafe {
+        let Some(entry) = (&*h).sim.entry else {
+            return 0;
+        };
+        if entry.frame >= entry.params.color_frames {
+            return 0;
+        }
+        std::ptr::copy_nonoverlapping(entry.params.color.as_ptr(), rgba, 4);
+        1
+    })
+}
 /// # Safety
 /// Live object view. Animation duration from the disc; zero if no animation.
 #[unsafe(no_mangle)]

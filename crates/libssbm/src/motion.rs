@@ -82,7 +82,7 @@ pub fn select(s: &Sim, input: Input) -> (&'static str, f32) {
         return ("SpecialNHold", 1.);
     }
     if s.phase == Phase::Helpless {
-        return ("FallSpecial", 1.);
+        return (fall_clip(s, true), 1.);
     }
     if s.phase == Phase::ChargeCancel {
         return ("SpecialNCancel", 1.);
@@ -160,23 +160,7 @@ pub fn select(s: &Sim, input: Input) -> (&'static str, f32) {
         if s.motion.clip.starts_with("Jump") && !s.motion.finished() {
             return (s.motion.clip, 1.);
         }
-        let drift = s.velocity.with_y(0.).dot(s.facing)
-            / (s.params.air_speed * s.options.speed_scale).max(0.001);
-        return (
-            match (
-                s.jumps_used > 1,
-                drift > s.params.fall_pose_threshold,
-                drift < -s.params.fall_pose_threshold,
-            ) {
-                (true, true, _) => "FallAerialF",
-                (true, _, true) => "FallAerialB",
-                (true, _, _) => "FallAerial",
-                (false, true, _) => "FallF",
-                (false, _, true) => "FallB",
-                _ => "Fall",
-            },
-            1.,
-        );
+        return (fall_clip(s, false), 1.);
     }
     if s.motion.clip.starts_with("Landing") && !s.motion.finished() {
         return (s.motion.clip, 1.);
@@ -209,4 +193,24 @@ pub fn select(s: &Sim, input: Input) -> (&'static str, f32) {
         );
     }
     ("Wait", 1.)
+}
+fn fall_clip(s: &Sim, special: bool) -> &'static str {
+    let drift = s.velocity.with_y(0.).dot(s.facing)
+        / (s.params.air_speed * s.options.speed_scale).max(0.001);
+    let (neutral, front, back) = if special {
+        ("FallSpecial", "FallSpecialF", "FallSpecialB")
+    } else if s.jumps_used > 1 {
+        ("FallAerial", "FallAerialF", "FallAerialB")
+    } else {
+        ("Fall", "FallF", "FallB")
+    };
+    if drift > s.params.fall_pose_threshold {
+        front
+    } else if drift < -s.params.fall_pose_threshold {
+        back
+    } else if s.fall_blend > 0.001 && (s.motion.clip == front || s.motion.clip == back) {
+        s.motion.clip
+    } else {
+        neutral
+    }
 }

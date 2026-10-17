@@ -2,6 +2,13 @@
 
 ## Current checkpoint: 0.2.2, 2026-10-17
 
+Unreleased follow-up: source entry colour program 0x75 now decodes from PlCo and
+reaches the common renderer's colour-overlay input. A null-safe optional ABI-4
+export reports RGBA. Fall/air-fall/helpless directional poses now blend local
+joint transforms against neutral using the common disc threshold/response.
+Hierarchy and endpoint checks, native entry overlay checks and the C# build pass.
+The installed 0.2.2 release remains unchanged while awaiting playtest feedback.
+
 The incremental notes below retain implementation history; this checkpoint
 supersedes their earlier prototype and pending-integration statements.
 

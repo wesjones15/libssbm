@@ -274,6 +274,7 @@ impl Animations {
                     libssbm::motion::MotionDef {
                         frames: clip.frames,
                         looping: clip.looping
+                            || name.starts_with("Fall")
                             || matches!(
                                 name.as_str(),
                                 "Wait"

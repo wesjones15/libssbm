@@ -8,6 +8,8 @@ fn entry_blocks_actions_and_uses_fixed_ticks_for_grow_and_release() {
             release: 30,
             flat: 0.01,
             platform: 1.,
+            color: [1., 1., 1., 0.5],
+            color_frames: 100,
         }));
         let mut host = FlatHost::default();
         let mut input = Input::idle();
