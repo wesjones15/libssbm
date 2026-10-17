@@ -1,9 +1,12 @@
 //! HSD readers derived from the format declarations in Melee's baselib headers.
 //! No disc data is compiled into this crate.
+pub mod animation;
 pub mod dat;
 pub mod disc;
 pub mod model;
 pub mod params;
+pub mod presentation;
+pub mod texture;
 
 pub type Result<T> = std::result::Result<T, Box<dyn std::error::Error + Send + Sync>>;
 

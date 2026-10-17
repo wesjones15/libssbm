@@ -143,6 +143,7 @@ impl Disc {
 }
 
 pub fn extract(disc_path: &Path, out: &Path) -> Result<()> {
+    guard_output(out)?;
     // Only this fixed allowlist is written; no disc path is used as an output path.
     let mut disc = Disc::open(disc_path)?;
     let mut blobs = Vec::new();
@@ -165,5 +166,27 @@ pub fn extract(disc_path: &Path, out: &Path) -> Result<()> {
         out.join("SOURCE.txt"),
         "Extracted from player's GALE01 revision 2 disc. Do not distribute.\n",
     )?;
+    Ok(())
+}
+
+fn guard_output(out: &Path) -> Result<()> {
+    let absolute = std::path::absolute(out)?;
+    for ancestor in absolute.ancestors() {
+        if ancestor.is_symlink() {
+            return Err("asset output ancestor is a symlink".into());
+        }
+        if ancestor.join(".git").exists() {
+            let status = std::process::Command::new("git")
+                .arg("-C")
+                .arg(ancestor)
+                .args(["check-ignore", "-q"])
+                .arg(absolute.join("__ssbm_asset_probe__"))
+                .status()?;
+            if !status.success() {
+                return Err("disc assets must be extracted into a git-ignored folder".into());
+            }
+            break;
+        }
+    }
     Ok(())
 }
