@@ -1,5 +1,6 @@
 //! HSD readers derived from the format declarations in Melee's baselib headers.
 //! No disc data is compiled into this crate.
+pub mod action;
 pub mod animation;
 pub mod dat;
 pub mod disc;

@@ -81,6 +81,50 @@ fn real_assets_decode_all_costumes_and_animation_poses() -> Result<()> {
     p.validate()?;
     let a = Animations::load(&dir)?;
     assert!(a.clips.contains_key("Wait"));
+    let actions = libssbm_assets::action::load(&dir, &a)?;
+    for name in [
+        "Attack11",
+        "Attack12",
+        "AttackDash",
+        "AttackS3S",
+        "AttackHi3",
+        "AttackLw3",
+        "AttackS4S",
+        "AttackHi4",
+        "AttackLw4",
+        "AttackAirN",
+        "AttackAirF",
+        "AttackAirB",
+        "AttackAirHi",
+        "AttackAirLw",
+        "SpecialHi",
+        "SpecialAirHi",
+    ] {
+        let action = actions
+            .get(name)
+            .unwrap_or_else(|| panic!("Missing action {name}"));
+        assert!(
+            action
+                .commands
+                .iter()
+                .any(|e| matches!(e.command, libssbm::action::Command::Hitbox(_))),
+            "No hitbox commands: {name}"
+        );
+        assert!(
+            action
+                .commands
+                .windows(2)
+                .all(|pair| pair[0].frame <= pair[1].frame)
+        );
+        for event in &action.commands {
+            if let libssbm::action::Command::Hitbox(h) = &event.command {
+                assert!(
+                    h.radius > 0. && h.radius < 100. && h.damage > 0. && h.bone < 60,
+                    "Bad hitbox: {name}"
+                );
+            }
+        }
+    }
     for c in 0..5 {
         let m = Model::load(&dir, c)?;
         assert!(!m.batches.is_empty());

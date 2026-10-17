@@ -95,3 +95,12 @@ forward is +Z; the Unity adapter applies its heading after ModelView's X mirror.
 Headless tests compare 30/60/144 Hz and check descending jump/gait continuity.
 Attack command timing, movement transitions and combat replacement remain active
 work; these corrections do not establish a complete port.
+
+The bounded subaction reader now reconstructs the motion descriptors and scripts
+from PlSs.dat. It handles relative/absolute waits, counted loops, subroutine calls
+and returns, jumps and animation-rewind waits. Hitbox creation, mutation/deletion,
+script variables, combo/interrupt gates, smash charging and visibility commands
+have typed engine-independent records; other records retain their opcode/payload.
+Synthetic control-flow/corruption checks and real-disc normal/Screw Attack hitbox
+coverage pass. Runtime execution and the host damage replacement are the next
+integration step; parser coverage alone is not combat fidelity.
