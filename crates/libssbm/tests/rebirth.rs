@@ -102,6 +102,10 @@ fn another_fall_during_invulnerability_can_recover_and_external_teleport_cleans_
     while sim.rebirth.as_ref().unwrap().phase != Phase::Protected {
         sim.advance(&mut host, Input::idle(), 1. / 60.);
     }
+    let remaining = sim.rebirth.as_ref().unwrap().frame;
+    sim.correct_position(Vec3::X);
+    assert_eq!(sim.rebirth.as_ref().unwrap().phase, Phase::Protected);
+    assert_eq!(sim.rebirth.as_ref().unwrap().frame, remaining);
     assert!(sim.begin_rebirth(p, e, Vec3::Y));
     assert_eq!(sim.rebirth.as_ref().unwrap().phase, Phase::Ko);
     sim.teleport(Vec3::X);

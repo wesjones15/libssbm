@@ -973,7 +973,9 @@ pub unsafe extern "C" fn ssbm_sim_place(handle: *mut Handle, v: V3, kind: u32) {
     }
     let h = unsafe { &mut *handle };
     if !h.poisoned {
-        if kind == 0 {
+        if kind == 2 {
+            h.sim.correct_position(v.into());
+        } else if kind == 0 {
             h.sim.teleport(v.into());
         } else {
             h.sim.launch(v.into());

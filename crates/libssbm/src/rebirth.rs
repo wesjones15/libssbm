@@ -46,6 +46,13 @@ impl State {
     }
 }
 impl Sim {
+    /// A normal host collision correction preserves an already released
+    /// fighter's remaining protection; external teleports cancel the sequence.
+    pub fn correct_position(&mut self, position: Vec3) {
+        let protection = self.rebirth.take().filter(|s| s.phase == Phase::Protected);
+        self.teleport(position);
+        self.rebirth = protection;
+    }
     pub fn begin_rebirth(
         &mut self,
         params: Params,
