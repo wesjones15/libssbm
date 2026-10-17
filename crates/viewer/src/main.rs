@@ -44,11 +44,13 @@ async fn run() -> libssbm_assets::Result<()> {
         .position(|s| s == "--capture")
         .and_then(|i| args.get(i + 1))
         .cloned();
+    let selection = args.iter().any(|s| s == "--selection");
     let pose_clip = args
         .iter()
         .position(|s| s == "--clip")
         .and_then(|i| args.get(i + 1))
-        .cloned();
+        .cloned()
+        .or_else(|| selection.then(|| "SpecialHi".into()));
     let pose_frame = args
         .iter()
         .position(|s| s == "--pose-frame")
@@ -239,6 +241,14 @@ async fn run() -> libssbm_assets::Result<()> {
         let yaw = sim.facing.z.atan2(sim.facing.x);
         // Samus's authored locomotion faces +Z; Melee supplies fighter heading.
         let rotation = ::glam::Mat4::from_rotation_y(std::f32::consts::FRAC_PI_2 - yaw);
+        // The common RoR2 selection policy anchors the body while up-special
+        // plays. Match that policy here so jump poses stay in the preview camera.
+        let preview_offset = if selection {
+            let idle = actor.animations.pose(&actor.model, "Wait", 0., false);
+            idle[4].w_axis.truncate() - actor.world[4].w_axis.truncate()
+        } else {
+            ::glam::Vec3::ZERO
+        };
         for (i, mesh) in meshes.iter_mut().enumerate() {
             if emitter.is_some() {
                 continue;
@@ -253,7 +263,7 @@ async fn run() -> libssbm_assets::Result<()> {
                 .iter_mut()
                 .zip(skin.into_iter().zip(&batch.vertices))
             {
-                let p = rotation.transform_point3(p) + sim.position;
+                let p = rotation.transform_point3(p + preview_offset) + sim.position;
                 v.position = gv(p);
                 let n = rotation.transform_vector3(n);
                 let light = 0.4 + 0.6 * n.dot(::glam::Vec3::new(0.4, 0.8, 0.5).normalize()).max(0.);

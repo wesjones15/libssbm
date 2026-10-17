@@ -7,6 +7,18 @@ fn main() -> libssbm_assets::Result<()> {
             println!("{name}: {} bytes (packed animation archives)", bytes.len());
             continue;
         }
+        if name.ends_with(".ssm") {
+            println!(
+                "{name}: {} samples",
+                libssbm_assets::audio::ssm(&bytes)?.len()
+            );
+            continue;
+        }
+        if name.ends_with(".sem") {
+            libssbm_assets::audio::Bank::sequence(&bytes)?;
+            println!("{name}: {} bytes (sound sequences)", bytes.len());
+            continue;
+        }
         let dat = libssbm_assets::dat::Dat::parse(&bytes)?;
         println!(
             "{name}: {} bytes, {} relocations, publics {:?}",
