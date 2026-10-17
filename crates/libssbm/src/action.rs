@@ -81,12 +81,26 @@ pub struct SoundCue {
     pub channel: u32,
     pub stop: bool,
 }
+#[derive(Clone, Debug)]
+pub struct GfxCue {
+    pub id: u32,
+    pub bone: usize,
+    pub common: bool,
+    pub destroy_on_change: bool,
+    pub offset: Vec3,
+    pub param: f32,
+    pub clip: &'static str,
+    pub frame: f32,
+    pub origin: Vec3,
+    pub facing: Vec3,
+}
 #[derive(Clone, Debug, Default)]
 pub struct ActionState {
     pub definitions: BTreeMap<String, ActionDef>,
     pub active: BTreeMap<u32, ActiveHitbox>,
     pub samples: Vec<HitSample>,
     pub sounds: Vec<SoundCue>,
+    pub effects: Vec<GfxCue>,
     pub variables: [u32; 4],
     pub serial: u64,
     pub interrupt: bool,

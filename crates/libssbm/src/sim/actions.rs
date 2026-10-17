@@ -154,6 +154,29 @@ impl Sim {
                     self.action.visibility.insert(group, choice);
                 }
                 Command::Raw { opcode, words } => {
+                    if opcode == 10 {
+                        let signed = |n: u32| (n as u16 as i16) as f32 / 256.;
+                        self.action.effects.push(crate::action::GfxCue {
+                            id: words[1] >> 16,
+                            bone: if words[0] & (1 << 15) != 0 {
+                                usize::MAX
+                            } else {
+                                (words[0] >> 18 & 255) as usize
+                            },
+                            common: words[0] & (1 << 17) != 0,
+                            destroy_on_change: words[0] & (1 << 16) != 0,
+                            offset: Vec3::new(
+                                signed(words[2] >> 16),
+                                signed(words[2]),
+                                signed(words[3] >> 16),
+                            ),
+                            param: (words[1] & 65535) as f32,
+                            clip,
+                            frame,
+                            origin: self.position,
+                            facing: self.facing,
+                        });
+                    }
                     // ftAction_80071B50: play/replace/stop a fighter sound slot.
                     // 54/55 supply the stored footstep/landing cue; world-surface
                     // substitution remains a host adaptation, using the disc cue.

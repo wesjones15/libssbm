@@ -59,7 +59,7 @@ asset discovery also runs on the RoR2 plugin's first-launch worker.
 
 ## Native and RoR2 adapter status
 
-libssbm-ffi exports ABI 2 with twelve pinned layouts. The real DLL was exercised
+libssbm-ffi exports ABI 3 with thirteen pinned layouts. The real DLL was exercised
 from ror2-samus/NativeCheck through the plugin's exact Native.cs: callbacks,
 jumps/landing/attack, five costumes, mesh indices and texture copies pass.
 The adapter compiles against the installed RoR2 DLC4 assemblies. The survivor,
@@ -137,3 +137,18 @@ Embedded effect readers decode 47 common and 3 Samus model descriptors, 592+22
 emitter definitions and 36+8 texture groups with all frame/palette data. Relative
 bank relocation is independent of DAT pointers. Finite object poses, skinned
 vertices and texture bounds pass; source particle playback/rendering is pending.
+
+Particle runtime now interprets every Samus emitter's commands, including source
+waits/texture poses, vector/size/colour/rotation updates, counted loops, children
+and generator graphs. All 22 Samus emitters execute 240 ticks with finite state
+and valid texture poses. Bounds and command budgets reject unsupported/corrupt
+scripts. Some shared particle instructions and shape/attachment semantics remain
+unfinished. ABI 3 adds the 72-byte Sprite snapshot as layout thirteen. The C#
+harness exercises all Samus emitters and transfers their textures; the adapter
+draws source-sized billboards and bakes the two-colour TEV interpolation, including
+alpha, into transient texture variants. The viewer uses a matching GPU operation;
+impact particles were rendered and inspected. Shared/fighter GFX dispatch and
+complete source attachment, DirVec/trail/mirror and alpha-compare behavior need
+completion before full fidelity is claimed. Intensity alpha was corrected using
+GX sampling behavior, independently confirmed by Dolphin's texture decoder:
+https://github.com/dolphin-emu/dolphin/blob/master/Source/Core/VideoCommon/TextureDecoder_Common.cpp

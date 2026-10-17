@@ -14,24 +14,7 @@ pub struct EffectModel {
     pub model: Model,
     pub animations: Animations,
 }
-#[derive(Clone)]
-pub struct Emitter {
-    pub id: u32,
-    pub kind: u32,
-    pub shape: u16,
-    pub texture: u16,
-    pub generator_life: u16,
-    pub life: u16,
-    pub gravity: f32,
-    pub friction: f32,
-    pub velocity: Vec3,
-    pub radius: f32,
-    pub angle: f32,
-    pub random: f32,
-    pub size: f32,
-    pub params: Vec3,
-    pub commands: Vec<u8>,
-}
+pub use libssbm::particle::Emitter;
 pub struct TextureGroup {
     pub frames: Vec<Texture>,
     pub palettes: Vec<Vec<Texture>>,

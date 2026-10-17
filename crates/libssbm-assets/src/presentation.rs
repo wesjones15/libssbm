@@ -11,6 +11,27 @@ pub struct Presentation {
     pub ball: bool,
 }
 impl Presentation {
+    pub fn effect(dir: &Path, id: u32) -> Result<Self> {
+        let bank = crate::effects::Effects::load(dir, id >= 2000)?;
+        let model = bank
+            .models
+            .into_iter()
+            .nth(if id >= 2000 {
+                id as usize - 2000
+            } else {
+                id as usize
+            })
+            .ok_or("effect model missing")?;
+        let world = model.model.bind_world();
+        Ok(Self {
+            model: model.model,
+            animations: model.animations,
+            clip: "Object".into(),
+            frame: 0.,
+            world,
+            ball: false,
+        })
+    }
     pub fn article(dir: &Path, kind: u32, state: u32) -> Result<Self> {
         let a = crate::article::Article::load(dir, kind, state)?;
         let world = a.model.bind_world();

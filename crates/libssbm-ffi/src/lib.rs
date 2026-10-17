@@ -1,16 +1,17 @@
-//! C ABI v2. Main-thread handles; caller owns all pointers passed in.
+//! C ABI v3. Main-thread handles; caller owns all pointers passed in.
 //! Panics poison a handle and never unwind into the host.
 
 use glam::Vec3;
 use libssbm::{Contact, Event, Host, Input, Sim};
 use libssbm_assets::presentation::Presentation;
+mod particles;
 use std::{
     cell::RefCell,
     ffi::{CStr, CString, c_char, c_void},
     panic::{AssertUnwindSafe, catch_unwind},
     path::Path,
 };
-pub const SSBM_ABI_VERSION: u32 = 2;
+pub const SSBM_ABI_VERSION: u32 = 3;
 #[repr(C)]
 #[derive(Clone, Copy, Default)]
 pub struct V3 {
@@ -148,9 +149,13 @@ struct Rig {
     model: libssbm_assets::model::Model,
     animations: libssbm_assets::animation::Animations,
     common_bones: Vec<u8>,
+    effect_bone: usize,
 }
 impl Rig {
     fn load(dir: &Path) -> libssbm_assets::Result<Self> {
+        let fighter_bytes = std::fs::read(dir.join("PlSs.dat"))?;
+        let fighter = libssbm_assets::dat::Dat::parse(&fighter_bytes)?;
+        let desc = fighter.required_ptr(fighter.root("ftDataSamus")? + 8)?;
         let bytes = std::fs::read(dir.join("PlCo.dat"))?;
         let common = libssbm_assets::dat::Dat::parse(&bytes)?;
         let table = common.required_ptr(common.root("ftLoadCommonData")? + 0x10)?;
@@ -161,6 +166,7 @@ impl Rig {
             model: libssbm_assets::model::Model::load(dir, 0)?,
             animations: libssbm_assets::animation::Animations::load(dir)?,
             common_bones: common.bytes(mapping, 53)?.to_vec(),
+            effect_bone: fighter.bytes(desc + 0x12, 1)?[0] as usize,
         })
     }
 }
@@ -248,6 +254,7 @@ pub unsafe extern "C" fn ssbm_struct_sizes(out: *mut u32, max: u32) -> u32 {
         size_of::<TextureInfo>(),
         size_of::<Draw>(),
         size_of::<HitboxSample>(),
+        size_of::<particles::Sprite>(),
     ]
     .map(|s| s as u32);
     unsafe { copy(&sizes, out, max) }
@@ -380,6 +387,129 @@ pub unsafe extern "C" fn ssbm_sim_hitboxes(
         }
         count
     })
+}
+fn fighter_matrix(origin: Vec3, facing: Vec3) -> glam::Mat4 {
+    glam::Mat4::from_translation(origin)
+        * glam::Mat4::from_rotation_y(facing.x.atan2(facing.z))
+        * glam::Mat4::from_scale(Vec3::new(-1., 1., 1.))
+}
+/// # Safety
+/// Live handle; writable max NativeEvents (or null). For GFX, kind is source
+/// effect ID, move_id stores bone/common/destroy flags, strength is its parameter,
+/// position is a posed world-sim-unit point, direction is fighter heading.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn ssbm_sim_gfx(
+    handle: *const Handle,
+    out: *mut NativeEvent,
+    max: u32,
+) -> u32 {
+    if handle.is_null() {
+        return 0;
+    }
+    let h = unsafe { &*handle };
+    let count = h.sim.action.effects.len() as u32;
+    if out.is_null() {
+        return count;
+    }
+    guarded(0, || {
+        for (i, cue) in h.sim.action.effects.iter().take(max as usize).enumerate() {
+            let bone = if cue.bone == usize::MAX {
+                h.rig.effect_bone
+            } else if cue.common {
+                h.rig
+                    .common_bones
+                    .get(cue.bone)
+                    .copied()
+                    .map(usize::from)
+                    .unwrap_or(usize::MAX)
+            } else {
+                cue.bone
+            };
+            let pose = h
+                .rig
+                .animations
+                .pose(&h.rig.model, cue.clip, cue.frame, false);
+            let Some(joint) = pose.get(bone) else {
+                error("GFX bone outside rig");
+                return 0;
+            };
+            let position = fighter_matrix(cue.origin, cue.facing)
+                .transform_point3(joint.transform_point3(cue.offset));
+            unsafe {
+                *out.add(i) = NativeEvent {
+                    kind: cue.id,
+                    move_id: bone as u32 | if cue.destroy_on_change { 1 << 17 } else { 0 },
+                    strength: cue.param,
+                    position: position.into(),
+                    direction: cue.facing.into(),
+                };
+            }
+        }
+        count
+    })
+}
+/// # Safety
+/// Live simulation and 16 writable floats for the posed physical bone matrix.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn ssbm_sim_bone(handle: *const Handle, bone: u32, out: *mut f32) -> u32 {
+    if handle.is_null() || out.is_null() {
+        return 0;
+    }
+    let h = unsafe { &*handle };
+    guarded(0, || {
+        let pose =
+            h.rig
+                .animations
+                .pose(&h.rig.model, h.sim.motion.clip, h.sim.motion.frame, false);
+        let Some(joint) = pose.get(bone as usize) else {
+            return 0;
+        };
+        let matrix = fighter_matrix(h.sim.position, h.sim.facing) * *joint;
+        unsafe {
+            std::ptr::copy_nonoverlapping(matrix.to_cols_array().as_ptr(), out, 16);
+        }
+        1
+    })
+}
+/// # Safety
+/// Live simulation. Motion serial changes on every clip/state transition.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn ssbm_sim_motion_serial(handle: *const Handle) -> u64 {
+    if handle.is_null() {
+        0
+    } else {
+        unsafe { &*handle }.sim.motion.serial
+    }
+}
+/// # Safety
+/// Writable max u32 IDs (or null). Host presentation supplies completed fighter
+/// frame range; source accessory policy remains in Rust.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn ssbm_article_cues(
+    kind: u32,
+    state: u32,
+    previous: u32,
+    frame: u32,
+    full_charge: u32,
+    out: *mut u32,
+    max: u32,
+) -> u32 {
+    guarded(0, || unsafe {
+        copy(
+            &libssbm::effect::article_cues(kind, state, previous, frame, full_charge != 0),
+            out,
+            max,
+        )
+    })
+}
+#[unsafe(no_mangle)]
+pub extern "C" fn ssbm_effect_target(id: u32) -> i32 {
+    match libssbm::effect::resolve(id) {
+        libssbm::effect::Target::Particle(id) => id as i32,
+        libssbm::effect::Target::Model(id) => -(id as i32) - 1,
+        libssbm::effect::Target::NoOp => i32::MIN,
+        libssbm::effect::Target::Unknown => i32::MAX,
+    }
 }
 /// # Safety
 /// `handle` is null or a live unique handle; consume it exactly once.
@@ -658,6 +788,35 @@ pub unsafe extern "C" fn ssbm_article_new(dir: *const c_char, kind: u32, state: 
     })
 }
 /// # Safety
+/// NUL-terminated asset path, common model index or Samus model ID 2000..2002.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn ssbm_effect_new(dir: *const c_char, id: u32) -> *mut View {
+    guarded(std::ptr::null_mut(), || {
+        match (|| Presentation::effect(unsafe { path(dir) }?, id))() {
+            Ok(a) => Box::into_raw(Box::new(View::new(a))),
+            Err(e) => {
+                error(e);
+                std::ptr::null_mut()
+            }
+        }
+    })
+}
+/// # Safety
+/// Live object view. Animation duration from the disc; zero if no animation.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn ssbm_object_duration(view: *const View) -> f32 {
+    if view.is_null() {
+        return 0.;
+    }
+    unsafe { &*view }
+        .actor
+        .animations
+        .clips
+        .get("Object")
+        .map(|c| c.frames)
+        .unwrap_or(0.)
+}
+/// # Safety
 /// Unique live object view and finite nonnegative frame, main thread only.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn ssbm_object_update(v: *mut View, frame: f32) -> u32 {
@@ -863,9 +1022,10 @@ mod tests {
                 size_of::<Batch>(),
                 size_of::<TextureInfo>(),
                 size_of::<Draw>(),
-                size_of::<HitboxSample>()
+                size_of::<HitboxSample>(),
+                size_of::<particles::Sprite>()
             ],
-            [12, 32, 72, 20, 36, 24, 20, 40, 24, 12, 64, 88]
+            [12, 32, 72, 20, 36, 24, 20, 40, 24, 12, 64, 88, 72]
         );
     }
     #[test]

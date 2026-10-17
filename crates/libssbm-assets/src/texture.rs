@@ -66,9 +66,9 @@ pub fn decode(
                             } else {
                                 b[i / 2] & 15
                             };
-                            [n * 17, n * 17, n * 17, 255]
+                            [n * 17; 4]
                         }
-                        1 | 9 => [b[i], b[i], b[i], 255],
+                        1 | 9 => [b[i]; 4],
                         2 => {
                             let n = (b[i] & 15) * 17;
                             [n, n, n, (b[i] >> 4) * 17]
@@ -141,6 +141,10 @@ mod tests {
     use super::*;
     #[test]
     fn tiled_edges_and_transparent_cmpr() {
+        // GX intensity samples intensity in alpha too; particle silhouettes
+        // depend on it. Palette formats override this value below.
+        assert_eq!(decode(&[0x88; 32], 0, 1, 1, 0, None).unwrap(), [136; 4]);
+        assert_eq!(decode(&[0x20; 32], 0, 1, 1, 1, None).unwrap(), [32; 4]);
         let p = decode(&[255; 32], 0, 3, 2, 0, None).unwrap();
         assert_eq!(p, vec![255; 24]);
         let mut b = [0; 32];

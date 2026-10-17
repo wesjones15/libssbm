@@ -3,6 +3,7 @@ use libssbm::{
 };
 use libssbm_assets::presentation::Presentation;
 use macroquad::prelude::*;
+mod particles;
 fn config() -> Conf {
     Conf {
         window_title: "libssbm - Samus from Melee".into(),
@@ -68,6 +69,32 @@ async fn run() -> libssbm_assets::Result<()> {
         .map(|s| s.parse::<u32>())
         .transpose()?
         .unwrap_or(0);
+    let emitter = args
+        .iter()
+        .position(|s| s == "--emitter")
+        .and_then(|i| args.get(i + 1))
+        .map(|s| s.parse::<u32>())
+        .transpose()?;
+    let particle_bank = if let Some(id) = emitter {
+        Some(libssbm_assets::effects::Effects::load(
+            std::path::Path::new(&path),
+            id >= 2000,
+        )?)
+    } else {
+        None
+    };
+    let particle_renderer = particle_bank
+        .as_ref()
+        .map(particles::Renderer::new)
+        .transpose()?;
+    let mut particle_system = libssbm::particle::System::default();
+    if let (Some(id), Some(bank)) = (emitter, particle_bank.as_ref()) {
+        particle_system.definitions = bank.emitters.clone();
+        particle_system.spawn(id, ::glam::Mat4::IDENTITY, 1)?;
+        for _ in 0..pose_frame as u32 {
+            particle_system.tick();
+        }
+    }
     let mut actor = if let Some(kind) = article {
         Presentation::article(std::path::Path::new(&path), kind, article_state)?
     } else {
@@ -89,6 +116,7 @@ async fn run() -> libssbm_assets::Result<()> {
     let mut rendered = 0;
     let mut meshes = make_meshes(&actor);
     let mut last_hit = String::new();
+    let mut particle_clock = 0f64;
     loop {
         let dt = if capture.is_some() {
             1. / 60.
@@ -186,15 +214,17 @@ async fn run() -> libssbm_assets::Result<()> {
         if article.is_some() {
             actor.object_pose(pose_frame);
         }
-        let center = gv(sim.position) + vec3(0., if article.is_some() { 0. } else { 12. }, 0.);
-        let distance = if article.is_some() { 15. } else { 65. };
+        let object = article.is_some() || emitter.is_some();
+        let center = gv(sim.position) + vec3(0., if object { 0. } else { 12. }, 0.);
+        let distance = if object { 25. } else { 65. };
+        let camera = center
+            + vec3(
+                camera_yaw.sin() * distance,
+                distance * 0.43,
+                camera_yaw.cos() * distance,
+            );
         set_camera(&Camera3D {
-            position: center
-                + vec3(
-                    camera_yaw.sin() * distance,
-                    distance * 0.43,
-                    camera_yaw.cos() * distance,
-                ),
+            position: camera,
             target: center,
             up: Vec3::Y,
             fovy: 45.,
@@ -210,6 +240,9 @@ async fn run() -> libssbm_assets::Result<()> {
         // Samus's authored locomotion faces +Z; Melee supplies fighter heading.
         let rotation = ::glam::Mat4::from_rotation_y(std::f32::consts::FRAC_PI_2 - yaw);
         for (i, mesh) in meshes.iter_mut().enumerate() {
+            if emitter.is_some() {
+                continue;
+            }
             if !actor.visible(i) {
                 continue;
             }
@@ -241,6 +274,19 @@ async fn run() -> libssbm_assets::Result<()> {
         }
         for s in &shots {
             draw_sphere(s.at, s.radius, None, s.color);
+        }
+        if let Some(renderer) = &particle_renderer {
+            if capture.is_none() {
+                particle_clock += dt as f64;
+                while particle_clock >= 1. / 60. {
+                    particle_clock -= 1. / 60.;
+                    particle_system.tick();
+                }
+            }
+            if !particle_system.errors.is_empty() {
+                return Err(particle_system.errors.join("; ").into());
+            }
+            renderer.draw(&particle_system, camera);
         }
         set_default_camera();
         draw_rectangle(
