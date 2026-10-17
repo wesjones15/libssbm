@@ -62,6 +62,8 @@ async fn run() -> libssbm_assets::Result<()> {
     );
     let mut host = FlatHost::default();
     sim.motion.definitions = actor.animations.motion_definitions();
+    sim.action.definitions =
+        libssbm_assets::action::load(std::path::Path::new(&path), &actor.animations)?;
     let mut shots = Vec::<Shot>::new();
     let mut camera_yaw = 0.7f32;
     let mut costume = 0;

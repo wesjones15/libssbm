@@ -79,9 +79,14 @@ pub fn select(s: &Sim, input: Input) -> (&'static str, f32) {
     if s.phase == Phase::Helpless {
         return ("FallSpecial", 1.);
     }
+    if s.phase == Phase::ChargeCancel {
+        return ("SpecialNCancel", 1.);
+    }
     if let Some(m) = s.current_move {
         let clip = match m {
             Move::Jab => "Attack11",
+            Move::Jab2 => "Attack12",
+            Move::BackAir => "AttackAirB",
             Move::SideTilt => "AttackS3S",
             Move::UpTilt => "AttackHi3",
             Move::DownTilt => "AttackLw3",

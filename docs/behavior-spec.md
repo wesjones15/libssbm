@@ -104,3 +104,13 @@ have typed engine-independent records; other records retain their opcode/payload
 Synthetic control-flow/corruption checks and real-disc normal/Screw Attack hitbox
 coverage pass. Runtime execution and the host damage replacement are the next
 integration step; parser coverage alone is not combat fidelity.
+
+Runtime command integration now samples each active hitbox on every fighter tick,
+using its authored bone and pose frame. Create/change/clear commands, hit groups,
+repeat windows, jab combo gates, interrupt gates, smash holds and special script
+variables execute from the disc. The host sweeps the posed sphere between samples
+and tracks victims per action/group/window, replacing generic melee/Screw bursts.
+ABI 2 adds the 88-byte HitboxSample as the twelfth pinned layout; the C# harness
+validates real posed hitbox transfer and rejects the old placeholder hit event.
+HP/proc/force conversion remains a RoR2 adapter policy. Projectile art/behavior,
+all movement transitions and complete attack regression coverage remain underway.

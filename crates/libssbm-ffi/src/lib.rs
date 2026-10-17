@@ -1,4 +1,4 @@
-//! C ABI v1. Main-thread handles; caller owns all pointers passed in.
+//! C ABI v2. Main-thread handles; caller owns all pointers passed in.
 //! Panics poison a handle and never unwind into the host.
 
 use glam::Vec3;
@@ -10,7 +10,7 @@ use std::{
     panic::{AssertUnwindSafe, catch_unwind},
     path::Path,
 };
-pub const SSBM_ABI_VERSION: u32 = 1;
+pub const SSBM_ABI_VERSION: u32 = 2;
 #[repr(C)]
 #[derive(Clone, Copy, Default)]
 pub struct V3 {
@@ -140,7 +140,47 @@ pub struct Draw {
 }
 pub struct Handle {
     sim: Sim,
+    rig: Rig,
     poisoned: bool,
+}
+struct Rig {
+    model: libssbm_assets::model::Model,
+    animations: libssbm_assets::animation::Animations,
+    common_bones: Vec<u8>,
+}
+impl Rig {
+    fn load(dir: &Path) -> libssbm_assets::Result<Self> {
+        let bytes = std::fs::read(dir.join("PlCo.dat"))?;
+        let common = libssbm_assets::dat::Dat::parse(&bytes)?;
+        let table = common.required_ptr(common.root("ftLoadCommonData")? + 0x10)?;
+        // FighterKind::Samus = 13; FighterPartsTable, loaded by Fighter_LoadCommonData.
+        let parts = common.required_ptr(table + 13 * 4)?;
+        let mapping = common.required_ptr(parts + 4)?;
+        Ok(Self {
+            model: libssbm_assets::model::Model::load(dir, 0)?,
+            animations: libssbm_assets::animation::Animations::load(dir)?,
+            common_bones: common.bytes(mapping, 53)?.to_vec(),
+        })
+    }
+}
+#[repr(C)]
+#[derive(Clone, Copy, Default)]
+pub struct HitboxSample {
+    pub serial: u64,
+    pub generation: u32,
+    pub group: u32,
+    pub id: u32,
+    pub damage: f32,
+    pub radius: f32,
+    pub local_position: V3,
+    pub origin: V3,
+    pub facing: V3,
+    pub angle: u32,
+    pub growth: u32,
+    pub fixed_knockback: u32,
+    pub base_knockback: u32,
+    pub element: u32,
+    pub flags: u32,
 }
 pub struct View {
     actor: Presentation,
@@ -206,6 +246,7 @@ pub unsafe extern "C" fn ssbm_struct_sizes(out: *mut u32, max: u32) -> u32 {
         size_of::<Batch>(),
         size_of::<TextureInfo>(),
         size_of::<Draw>(),
+        size_of::<HitboxSample>(),
     ]
     .map(|s| s as u32);
     unsafe { copy(&sizes, out, max) }
@@ -243,16 +284,23 @@ pub unsafe extern "C" fn ssbm_extract(disc: *const c_char, dir: *const c_char) -
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn ssbm_sim_new(dir: *const c_char, pos: V3) -> *mut Handle {
     guarded(std::ptr::null_mut(), || {
-        let result = (|| -> libssbm_assets::Result<Sim> {
+        let result = (|| -> libssbm_assets::Result<(Sim, Rig)> {
             let dir = unsafe { path(dir) }?;
             let mut sim = Sim::new(libssbm_assets::params::load(dir)?, pos.into());
-            sim.motion.definitions =
-                libssbm_assets::animation::Animations::load(dir)?.motion_definitions();
-            Ok(sim)
+            let rig = Rig::load(dir)?;
+            sim.motion.definitions = rig.animations.motion_definitions();
+            sim.action.definitions = libssbm_assets::action::load(dir, &rig.animations)?;
+            for (name, action) in &sim.action.definitions {
+                if let Some(motion) = sim.motion.definitions.get_mut(name) {
+                    motion.looping |= action.looping;
+                }
+            }
+            Ok((sim, rig))
         })();
         match result {
-            Ok(sim) if Vec3::from(pos).is_finite() => Box::into_raw(Box::new(Handle {
+            Ok((sim, rig)) if Vec3::from(pos).is_finite() => Box::into_raw(Box::new(Handle {
                 sim,
+                rig,
                 poisoned: false,
             })),
             Ok(_) => {
@@ -264,6 +312,68 @@ pub unsafe extern "C" fn ssbm_sim_new(dir: *const c_char, pos: V3) -> *mut Handl
                 std::ptr::null_mut()
             }
         }
+    })
+}
+/// Samples every active hitbox on every fighter tick of the last step. Positions
+/// are posed model-local coordinates; the engine adapter owns world conversion.
+/// # Safety
+/// Live handle and writable `max`-element output (or null to query count).
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn ssbm_sim_hitboxes(
+    handle: *const Handle,
+    out: *mut HitboxSample,
+    max: u32,
+) -> u32 {
+    if handle.is_null() {
+        return 0;
+    }
+    let h = unsafe { &*handle };
+    if h.poisoned {
+        return 0;
+    }
+    let count = h.sim.action.samples.len() as u32;
+    if out.is_null() || max == 0 {
+        return count;
+    }
+    guarded(0, || {
+        for (i, sample) in h.sim.action.samples.iter().take(max as usize).enumerate() {
+            let hit = &sample.hitbox;
+            let joint = if hit.common_bone {
+                h.rig.common_bones.get(hit.bone).copied().map(usize::from)
+            } else {
+                Some(hit.bone)
+            };
+            let pose = h
+                .rig
+                .animations
+                .pose(&h.rig.model, sample.clip, sample.frame, false);
+            let Some(joint) = joint.filter(|&j| j < pose.len()) else {
+                error("hitbox bone outside Samus rig");
+                return 0;
+            };
+            let local = pose[joint].transform_point3(hit.offset);
+            let result = HitboxSample {
+                serial: sample.serial,
+                generation: sample.generation,
+                group: hit.group,
+                id: hit.id,
+                damage: hit.damage * sample.strength,
+                radius: hit.radius,
+                local_position: local.into(),
+                origin: sample.origin.into(),
+                facing: sample.facing.into(),
+                angle: hit.angle,
+                growth: hit.growth,
+                fixed_knockback: hit.fixed_knockback,
+                base_knockback: hit.base_knockback,
+                element: hit.element,
+                flags: u32::from(hit.ground) | (u32::from(hit.air) << 1),
+            };
+            unsafe {
+                *out.add(i) = result;
+            }
+        }
+        count
     })
 }
 /// # Safety
@@ -666,9 +776,10 @@ mod tests {
                 size_of::<ModelInfo>(),
                 size_of::<Batch>(),
                 size_of::<TextureInfo>(),
-                size_of::<Draw>()
+                size_of::<Draw>(),
+                size_of::<HitboxSample>()
             ],
-            [12, 32, 72, 20, 36, 24, 20, 40, 24, 12, 64]
+            [12, 32, 72, 20, 36, 24, 20, 40, 24, 12, 64, 88]
         );
     }
     #[test]

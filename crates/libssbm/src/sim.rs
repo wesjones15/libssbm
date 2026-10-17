@@ -4,6 +4,7 @@
 //! animation command reader. They are deliberately separate from disc parameters.
 use crate::Params;
 use glam::Vec3;
+mod actions;
 
 pub const TICK_HZ: f64 = 60.;
 pub const JUMP: u32 = 1;
@@ -48,6 +49,8 @@ pub enum Move {
     SideSmash = 10,
     UpSmash = 11,
     DownSmash = 12,
+    Jab2 = 13,
+    BackAir = 14,
     ChargeShot = 20,
     Missile = 21,
     SuperMissile = 22,
@@ -105,6 +108,7 @@ pub enum Phase {
     ChargeShot,
     Recovery,
     Helpless,
+    ChargeCancel,
 }
 #[derive(Clone, Copy, Debug)]
 pub struct Options {
@@ -130,6 +134,7 @@ impl Default for Options {
 }
 
 pub struct Sim {
+    pub action: crate::action::ActionState,
     pub motion: crate::motion::MotionState,
     pub move_started_grounded: bool,
     pub params: Params,
@@ -161,6 +166,7 @@ pub struct Sim {
 impl Sim {
     pub fn new(params: Params, position: Vec3) -> Self {
         Self {
+            action: crate::action::ActionState::default(),
             motion: crate::motion::MotionState::default(),
             move_started_grounded: false,
             params,
@@ -194,6 +200,7 @@ impl Sim {
         (self.accumulator * TICK_HZ) as f32
     }
     pub fn advance(&mut self, host: &mut impl Host, input: Input, dt: f64) -> u32 {
+        self.action.samples.clear();
         if !dt.is_finite() || dt < 0. || !input.movement.is_finite() || !input.aim.is_finite() {
             return 0;
         }
@@ -254,7 +261,13 @@ impl Sim {
             return;
         }
         self.current_move = Some(m);
+        self.action.reset();
+        self.motion.frame = 0.;
         self.move_started_grounded = self.grounded;
+        self.release_phase = m == Move::ScrewAttack;
+        if m == Move::BackAir && input.aim.with_y(0.).length_squared() > 0.01 {
+            self.facing = input.aim.with_y(0.).normalize();
+        }
         self.smash_charge = 0;
         self.move_strength = 1.;
         self.move_aim = if input.aim.length_squared() > 0.01 {
@@ -274,6 +287,13 @@ impl Sim {
             self.velocity.y = self.params.bomb_velocity;
         }
     }
+    /// A host/test can request a named fighter move; the same slot gate and entry
+    /// logic used by physical input apply. No engine-specific objects are needed.
+    pub fn start_move(&mut self, host: &mut impl Host, m: Move, input: Input) -> bool {
+        let serial = self.action.serial;
+        self.start(host, m, input);
+        self.action.serial != serial
+    }
     fn choose_attack(&self, input: Input) -> Move {
         let up = input.buttons & UP != 0;
         let down = input.buttons & DOWN != 0;
@@ -284,7 +304,11 @@ impl Sim {
             } else if down {
                 Move::DownAir
             } else if magnitude > 0.3 {
-                Move::ForwardAir
+                if input.movement.with_y(0.).dot(input.aim.with_y(0.)) < -0.1 {
+                    Move::BackAir
+                } else {
+                    Move::ForwardAir
+                }
             } else {
                 Move::NeutralAir
             };
@@ -388,7 +412,9 @@ impl Sim {
             }
             Phase::Startup => {
                 let m = self.current_move.unwrap();
-                if self.phase_frame >= startup(m) {
+                if !self.action.definitions.is_empty() {
+                    self.update_disc_action(host, input, pressed);
+                } else if self.phase_frame >= startup(m) {
                     if m.is_smash() && input.buttons & ATTACK != 0 {
                         self.set_phase(Phase::SmashCharge);
                     } else if m == Move::ChargeShot
@@ -410,10 +436,18 @@ impl Sim {
                     .min(self.options.smash_max_frames);
                 if input.buttons & ATTACK == 0 || self.smash_charge >= self.options.smash_max_frames
                 {
-                    self.move_strength = 1.
-                        + 0.4 * self.smash_charge as f32
-                            / self.options.smash_max_frames.max(1) as f32;
-                    self.fire(host);
+                    if self.action.definitions.is_empty() {
+                        self.move_strength = 1.
+                            + 0.4 * self.smash_charge as f32
+                                / self.options.smash_max_frames.max(1) as f32;
+                        self.fire(host);
+                    } else {
+                        self.move_strength = 1.
+                            + (self.action.smash_multiplier - 1.).max(0.)
+                                * self.smash_charge as f32
+                                / self.action.smash_max_frames.max(1) as f32;
+                        self.set_phase(Phase::Startup);
+                    }
                 }
             }
             Phase::ChargeShot => {
@@ -429,7 +463,11 @@ impl Sim {
                         Move::ChargeShot as u32,
                         self.shot_charge as f32,
                     );
-                    self.set_phase(Phase::Free);
+                    self.set_phase(if self.action.definitions.is_empty() {
+                        Phase::Free
+                    } else {
+                        Phase::ChargeCancel
+                    });
                     self.current_move = None;
                     if pressed & JUMP != 0 && self.grounded {
                         self.short_hop = false;
@@ -442,7 +480,9 @@ impl Sim {
                 }
             }
             Phase::Recovery => {
-                if self.phase_frame >= recovery(self.current_move.unwrap()) {
+                if !self.action.definitions.is_empty() {
+                    self.update_disc_action(host, input, pressed);
+                } else if self.phase_frame >= recovery(self.current_move.unwrap()) {
                     self.set_phase(if self.release_phase && !self.grounded {
                         Phase::Helpless
                     } else {
@@ -454,6 +494,12 @@ impl Sim {
             Phase::Helpless => {
                 if self.grounded {
                     self.set_phase(Phase::Free);
+                }
+            }
+            Phase::ChargeCancel => {
+                if self.motion.finished() {
+                    self.set_phase(Phase::Free);
+                    self.current_move = None;
                 }
             }
         }
@@ -490,7 +536,7 @@ impl Sim {
                 Vec3::ZERO
             };
             let difference = target - horizontal;
-            let step = if target.length_squared() > 0.001 {
+            let step = if movable && target.length_squared() > 0.001 {
                 accel * self.options.speed_scale
             } else {
                 friction
@@ -531,10 +577,19 @@ impl Sim {
         let (clip, rate) = crate::motion::select(self, input);
         self.motion.select(clip, rate);
         self.motion.advance();
+        if !self.action.definitions.is_empty() {
+            self.execute_disc_commands(host, input);
+        }
         self.previous = input;
     }
     fn fire(&mut self, host: &mut impl Host) {
         let m = self.current_move.unwrap();
+        if !self.action.definitions.is_empty() {
+            self.set_phase(Phase::Recovery);
+            self.motion.frame = 0.;
+            self.release_phase = m == Move::ScrewAttack;
+            return;
+        }
         let strength = if m == Move::ChargeShot {
             let ratio = self.shot_charge as f32 / self.params.charge_steps as f32;
             self.shot_charge = 0;

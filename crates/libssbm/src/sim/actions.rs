@@ -1,0 +1,174 @@
+//! Runtime command execution. ftAction_80073240, ftCo_Attack1/AttackAir and
+//! ftSamus's SpecialN/S/Hi/Lw animation callbacks are the behavioral spec.
+use super::*;
+use crate::action::{ActiveHitbox, Command, HitSample};
+
+impl Sim {
+    fn finish_disc_action(&mut self) {
+        self.action.active.clear();
+        self.current_move = None;
+        self.set_phase(if self.release_phase && !self.grounded {
+            Phase::Helpless
+        } else {
+            Phase::Free
+        });
+    }
+    pub(super) fn update_disc_action(&mut self, host: &mut impl Host, input: Input, pressed: u32) {
+        let m = self.current_move.unwrap();
+        if m == Move::Jab && self.action.jab_combo && pressed & ATTACK != 0 {
+            self.start(host, Move::Jab2, input);
+            return;
+        }
+        if self.action.interrupt && pressed & ATTACK != 0 {
+            self.start(host, self.choose_attack(input), input);
+            return;
+        }
+        if !self.motion.finished() {
+            return;
+        }
+        if m == Move::ChargeShot && self.phase == Phase::Startup {
+            if self.grounded
+                && self.shot_charge < self.params.charge_steps
+                && !(self.options.hold_charge && input.buttons & SPECIAL == 0)
+            {
+                self.charge_clock = 0;
+                self.set_phase(Phase::ChargeShot);
+            } else {
+                self.fire(host);
+            }
+        } else {
+            self.finish_disc_action();
+        }
+    }
+
+    fn disc_projectile(&mut self, host: &mut impl Host) {
+        if self.action.projectile_fired {
+            return;
+        }
+        let Some(m) = self.current_move else {
+            return;
+        };
+        if !matches!(
+            m,
+            Move::ChargeShot | Move::Missile | Move::SuperMissile | Move::Bomb
+        ) {
+            return;
+        }
+        self.action.projectile_fired = true;
+        let strength = if m == Move::ChargeShot {
+            let charge = self.shot_charge as f32 / self.params.charge_steps as f32;
+            self.shot_charge = 0;
+            charge
+        } else {
+            1.
+        };
+        self.emit(host, EventKind::Hit, m as u32, strength);
+    }
+
+    pub(super) fn execute_disc_commands(&mut self, host: &mut impl Host, input: Input) {
+        let clip = self.motion.clip;
+        let frame = self.motion.frame;
+        if self.action.script_clip != clip || frame < self.action.script_frame {
+            self.action.cursor = 0;
+            self.action.script_clip = clip;
+        }
+        self.action.script_frame = frame;
+        while let Some(event) = self
+            .action
+            .definitions
+            .get(clip)
+            .and_then(|a| a.commands.get(self.action.cursor))
+            .cloned()
+        {
+            if event.frame > frame {
+                break;
+            }
+            self.action.cursor += 1;
+            match event.command {
+                Command::Hitbox(hitbox) => {
+                    let generation = if let Some(old) = self
+                        .action
+                        .active
+                        .values()
+                        .find(|a| a.hitbox.group == hitbox.group)
+                    {
+                        old.generation
+                    } else {
+                        let slot = &mut self.action.generations[hitbox.group as usize];
+                        *slot = slot.wrapping_add(1);
+                        *slot
+                    };
+                    self.action
+                        .active
+                        .insert(hitbox.id, ActiveHitbox { hitbox, generation });
+                }
+                Command::ClearHitbox(id) => {
+                    self.action.active.remove(&id);
+                }
+                Command::ClearHitboxes => self.action.active.clear(),
+                Command::HitboxDamage(id, damage) => {
+                    if let Some(h) = self.action.active.get_mut(&id) {
+                        h.hitbox.damage = damage;
+                    }
+                }
+                Command::HitboxRadius(id, radius) => {
+                    if let Some(h) = self.action.active.get_mut(&id) {
+                        h.hitbox.radius = radius;
+                    }
+                }
+                Command::Variable(index, value) => {
+                    self.action.variables[index as usize] = value;
+                    if value == 1
+                        && index == 1
+                        && self.current_move == Some(Move::ChargeShot)
+                        && self.phase != Phase::ChargeShot
+                    {
+                        self.disc_projectile(host);
+                    }
+                }
+                Command::ThrowFlag(_) => {
+                    if matches!(
+                        self.current_move,
+                        Some(Move::Missile | Move::SuperMissile | Move::Bomb)
+                    ) {
+                        self.disc_projectile(host);
+                    }
+                }
+                Command::Interrupt => self.action.interrupt = true,
+                Command::JabCombo(value) => self.action.jab_combo = value,
+                Command::SmashCharge {
+                    max_frames,
+                    damage_per_frame,
+                } => {
+                    if self.current_move.is_some_and(Move::is_smash)
+                        && input.buttons & ATTACK != 0
+                        && self.smash_charge == 0
+                    {
+                        self.action.smash_max_frames = max_frames;
+                        self.action.smash_multiplier = damage_per_frame;
+                        self.set_phase(Phase::SmashCharge);
+                        self.motion.rate = 0.;
+                    }
+                }
+                Command::Visibility { group, choice } => {
+                    self.action.visibility.insert(group, choice);
+                }
+                Command::Raw { .. } => (),
+            }
+        }
+        if self.current_move.is_some() {
+            for active in self.action.active.values() {
+                self.action.samples.push(HitSample {
+                    hitbox: active.hitbox.clone(),
+                    generation: active.generation,
+                    serial: self.action.serial,
+                    clip,
+                    frame,
+                    origin: self.position,
+                    facing: self.facing,
+                    strength: self.move_strength,
+                });
+            }
+        }
+    }
+}

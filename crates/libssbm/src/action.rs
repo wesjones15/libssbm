@@ -1,6 +1,7 @@
 //! Engine-independent motion command data, populated from the player's disc.
 //! Format/behavior specification: lb/lbcommand.c and ft/ftaction.c.
 use glam::Vec3;
+use std::collections::BTreeMap;
 
 #[derive(Clone, Debug, Default)]
 pub struct Hitbox {
@@ -53,4 +54,53 @@ pub struct ActionDef {
     pub frames: f32,
     pub looping: bool,
     pub commands: Vec<TimedCommand>,
+}
+
+#[derive(Clone, Debug)]
+pub struct ActiveHitbox {
+    pub hitbox: Hitbox,
+    pub generation: u32,
+}
+#[derive(Clone, Debug)]
+pub struct HitSample {
+    pub hitbox: Hitbox,
+    pub generation: u32,
+    pub serial: u64,
+    pub clip: &'static str,
+    pub frame: f32,
+    pub origin: Vec3,
+    pub facing: Vec3,
+    pub strength: f32,
+}
+#[derive(Clone, Debug, Default)]
+pub struct ActionState {
+    pub definitions: BTreeMap<String, ActionDef>,
+    pub active: BTreeMap<u32, ActiveHitbox>,
+    pub samples: Vec<HitSample>,
+    pub variables: [u32; 4],
+    pub serial: u64,
+    pub interrupt: bool,
+    pub jab_combo: bool,
+    pub visibility: BTreeMap<i32, i32>,
+    pub projectile_fired: bool,
+    pub smash_max_frames: u32,
+    pub smash_multiplier: f32,
+    pub(crate) cursor: usize,
+    pub(crate) script_clip: &'static str,
+    pub(crate) script_frame: f32,
+    pub(crate) generations: [u32; 8],
+}
+impl ActionState {
+    pub fn reset(&mut self) {
+        self.active.clear();
+        self.variables = [0; 4];
+        self.serial = self.serial.wrapping_add(1);
+        self.interrupt = false;
+        self.jab_combo = false;
+        self.visibility.clear();
+        self.projectile_fired = false;
+        self.cursor = 0;
+        self.script_clip = "";
+        self.script_frame = -1.;
+    }
 }
