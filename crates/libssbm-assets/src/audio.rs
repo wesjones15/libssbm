@@ -201,9 +201,13 @@ impl Bank {
         })
     }
     pub fn load(dir: &Path) -> Result<Self> {
-        let mut bank = Self::sequence(&std::fs::read(dir.join("audio/us/smash2.sem"))?)?;
-        for name in ["main.ssm", "samus.ssm"] {
-            for (id, sample) in ssm(&std::fs::read(dir.join("audio/us").join(name))?)? {
+        Self::load_for(dir, &crate::fighter::SAMUS)
+    }
+    pub fn load_for(dir: &Path, fighter: &crate::fighter::FighterAssets<'_>) -> Result<Self> {
+        fighter.required()?;
+        let mut bank = Self::sequence(&std::fs::read(dir.join(fighter.sequences))?)?;
+        for name in fighter.samples {
+            for (id, sample) in ssm(&std::fs::read(dir.join(name))?)? {
                 if bank.samples.insert(id, sample).is_some() {
                     return Err("duplicate SSM sample id".into());
                 }

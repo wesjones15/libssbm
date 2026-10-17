@@ -152,3 +152,22 @@ complete source attachment, DirVec/trail/mirror and alpha-compare behavior need
 completion before full fidelity is claimed. Intensity alpha was corrected using
 GX sampling behavior, independently confirmed by Dolphin's texture decoder:
 https://github.com/dolphin-emu/dolphin/blob/master/Source/Core/VideoCommon/TextureDecoder_Common.cpp
+
+Reuse boundary: character file/symbol references, costume lists, audio dependencies
+and article descriptor bounds now live in `fighter::FighterAssets`; Samus is a
+definition used by compatibility loaders. Generic readers expose `load_for` paths,
+and first-run extraction/cache completeness use the same definition. A renamed
+asset/symbol regression exercises model, clip/script, audio, article and effect
+readers without canonical Samus filenames. This does not make the gameplay FSM
+generic: its move selection and special transitions still assume Samus. See
+`docs/reuse.md` for current and intended ownership.
+
+Object/effect material tracks now sample authored diffuse colour and alpha from
+HSD MatAnimJoint/AObj/FObj trees. Render-mode/PE flags choose source translucency
+or additive blending; Melee requests full authored opacity from ModelView rather
+than the default glass-surface tint attenuation. Texture/UV animation and complete
+TEV/PE fidelity remain incomplete. Fighter effect routing now handles the source
+camera-quake cue and entry/accessory cues for Screw Attack and charge/missile art;
+posed attachments and source model lifetimes are connected in the RoR2 adapter.
+These changes compile and pass boundary checks; gameplay visual verification is
+still pending.

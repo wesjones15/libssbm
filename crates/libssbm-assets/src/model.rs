@@ -36,7 +36,11 @@ pub struct Batch {
     pub color: [f32; 4],
     pub texture: Option<Texture>,
     pub dobj: usize,
+    pub owner: usize,
+    pub blend: u8,
+    pub lit: u8,
 }
+#[derive(Clone)]
 pub struct Model {
     pub joints: Vec<Joint>,
     pub batches: Vec<Batch>,
@@ -60,14 +64,26 @@ pub fn local(t: Vec3, r: Vec3, s: Vec3) -> Mat4 {
 }
 impl Model {
     pub fn load(dir: &Path, costume: usize) -> Result<Self> {
-        let c = *crate::COSTUMES.get(costume).ok_or("invalid costume")?;
-        let bytes = std::fs::read(dir.join(format!("PlSs{c}.dat")))?;
+        Self::load_for(dir, costume, &crate::fighter::SAMUS)
+    }
+    pub fn load_for(
+        dir: &Path,
+        costume: usize,
+        fighter: &crate::fighter::FighterAssets<'_>,
+    ) -> Result<Self> {
+        fighter.required()?;
+        let file = fighter.costumes.get(costume).ok_or("invalid costume")?;
+        let bytes = std::fs::read(dir.join(file))?;
         let mut model = Self::parse(&Dat::parse(&bytes)?)?;
-        let fighter = std::fs::read(dir.join("PlSs.dat"))?;
-        let d = Dat::parse(&fighter)?;
-        let desc = d.required_ptr(d.root("ftDataSamus")? + 8)?;
+        let bytes = std::fs::read(dir.join(fighter.data.file))?;
+        let d = Dat::parse(&bytes)?;
+        let desc = d.required_ptr(d.root(fighter.data.root)? + 8)?;
         model.normal_visible = visibility(&d, desc, costume, model.normal_visible.len(), 0)?;
-        model.ball_visible = visibility(&d, desc, costume, model.ball_visible.len(), 1)?;
+        model.ball_visible = if let Some(choice) = fighter.morph_visibility {
+            visibility(&d, desc, costume, model.ball_visible.len(), choice)?
+        } else {
+            model.normal_visible.clone()
+        };
         Ok(model)
     }
     pub fn parse(d: &Dat) -> Result<Self> {
@@ -141,12 +157,16 @@ impl Model {
                     return Err("cyclic DObj".into());
                 }
                 let (color, texture) = material(d, d.ptr(at + 8)?)?;
+                let (blend, lit) = render_flags(d, d.ptr(at + 8)?)?;
                 let mut batch = Batch {
                     vertices: vec![],
                     indices: vec![],
                     color,
                     texture,
                     dobj: dobj_index,
+                    owner,
+                    blend,
+                    lit,
                 };
                 dobj_index += 1;
                 let mut pobj = d.ptr(at + 12)?;
@@ -279,6 +299,20 @@ fn material(d: &Dat, at: Option<usize>) -> Result<([f32; 4], Option<Texture>)> {
         tex = d.ptr(t + 4)?;
     }
     Ok((color, None))
+}
+fn render_flags(d: &Dat, at: Option<usize>) -> Result<(u8, u8)> {
+    let Some(at) = at else {
+        return Ok((0, 1));
+    };
+    let mode = d.u32(at + 4)?;
+    let mut blend = if mode & (1 << 30) != 0 { 2 } else { 0 };
+    if let Some(pe) = d.ptr(at + 20)? {
+        let state = d.bytes(pe, 12)?;
+        if state[4] == 1 {
+            blend = if state[6] == 1 { 3 } else { 2 };
+        }
+    }
+    Ok((blend, if mode & 4 != 0 { 1 } else { 0 }))
 }
 fn polygon(
     d: &Dat,

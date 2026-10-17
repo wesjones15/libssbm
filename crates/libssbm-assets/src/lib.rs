@@ -7,6 +7,7 @@ pub mod audio;
 pub mod dat;
 pub mod disc;
 pub mod effects;
+pub mod fighter;
 pub mod model;
 pub mod params;
 pub mod presentation;
@@ -14,7 +15,7 @@ pub mod texture;
 
 pub type Result<T> = std::result::Result<T, Box<dyn std::error::Error + Send + Sync>>;
 
-pub const COSTUMES: [&str; 5] = ["Nr", "Pi", "Bk", "Gr", "La"];
+pub use fighter::COSTUMES;
 pub const REQUIRED: [&str; 13] = [
     "PlSs.dat",
     "PlCo.dat",
@@ -32,24 +33,9 @@ pub const REQUIRED: [&str; 13] = [
 ];
 
 pub fn validate_asset(name: &str, bytes: &[u8]) -> Result<()> {
-    if name.ends_with(".ssm") {
-        audio::ssm(bytes)?;
-    } else if name.ends_with(".sem") {
-        audio::Bank::sequence(bytes)?;
-    } else if name == "PlSsAJ.dat" {
-        if bytes.len() <= 32 {
-            return Err("truncated animation archive".into());
-        }
-    } else {
-        dat::Dat::parse(bytes)?;
-    }
-    Ok(())
+    fighter::SAMUS.validate_asset(name, bytes)
 }
 
 pub fn complete(path: &std::path::Path) -> bool {
-    REQUIRED.iter().all(|name| {
-        std::fs::read(path.join(name))
-            .ok()
-            .is_some_and(|bytes| validate_asset(name, &bytes).is_ok())
-    })
+    fighter::SAMUS.complete(path)
 }

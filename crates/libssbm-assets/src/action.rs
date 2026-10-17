@@ -6,16 +6,31 @@ use libssbm::action::{ActionDef, Command, Hitbox, TimedCommand};
 use std::{collections::BTreeMap, path::Path};
 
 pub fn load(dir: &Path, animations: &Animations) -> Result<BTreeMap<String, ActionDef>> {
-    let bytes = std::fs::read(dir.join("PlSs.dat"))?;
-    parse(&Dat::parse(&bytes)?, animations)
+    load_for(dir, animations, &crate::fighter::SAMUS)
+}
+pub fn load_for(
+    dir: &Path,
+    animations: &Animations,
+    fighter: &crate::fighter::FighterAssets<'_>,
+) -> Result<BTreeMap<String, ActionDef>> {
+    fighter.required()?;
+    let bytes = std::fs::read(dir.join(fighter.data.file))?;
+    parse_for(&Dat::parse(&bytes)?, animations, fighter.data.root)
 }
 
 pub fn parse(dat: &Dat, animations: &Animations) -> Result<BTreeMap<String, ActionDef>> {
-    let root = dat.root("ftDataSamus")?;
+    parse_for(dat, animations, crate::fighter::SAMUS.data.root)
+}
+pub fn parse_for(
+    dat: &Dat,
+    animations: &Animations,
+    root: &str,
+) -> Result<BTreeMap<String, ActionDef>> {
+    let root = dat.root(root)?;
     let start = dat.required_ptr(root + 0xc)?;
     let end = dat.required_ptr(root + 0x14)?;
     if end <= start || !(end - start).is_multiple_of(24) || (end - start) / 24 > 2048 {
-        return Err("invalid Samus motion descriptor table".into());
+        return Err("invalid fighter motion descriptor table".into());
     }
     let mut result = BTreeMap::new();
     for at in (start..end).step_by(24) {

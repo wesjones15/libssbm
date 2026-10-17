@@ -1,5 +1,8 @@
 //! ISO/CISO/FST reader, following the existing libsms extraction format contract.
-use crate::{REQUIRED, Result};
+use crate::{
+    Result,
+    fighter::{FighterAssets, SAMUS},
+};
 use std::{
     collections::BTreeMap,
     fs::{self, File},
@@ -143,13 +146,18 @@ impl Disc {
 }
 
 pub fn extract(disc_path: &Path, out: &Path) -> Result<()> {
+    extract_for(disc_path, out, &SAMUS)
+}
+pub fn extract_for(disc_path: &Path, out: &Path, fighter: &FighterAssets<'_>) -> Result<()> {
+    let required = fighter.required()?;
     guard_output(out)?;
-    // Only this fixed allowlist is written; no disc path is used as an output path.
+    // Only this validated character allowlist is written; no FST path is used
+    // as an output path. Validate every dependency before writing any of them.
     let mut disc = Disc::open(disc_path)?;
     let mut blobs = Vec::new();
-    for name in REQUIRED {
+    for name in required {
         let bytes = disc.file(name)?;
-        crate::validate_asset(name, &bytes)?;
+        fighter.validate_asset(name, &bytes)?;
         blobs.push((name, bytes));
     }
     fs::create_dir_all(out)?;

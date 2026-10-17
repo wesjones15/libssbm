@@ -9,19 +9,30 @@ pub struct Presentation {
     pub frame: f32,
     pub world: Vec<Mat4>,
     pub ball: bool,
+    pub material_tracks: Vec<crate::animation::Track>,
+    pub duration: f32,
 }
 impl Presentation {
     pub fn effect(dir: &Path, id: u32) -> Result<Self> {
-        let bank = crate::effects::Effects::load(dir, id >= 2000)?;
+        let archive = if id >= 2000 {
+            crate::fighter::SAMUS.effects
+        } else {
+            crate::fighter::COMMON_EFFECTS
+        };
+        Self::effect_from(dir, archive, if id >= 2000 { id - 2000 } else { id })
+    }
+    /// A bank-local model index, independent of the fighter's source effect IDs.
+    pub fn effect_from(
+        dir: &Path,
+        archive: crate::fighter::Archive<'_>,
+        model: u32,
+    ) -> Result<Self> {
+        let bank = crate::effects::Effects::shared_archive(dir, archive)?;
         let model = bank
             .models
-            .into_iter()
-            .nth(if id >= 2000 {
-                id as usize - 2000
-            } else {
-                id as usize
-            })
-            .ok_or("effect model missing")?;
+            .get(model as usize)
+            .ok_or("effect model missing")?
+            .clone();
         let world = model.model.bind_world();
         Ok(Self {
             model: model.model,
@@ -30,11 +41,27 @@ impl Presentation {
             frame: 0.,
             world,
             ball: false,
+            material_tracks: model.material_tracks,
+            duration: model.lifetime,
         })
     }
     pub fn article(dir: &Path, kind: u32, state: u32) -> Result<Self> {
-        let a = crate::article::Article::load(dir, kind, state)?;
+        Self::article_for(dir, kind, state, &crate::fighter::SAMUS)
+    }
+    pub fn article_for(
+        dir: &Path,
+        kind: u32,
+        state: u32,
+        fighter: &crate::fighter::FighterAssets<'_>,
+    ) -> Result<Self> {
+        let a = crate::article::Article::load_for(dir, kind, state, fighter)?;
         let world = a.model.bind_world();
+        let duration = a
+            .animations
+            .clips
+            .get("Object")
+            .map(|c| c.frames)
+            .unwrap_or(0.);
         Ok(Self {
             model: a.model,
             animations: a.animations,
@@ -42,6 +69,8 @@ impl Presentation {
             frame: 0.,
             world,
             ball: false,
+            material_tracks: a.material_tracks,
+            duration,
         })
     }
     pub fn object_pose(&mut self, frame: f32) {
@@ -49,15 +78,24 @@ impl Presentation {
         self.world = self.animations.pose_object(&self.model, frame);
     }
     pub fn load(dir: &Path, costume: usize) -> Result<Self> {
-        let model = Model::load(dir, costume)?;
+        Self::load_for(dir, costume, &crate::fighter::SAMUS)
+    }
+    pub fn load_for(
+        dir: &Path,
+        costume: usize,
+        fighter: &crate::fighter::FighterAssets<'_>,
+    ) -> Result<Self> {
+        let model = Model::load_for(dir, costume, fighter)?;
         let world = model.bind_world();
         Ok(Self {
             model,
-            animations: Animations::load(dir)?,
+            animations: Animations::load_for(dir, fighter)?,
             clip: String::new(),
             frame: 0.,
             world,
             ball: false,
+            material_tracks: Vec::new(),
+            duration: 0.,
         })
     }
     pub fn update(&mut self, sim: &Sim, _dt: f32) {
@@ -76,6 +114,22 @@ impl Presentation {
         } else {
             self.model.normal_visible[b.dobj]
         }
+    }
+    pub fn color(&self, batch: usize) -> [f32; 4] {
+        let b = &self.model.batches[batch];
+        let mut color = b.color;
+        for track in &self.material_tracks {
+            if track.joint == b.dobj
+                && let Some(value) = track.sample(self.frame)
+            {
+                match track.channel {
+                    4..=6 => color[(track.channel - 4) as usize] = value.clamp(0., 1.),
+                    10 => color[3] = value.clamp(0., 1.),
+                    _ => (),
+                }
+            }
+        }
+        color
     }
 }
 pub fn clip_name(s: &Sim) -> &'static str {

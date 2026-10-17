@@ -9,10 +9,12 @@ use crate::{
 };
 use glam::Vec3;
 use std::{collections::BTreeMap, path::Path};
+#[derive(Clone)]
 pub struct EffectModel {
     pub lifetime: f32,
     pub model: Model,
     pub animations: Animations,
+    pub material_tracks: Vec<crate::animation::Track>,
 }
 pub use libssbm::particle::Emitter;
 pub struct TextureGroup {
@@ -25,13 +27,62 @@ pub struct Effects {
     pub textures: Vec<Option<TextureGroup>>,
 }
 impl Effects {
-    pub fn load(dir: &Path, samus: bool) -> Result<Self> {
-        let (name, symbol) = if samus {
-            ("EfSsData.dat", "effSamusDataTable")
-        } else {
-            ("EfCoData.dat", "effCommonDataTable")
+    pub fn shared(dir: &Path, samus: bool) -> Result<std::sync::Arc<Self>> {
+        Self::shared_archive(
+            dir,
+            if samus {
+                crate::fighter::SAMUS.effects
+            } else {
+                crate::fighter::COMMON_EFFECTS
+            },
+        )
+    }
+    pub fn shared_archive(
+        dir: &Path,
+        archive: crate::fighter::Archive<'_>,
+    ) -> Result<std::sync::Arc<Self>> {
+        use std::{
+            path::PathBuf,
+            sync::{Arc, Mutex, OnceLock},
         };
-        Self::parse(&Dat::parse(&std::fs::read(dir.join(name))?)?, symbol)
+        type Cache = Mutex<BTreeMap<(PathBuf, String, String), Arc<Effects>>>;
+        static CACHE: OnceLock<Cache> = OnceLock::new();
+        let key = (
+            dir.canonicalize()?,
+            archive.file.into(),
+            archive.root.into(),
+        );
+        let mut cache = CACHE
+            .get_or_init(|| Mutex::new(BTreeMap::new()))
+            .lock()
+            .map_err(|_| "effect cache poisoned")?;
+        if let Some(bank) = cache.get(&key) {
+            return Ok(bank.clone());
+        }
+        let bank = Arc::new(Self::load_archive(dir, archive)?);
+        if cache.len() >= 8
+            && let Some(key) = cache.keys().next().cloned()
+        {
+            cache.remove(&key);
+        }
+        cache.insert(key, bank.clone());
+        Ok(bank)
+    }
+    pub fn load(dir: &Path, samus: bool) -> Result<Self> {
+        Self::load_archive(
+            dir,
+            if samus {
+                crate::fighter::SAMUS.effects
+            } else {
+                crate::fighter::COMMON_EFFECTS
+            },
+        )
+    }
+    pub fn load_archive(dir: &Path, archive: crate::fighter::Archive<'_>) -> Result<Self> {
+        Self::parse(
+            &Dat::parse(&std::fs::read(dir.join(archive.file))?)?,
+            archive.root,
+        )
     }
     pub fn parse(d: &Dat, symbol: &str) -> Result<Self> {
         let root = d.root(symbol)?;
@@ -47,10 +98,12 @@ impl Effects {
             }
             let model = Model::from_joint(d, d.required_ptr(desc + 4)?)?;
             let animations = Animations::object(d, d.ptr(desc + 8)?, &model)?;
+            let material_tracks = Animations::materials(d, d.ptr(desc + 12)?, &model)?;
             models.push(EffectModel {
                 lifetime: d.f32(desc)?,
                 model,
                 animations,
+                material_tracks,
             });
         }
         let texture_count = d.u32(tex)? as usize;

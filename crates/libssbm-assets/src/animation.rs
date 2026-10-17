@@ -26,6 +26,7 @@ pub struct Clip {
     pub looping: bool,
     pub tracks: Vec<Track>,
 }
+#[derive(Clone)]
 pub struct Animations {
     pub clips: BTreeMap<String, Clip>,
 }
@@ -151,6 +152,59 @@ impl Track {
     }
 }
 impl Animations {
+    /// MatAnimJoint -> per-DObj material AObj tracks. Material channel definitions
+    /// and application are specified by mobj.h/HSD_MObjUpdateFunc.
+    pub fn materials(d: &Dat, root: Option<usize>, model: &Model) -> Result<Vec<Track>> {
+        let mut result = Vec::new();
+        let mut stack = root.map(|p| vec![p]).unwrap_or_default();
+        let mut joint = 0;
+        let mut seen = std::collections::HashSet::new();
+        while let Some(at) = stack.pop() {
+            if !seen.insert(at) || seen.len() > 2048 {
+                return Err("cyclic material animation tree".into());
+            }
+            if let Some(next) = d.ptr(at + 4)? {
+                stack.push(next);
+            }
+            if let Some(child) = d.ptr(at)? {
+                stack.push(child);
+            }
+            let batches: Vec<_> = model.batches.iter().filter(|b| b.owner == joint).collect();
+            let mut material = d.ptr(at + 8)?;
+            let mut index = 0;
+            let mut visited = std::collections::HashSet::new();
+            while let Some(m) = material {
+                if !visited.insert(m) || visited.len() > 4096 {
+                    return Err("cyclic material animation chain".into());
+                }
+                if let (Some(batch), Some(aobj)) = (batches.get(index), d.ptr(m + 4)?) {
+                    let mut fobj = d.ptr(aobj + 8)?;
+                    let mut tracks = std::collections::HashSet::new();
+                    while let Some(f) = fobj {
+                        if !tracks.insert(f) || tracks.len() > 64 {
+                            return Err("cyclic material tracks".into());
+                        }
+                        let frac = d.bytes(f + 13, 2)?;
+                        result.push(Track {
+                            joint: batch.dobj,
+                            channel: d.bytes(f + 12, 1)?[0],
+                            keys: keys(
+                                d.bytes(d.required_ptr(f + 16)?, d.u32(f + 4)? as usize)?,
+                                frac[0],
+                                frac[1],
+                                d.f32(f + 8)?,
+                            )?,
+                        });
+                        fobj = d.ptr(f)?;
+                    }
+                }
+                material = d.ptr(m)?;
+                index += 1;
+            }
+            joint += 1;
+        }
+        Ok(result)
+    }
     /// HSD_AnimJoint/AObj/FObj descriptors used by articles and effect models,
     /// separate from fighter FigaTree clips. See HSD_JObjAddAnimAll/LoadDesc.
     pub fn object(d: &Dat, root: Option<usize>, model: &Model) -> Result<Self> {
@@ -240,7 +294,11 @@ impl Animations {
             .collect()
     }
     pub fn load(dir: &Path) -> Result<Self> {
-        Self::parse(&std::fs::read(dir.join("PlSsAJ.dat"))?)
+        Self::load_for(dir, &crate::fighter::SAMUS)
+    }
+    pub fn load_for(dir: &Path, fighter: &crate::fighter::FighterAssets<'_>) -> Result<Self> {
+        fighter.required()?;
+        Self::parse(&std::fs::read(dir.join(fighter.animations))?)
     }
     pub fn parse(bytes: &[u8]) -> Result<Self> {
         let mut at = 0;
