@@ -367,6 +367,11 @@ impl Sim {
             return;
         }
         self.current_move = Some(m);
+        if matches!(m, Move::ChargeShot | Move::Missile | Move::SuperMissile)
+            && input.aim.with_y(0.).length_squared() > 0.001
+        {
+            self.facing = input.aim.with_y(0.).normalize();
+        }
         self.action.reset();
         self.motion.frame = 0.;
         self.move_started_grounded = self.grounded;
@@ -606,6 +611,16 @@ impl Sim {
             self.facing = movement.normalize();
         }
         let phase = self.phase;
+        if matches!(
+            self.current_move,
+            Some(Move::ChargeShot | Move::Missile | Move::SuperMissile)
+        ) && input.aim.length_squared() > 0.001
+        {
+            self.move_aim = input.aim.normalize();
+            if input.aim.with_y(0.).length_squared() > 0.001 {
+                self.facing = input.aim.with_y(0.).normalize();
+            }
+        }
         match phase {
             Phase::Free => {
                 if self.reaction.is_some()
