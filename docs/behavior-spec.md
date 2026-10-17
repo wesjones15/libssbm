@@ -171,3 +171,11 @@ camera-quake cue and entry/accessory cues for Screw Attack and charge/missile ar
 posed attachments and source model lifetimes are connected in the RoR2 adapter.
 These changes compile and pass boundary checks; gameplay visual verification is
 still pending.
+
+Host character-select policy: the shared Melee display plays up-special once,
+using the same native action and original sound commands as gameplay. Samus uses
+Screw Attack; the drawn origin is stationary and there is no damage callback.
+The portrait uses a separate silent idle actor. A native-boundary regression
+checks up-special start, audible PCM and completion at 30/60/144 Hz. Shared host
+checks cover selection/reselection, pause, audio failures and release cleanup.
+This user-requested menu behavior is an adaptation, not original Melee menu logic.

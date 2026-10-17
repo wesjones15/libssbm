@@ -31,6 +31,15 @@ entry merely by sharing a directory. Generic asset loading is exercised with
 renamed files and a renamed fighter symbol, with no canonical Samus files in that
 test cache. This is reader reuse, not proof of a second fighter's behavior.
 
+Character select follows the shared `ror2-common/MeleeSelectDisplay` rule: play
+the fighter's up-B (LB+B) animation and its source sound cues once when selected.
+An `IMeleeSelectSource` supplies native stepping, the view and PCM; the common
+wrapper owns device output and completion/deselection cleanup. Samus supplies
+Screw Attack through her native simulation with a flat preview floor, no damage
+callback and a stationary drawn origin. Portraits use a separate silent idle
+source (`intro:false`) so icon rendering does not play the intro. This preview is
+a host UI policy, not a claim that Melee's original menu uses up-special.
+
 Next, split `Params` into common fighter attributes and Samus special attributes,
 then move Samus's action selection/transitions behind a fighter behavior module.
 Normal attack clips and script-driven hit windows can share the executor; each
