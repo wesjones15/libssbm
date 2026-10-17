@@ -44,7 +44,7 @@ pose blending and Melee percent/hitstun/tech rules are not implemented.
 All clips and five costumes decode; sampled walk/run cycles have at least 18
 distinct poses across 20 samples. Trophy entry uses original platform, tuning,
 sound, colour overlay and effect, with collision feet held at a safe host position.
-Character select repeats up-B/effects/audio using UI
+Character select plays up-B/effects/audio once, then idles using UI
 time; its original CSS grid tile replaces the large selected-character photo.
 
 Full TEV/animated texture and UV fidelity, particle trail/mirror/alpha-compare
@@ -246,3 +246,12 @@ All 207 disc action GFX attachment cues resolve, including the special cycling
 parts 0x8D and alternate part 0x8E. Shared attack emitter programs also execute
 without unsupported commands in real-disc tests.
 
+
+# Effects correction (2026-10-17)
+
+HSD TObj alpha blend/replace and its FObj blending channel now determine source
+effect opacity. Screw Attack keeps zero material alpha but becomes visible via
+its animated texture blend; charge articles retain replacement alpha instead of
+being multiplied by material alpha. Viewer and real-disc regression inspected.
+Reaching maximum charge no longer queues a firing voice. RoR2 may explicitly
+disable projectile offscreen lifetime; core defaults remain disc-derived.

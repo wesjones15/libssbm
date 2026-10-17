@@ -24,6 +24,18 @@ pub struct State {
     pub flags: u32,
     pub element: u32,
 }
+/// Host adaptation for open-world travel. Zero disables the source offscreen
+/// lifetime; positive values retain a finite fixed-tick lifetime.
+/// # Safety
+/// Unique live projectile handle or null.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn ssbm_projectile_lifetime(h: *mut Handle, frames: f32) {
+    if !h.is_null() && frames.is_finite() && frames >= 0. {
+        unsafe {
+            (&mut *h).sim.params.life = if frames == 0. { f32::INFINITY } else { frames };
+        }
+    }
+}
 /// # Safety
 /// NUL-terminated asset path. New unique handle, freed with projectile_free.
 #[unsafe(no_mangle)]

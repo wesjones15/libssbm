@@ -650,15 +650,8 @@ impl Sim {
                     self.shot_charge = (self.shot_charge + 1).min(self.params.charge_steps);
                 }
                 if pressed & (CANCEL | JUMP) != 0 || self.shot_charge >= self.params.charge_steps {
-                    if self.shot_charge >= self.params.charge_steps {
-                        self.action.sounds.push(crate::action::SoundCue {
-                            sound: 260021,
-                            volume: 127,
-                            pan: 64,
-                            channel: 0,
-                            stop: false,
-                        });
-                    }
+                    // SpecialNHold_Anim starts colour animation 53 at maximum,
+                    // not the firing voice. The stored-charge presenter owns it.
                     self.emit(
                         host,
                         EventKind::ChargeStored,

@@ -1,6 +1,43 @@
 use libssbm_assets::{Result, effects::Effects};
 use std::path::PathBuf;
 #[test]
+fn screw_attack_keeps_its_texture_alpha_and_animated_fade() -> Result<()> {
+    let dir = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../assets");
+    if !dir.join("EfSsData.dat").exists() {
+        eprintln!("SKIP: effect archives absent");
+        return Ok(());
+    }
+    let mut p = libssbm_assets::presentation::Presentation::effect(&dir, 2000)?;
+    assert!(p.model.batches.iter().all(|b| b.color[3] == 0.));
+    p.object_pose(12.);
+    assert!(
+        p.model
+            .batches
+            .iter()
+            .enumerate()
+            .all(|(i, _)| p.color(i)[3] > 0.1),
+        "source texture alpha was erased by zero material alpha"
+    );
+    let middle = p.color(0)[3];
+    p.object_pose(0.);
+    assert!(
+        p.color(0)[3] < middle,
+        "texture blend animation not applied"
+    );
+    for state in [0, 8] {
+        let p = libssbm_assets::presentation::Presentation::article(&dir, 1, state)?;
+        assert!(
+            p.model
+                .batches
+                .iter()
+                .enumerate()
+                .all(|(i, _)| p.color(i)[3] >= 0.99),
+            "charge shot texture replacement alpha was incorrectly halved"
+        );
+    }
+    Ok(())
+}
+#[test]
 fn real_effect_models_emitters_and_all_texture_frames_decode() -> Result<()> {
     let dir = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../assets");
     if !dir.join("EfSsData.dat").exists() {

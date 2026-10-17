@@ -3,6 +3,7 @@ use libssbm::{
 };
 use libssbm_assets::presentation::Presentation;
 use macroquad::prelude::*;
+mod models;
 mod particles;
 fn config() -> Conf {
     Conf {
@@ -132,6 +133,8 @@ async fn run() -> libssbm_assets::Result<()> {
     let mut costume = 0;
     let mut rendered = 0;
     let mut meshes = make_meshes(&actor);
+    let model_alpha = models::blended(false)?;
+    let model_additive = models::blended(true)?;
     let mut platform = if entry_mode {
         Some(Presentation::platform(std::path::Path::new(&path))?)
     } else {
@@ -265,8 +268,25 @@ async fn run() -> libssbm_assets::Result<()> {
             actor.object_pose(pose_frame);
         }
         let object = article.is_some() || effect.is_some() || emitter.is_some();
-        let center = gv(sim.position) + vec3(0., if object { 0. } else { 12. }, 0.);
-        let distance = if object { 25. } else { 65. };
+        let center = gv(sim.position)
+            + vec3(
+                0.,
+                if effect == Some(2000) {
+                    8.
+                } else if object {
+                    0.
+                } else {
+                    12.
+                },
+                0.,
+            );
+        let distance = if effect == Some(2000) {
+            65.
+        } else if object {
+            25.
+        } else {
+            65.
+        };
         let camera = center
             + vec3(
                 camera_yaw.sin() * distance,
@@ -313,6 +333,7 @@ async fn run() -> libssbm_assets::Result<()> {
             }
             let skin = actor.model.skin(i, &actor.world);
             let batch = &actor.model.batches[i];
+            let color = actor.color(i);
             for (v, ((p, n), original)) in mesh
                 .vertices
                 .iter_mut()
@@ -321,21 +342,33 @@ async fn run() -> libssbm_assets::Result<()> {
                 let p = rotation.transform_point3(p + preview_offset) + sim.position;
                 v.position = gv(p);
                 let n = rotation.transform_vector3(n);
-                let light = 0.4 + 0.6 * n.dot(::glam::Vec3::new(0.4, 0.8, 0.5).normalize()).max(0.);
+                let light = if batch.lit == 0 {
+                    1.
+                } else {
+                    0.4 + 0.6 * n.dot(::glam::Vec3::new(0.4, 0.8, 0.5).normalize()).max(0.)
+                };
                 let flash = sim.phase == Phase::SmashCharge && (sim.frame / 4) & 1 == 0;
                 v.color = if flash {
                     [255, 240, 70, 255]
                 } else {
                     [
-                        (batch.color[0] * light * 255.) as u8,
-                        (batch.color[1] * light * 255.) as u8,
-                        (batch.color[2] * light * 255.) as u8,
-                        255,
+                        (color[0] * light * 255.) as u8,
+                        (color[1] * light * 255.) as u8,
+                        (color[2] * light * 255.) as u8,
+                        (color[3] * 255.) as u8,
                     ]
                 };
                 v.uv = vec2(original.uv.x, original.uv.y);
             }
+            if batch.blend >= 2 {
+                gl_use_material(if batch.blend == 3 {
+                    &model_additive
+                } else {
+                    &model_alpha
+                });
+            }
             draw_mesh(mesh);
+            gl_use_default_material();
         }
         for s in &shots {
             draw_sphere(s.at, s.radius, None, s.color);

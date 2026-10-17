@@ -198,6 +198,35 @@ impl Animations {
                         fobj = d.ptr(f)?;
                     }
                 }
+                // HSD_MObjAddAnim delegates the separate TexAnim/AObj chain to
+                // HSD_TObjAddAnimAll. Screw Attack fades via TObj blending, not
+                // material alpha (which remains zero throughout the effect).
+                if let (Some(batch), Some(texanim)) = (batches.get(index), d.ptr(m + 8)?) {
+                    if let Some(aobj) = d.ptr(texanim + 8)? {
+                        let mut fobj = d.ptr(aobj + 8)?;
+                        let mut tracks = std::collections::HashSet::new();
+                        while let Some(f) = fobj {
+                            if !tracks.insert(f) || tracks.len() > 64 {
+                                return Err("cyclic texture tracks".into());
+                            }
+                            let channel = d.bytes(f + 12, 1)?[0];
+                            if channel == 9 {
+                                let frac = d.bytes(f + 13, 2)?;
+                                result.push(Track {
+                                    joint: batch.dobj,
+                                    channel: 109,
+                                    keys: keys(
+                                        d.bytes(d.required_ptr(f + 16)?, d.u32(f + 4)? as usize)?,
+                                        frac[0],
+                                        frac[1],
+                                        d.f32(f + 8)?,
+                                    )?,
+                                });
+                            }
+                            fobj = d.ptr(f)?;
+                        }
+                    }
+                }
                 material = d.ptr(m)?;
                 index += 1;
             }

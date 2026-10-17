@@ -39,6 +39,9 @@ pub struct Batch {
     pub owner: usize,
     pub blend: u8,
     pub lit: u8,
+    /// HSD TObj alpha operation and its independently animated interpolation.
+    pub texture_alpha: u8,
+    pub texture_blend: f32,
 }
 #[derive(Clone)]
 pub struct Model {
@@ -156,9 +159,11 @@ impl Model {
                 if !seen.insert(at) || seen.len() > 4096 {
                     return Err("cyclic DObj".into());
                 }
-                let (color, texture) = material(d, d.ptr(at + 8)?)?;
+                let (color, texture, texture_alpha, texture_blend) = material(d, d.ptr(at + 8)?)?;
                 let (blend, lit) = render_flags(d, d.ptr(at + 8)?)?;
                 let mut batch = Batch {
+                    texture_alpha,
+                    texture_blend,
                     vertices: vec![],
                     indices: vec![],
                     color,
@@ -252,9 +257,9 @@ fn visibility(
     }
     Ok(visible)
 }
-fn material(d: &Dat, at: Option<usize>) -> Result<([f32; 4], Option<Texture>)> {
+fn material(d: &Dat, at: Option<usize>) -> Result<([f32; 4], Option<Texture>, u8, f32)> {
     let Some(at) = at else {
-        return Ok(([1.; 4], None));
+        return Ok(([1.; 4], None, 3, 1.));
     };
     let mut color = [1.; 4];
     if let Some(m) = d.ptr(at + 12)? {
@@ -294,11 +299,13 @@ fn material(d: &Dat, at: Option<usize>) -> Result<([f32; 4], Option<Texture>)> {
                     height,
                     rgba,
                 }),
+                ((d.u32(t + 0x40)? >> 20) & 15) as u8,
+                d.f32(t + 0x44)?.clamp(0., 1.),
             ));
         }
         tex = d.ptr(t + 4)?;
     }
-    Ok((color, None))
+    Ok((color, None, 3, 1.))
 }
 fn render_flags(d: &Dat, at: Option<usize>) -> Result<(u8, u8)> {
     let Some(at) = at else {

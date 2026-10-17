@@ -160,6 +160,7 @@ impl Presentation {
     pub fn color(&self, batch: usize) -> [f32; 4] {
         let b = &self.model.batches[batch];
         let mut color = b.color;
+        let mut blending = b.texture_blend;
         for track in &self.material_tracks {
             if track.joint == b.dobj
                 && let Some(value) = track.sample(self.frame)
@@ -167,9 +168,20 @@ impl Presentation {
                 match track.channel {
                     4..=6 => color[(track.channel - 4) as usize] = value.clamp(0., 1.),
                     10 => color[3] = value.clamp(0., 1.),
+                    109 => blending = value.clamp(0., 1.),
                     _ => (),
                 }
             }
+        }
+        if b.texture.is_some() {
+            // baselib/tobj.c::MakeTExp: TEX_ALPHAMAP_BLEND interpolates
+            // material and sampled alpha. Multiplying a zero material alpha
+            // by the texture incorrectly erases the entire Screw Attack.
+            color[3] = match b.texture_alpha {
+                2 => color[3] + (1. - color[3]) * blending,
+                4 => 1.,
+                _ => color[3],
+            };
         }
         color
     }
