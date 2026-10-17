@@ -284,6 +284,7 @@ impl Sim {
                 id: 1154,
                 bone: 3,
                 common: true,
+                cycle: 0,
                 destroy_on_change: true,
                 offset: Vec3::ZERO,
                 param: 0.,

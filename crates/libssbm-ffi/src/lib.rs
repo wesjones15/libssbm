@@ -150,12 +150,15 @@ struct Rig {
     animations: libssbm_assets::animation::Animations,
     common_bones: Vec<u8>,
     effect_bone: usize,
+    alternate_bone: usize,
+    cycle_bones: Vec<usize>,
 }
 impl Rig {
     fn load(dir: &Path) -> libssbm_assets::Result<Self> {
         let fighter_bytes = std::fs::read(dir.join("PlSs.dat"))?;
         let fighter = libssbm_assets::dat::Dat::parse(&fighter_bytes)?;
         let desc = fighter.required_ptr(fighter.root("ftDataSamus")? + 8)?;
+        let cycle = fighter.ptr(fighter.root("ftDataSamus")? + 0x54)?;
         let bytes = std::fs::read(dir.join("PlCo.dat"))?;
         let common = libssbm_assets::dat::Dat::parse(&bytes)?;
         let table = common.required_ptr(common.root("ftLoadCommonData")? + 0x10)?;
@@ -167,6 +170,14 @@ impl Rig {
             animations: libssbm_assets::animation::Animations::load(dir)?,
             common_bones: common.bytes(mapping, 53)?.to_vec(),
             effect_bone: fighter.bytes(desc + 0x12, 1)?[0] as usize,
+            alternate_bone: fighter.bytes(desc + 0x10, 1)?[0] as usize,
+            cycle_bones: if let Some(at) = cycle {
+                (0..5)
+                    .map(|i| fighter.u32(at + i * 4).map(|n| n as usize))
+                    .collect::<libssbm_assets::Result<Vec<_>>>()?
+            } else {
+                Vec::new()
+            },
         })
     }
 }
@@ -465,24 +476,38 @@ pub unsafe extern "C" fn ssbm_sim_gfx(
     }
     guarded(0, || {
         for (i, cue) in h.sim.action.effects.iter().take(max as usize).enumerate() {
-            let bone = if cue.bone == usize::MAX {
+            let part = if cue.bone == usize::MAX {
                 h.rig.effect_bone
+            } else {
+                cue.bone
+            };
+            let bone = if part == 0x8d {
+                h.rig
+                    .cycle_bones
+                    .get(cue.cycle as usize)
+                    .copied()
+                    .unwrap_or(usize::MAX)
+            } else if part == 0x8e {
+                h.rig.alternate_bone
             } else if cue.common {
                 h.rig
                     .common_bones
-                    .get(cue.bone)
+                    .get(part)
                     .copied()
                     .map(usize::from)
                     .unwrap_or(usize::MAX)
             } else {
-                cue.bone
+                part
             };
             let pose = h
                 .rig
                 .animations
                 .pose(&h.rig.model, cue.clip, cue.frame, false);
             let Some(joint) = pose.get(bone) else {
-                error("GFX bone outside rig");
+                error(format!(
+                    "GFX bone outside rig: effect {} clip {} frame {} part {} common {} resolved {}",
+                    cue.id, cue.clip, cue.frame, part, cue.common, bone
+                ));
                 return 0;
             };
             let position = fighter_matrix(cue.origin, cue.facing)
@@ -1093,6 +1118,72 @@ pub unsafe extern "C" fn ssbm_sim_launch_pad(handle: *mut Handle, velocity: V3, 
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn every_disc_gfx_cue_resolves_a_real_posed_attachment() -> libssbm_assets::Result<()> {
+        let dir = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../assets");
+        if !libssbm_assets::complete(&dir) {
+            eprintln!("SKIP: disc cache absent");
+            return Ok(());
+        }
+        let mut h = Handle {
+            sim: Sim::new(libssbm_assets::params::load(&dir)?, Vec3::ZERO),
+            rig: Rig::load(&dir)?,
+            audio: libssbm_assets::audio::Mixer::new(libssbm_assets::audio::Bank::load(&dir)?),
+            poisoned: false,
+        };
+        let actions = libssbm_assets::action::load(&dir, &h.rig.animations)?;
+        let mut tested = 0;
+        let mut cycle = 0;
+        for (name, action) in actions {
+            let clip: &'static str = Box::leak(name.into_boxed_str());
+            for event in action.commands {
+                if let libssbm::action::Command::Raw { opcode: 10, words } = event.command {
+                    let bone = if words[0] & (1 << 15) != 0 {
+                        usize::MAX
+                    } else {
+                        (words[0] >> 18 & 255) as usize
+                    };
+                    h.sim.action.effects = vec![libssbm::action::GfxCue {
+                        id: words[1] >> 16,
+                        bone,
+                        common: words[0] & (1 << 17) != 0,
+                        cycle,
+                        destroy_on_change: words[0] & (1 << 16) != 0,
+                        offset: Vec3::ZERO,
+                        param: 0.,
+                        clip,
+                        frame: event.frame,
+                        origin: Vec3::ZERO,
+                        facing: Vec3::Z,
+                    }];
+                    if bone == 0x8d {
+                        cycle = (cycle + 1) % 5;
+                    }
+                    let mut out = NativeEvent {
+                        kind: 0,
+                        move_id: 0,
+                        strength: 0.,
+                        position: V3::default(),
+                        direction: V3::default(),
+                    };
+                    let n = unsafe { ssbm_sim_gfx(&h, &mut out, 1) };
+                    assert_eq!(
+                        n,
+                        1,
+                        "{clip} frame {}: {}",
+                        event.frame,
+                        ERROR.with(|s| s.borrow().to_string_lossy().into_owned())
+                    );
+                    assert!(Vec3::from(out.position).is_finite());
+                    assert!((out.move_id & 65535) < h.rig.model.joints.len() as u32);
+                    tested += 1;
+                }
+            }
+        }
+        assert!(tested > 100);
+        eprintln!("resolved {tested} source GFX attachments");
+        Ok(())
+    }
     #[test]
     fn abi_layouts_are_pinned() {
         assert_eq!(

@@ -65,6 +65,7 @@ impl Sim {
                 id,
                 bone,
                 common,
+                cycle: 0,
                 destroy_on_change: false,
                 offset: Vec3::ZERO,
                 param: 0.,
@@ -175,14 +176,23 @@ impl Sim {
                 Command::Raw { opcode, words } => {
                     if opcode == 10 {
                         let signed = |n: u32| (n as u16 as i16) as f32 / 256.;
+                        let bone = if words[0] & (1 << 15) != 0 {
+                            usize::MAX
+                        } else {
+                            (words[0] >> 18 & 255) as usize
+                        };
+                        // ftCo_8009F834 cycles the fighter's five source bones.
+                        // Save the selection on the cue so repeated FFI queries
+                        // cannot advance it again or produce different matrices.
+                        let cycle = self.action.effect_cycle;
+                        if bone == 0x8d {
+                            self.action.effect_cycle = (cycle + 1) % 5;
+                        }
                         self.action.effects.push(crate::action::GfxCue {
                             id: words[1] >> 16,
-                            bone: if words[0] & (1 << 15) != 0 {
-                                usize::MAX
-                            } else {
-                                (words[0] >> 18 & 255) as usize
-                            },
+                            bone,
                             common: words[0] & (1 << 17) != 0,
+                            cycle,
                             destroy_on_change: words[0] & (1 << 16) != 0,
                             offset: Vec3::new(
                                 signed(words[2] >> 16),
