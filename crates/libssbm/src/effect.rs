@@ -25,6 +25,7 @@ pub fn resolve(id: u32) -> Target {
         1036 => Particle(25),
         1041 => Particle(75),
         1060 => Model(2),
+        1086 => Model(36),
         1151 => Particle(2004),
         1152 => Particle(2002),
         1153 => Particle(2003),

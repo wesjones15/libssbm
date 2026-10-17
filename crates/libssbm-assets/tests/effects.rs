@@ -160,3 +160,28 @@ fn every_samus_emitter_executes_its_source_commands_without_placeholders() -> Re
     }
     Ok(())
 }
+#[test]
+fn shared_attack_emitters_execute_their_source_dependencies() -> Result<()> {
+    let dir = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../assets");
+    if !dir.join("EfCoData.dat").exists() {
+        return Ok(());
+    }
+    let bank = Effects::load(&dir, false)?;
+    for id in [11, 263, 89, 94, 25, 75] {
+        let mut system = libssbm::particle::System::default();
+        system.definitions = bank.emitters.clone();
+        system.spawn(id, glam::Mat4::IDENTITY, 1)?;
+        let mut drawn = 0;
+        for _ in 0..240 {
+            system.tick();
+            drawn += system.particles.len();
+        }
+        assert!(
+            system.errors.is_empty(),
+            "emitter {id}: {:?}",
+            system.errors
+        );
+        assert!(drawn > 0, "emitter {id} never drew");
+    }
+    Ok(())
+}

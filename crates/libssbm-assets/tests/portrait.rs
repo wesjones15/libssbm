@@ -37,5 +37,8 @@ fn original_css_photos_decode_for_every_samus_costume() -> Result<()> {
         previous = Some(photo.rgba);
     }
     assert!(portrait::load(&dir, &SAMUS, 99).is_err());
+    let grid = portrait::load_grid(&dir, &SAMUS)?;
+    assert_eq!((grid.width, grid.height), (64, 56));
+    std::fs::write(root.join("build/samus-grid-portrait.rgba"), grid.rgba)?;
     Ok(())
 }

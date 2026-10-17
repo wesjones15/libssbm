@@ -13,6 +13,77 @@ pub struct Portrait<'a> {
     pub archive: crate::fighter::Archive<'a>,
     pub joint: usize,
     pub frame: u32,
+    pub grid_joint: usize,
+}
+/// The small fixed photo in the CSS grid, rather than the large selected-
+/// character/costume photo. mncharsel.c icons[].joint_id_vs; TObj ImageDesc.
+pub fn load_grid(dir: &Path, fighter: &crate::fighter::FighterAssets<'_>) -> Result<Texture> {
+    fighter.required()?;
+    let p = fighter.portrait;
+    let bytes = std::fs::read(dir.join(p.archive.file))?;
+    let d = Dat::parse(&bytes)?;
+    let mut stack = vec![d.required_ptr(d.root(p.archive.root)? + 0x40)?];
+    let mut seen = HashSet::new();
+    let mut index = 0;
+    while let Some(j) = stack.pop() {
+        if !seen.insert(j) || seen.len() > 2048 {
+            return Err("cyclic CSS grid joint tree".into());
+        }
+        if index == p.grid_joint {
+            let mut object = d.ptr(j + 16)?;
+            let mut objects = HashSet::new();
+            while let Some(dobj) = object {
+                if !objects.insert(dobj) || objects.len() > 64 {
+                    return Err("cyclic grid objects".into());
+                }
+                let material = d.required_ptr(dobj + 8)?;
+                let mut tex = d.ptr(material + 8)?;
+                let mut textures = HashSet::new();
+                while let Some(t) = tex {
+                    if !textures.insert(t) || textures.len() > 16 {
+                        return Err("cyclic CSS grid textures".into());
+                    }
+                    if let Some(image) = d.ptr(t + 0x4c)? {
+                        let format = d.u32(image + 8)?;
+                        // The first I4 layer is the menu's shading mask. The CI
+                        // layer is the character's authored grid photo.
+                        if (8..=10).contains(&format) {
+                            let pal = d.required_ptr(t + 0x50)?;
+                            let palette = Some((
+                                d.bytes(d.required_ptr(pal)?, d.u16(pal + 12)? as usize * 2)?,
+                                d.u32(pal + 4)?,
+                            ));
+                            let width = d.u16(image + 4)?;
+                            let height = d.u16(image + 6)?;
+                            return Ok(Texture {
+                                width,
+                                height,
+                                rgba: crate::texture::decode(
+                                    d.data,
+                                    d.required_ptr(image)?,
+                                    width,
+                                    height,
+                                    format,
+                                    palette,
+                                )?,
+                            });
+                        }
+                    }
+                    tex = d.ptr(t + 4)?;
+                }
+                object = d.ptr(dobj + 4)?;
+            }
+            return Err("CSS grid photo missing".into());
+        }
+        if let Some(next) = d.ptr(j + 12)? {
+            stack.push(next);
+        }
+        if let Some(child) = d.ptr(j + 8)? {
+            stack.push(child);
+        }
+        index += 1;
+    }
+    Err("CSS grid joint missing".into())
 }
 fn sample(d: &Dat, aobj: usize, channel: u8, frame: f32) -> Result<Option<f32>> {
     let mut fobj = d.ptr(aobj + 8)?;

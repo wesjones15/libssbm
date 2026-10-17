@@ -45,6 +45,13 @@ async fn run() -> libssbm_assets::Result<()> {
         .and_then(|i| args.get(i + 1))
         .cloned();
     let selection = args.iter().any(|s| s == "--selection");
+    let entry_mode = args.iter().any(|s| s == "--entry");
+    let effect = args
+        .iter()
+        .position(|s| s == "--effect")
+        .and_then(|i| args.get(i + 1))
+        .map(|s| s.parse::<u32>())
+        .transpose()?;
     let pose_clip = args
         .iter()
         .position(|s| s == "--clip")
@@ -97,7 +104,9 @@ async fn run() -> libssbm_assets::Result<()> {
             particle_system.tick();
         }
     }
-    let mut actor = if let Some(kind) = article {
+    let mut actor = if let Some(id) = effect {
+        Presentation::effect(std::path::Path::new(&path), id)?
+    } else if let Some(kind) = article {
         Presentation::article(std::path::Path::new(&path), kind, article_state)?
     } else {
         Presentation::load(std::path::Path::new(&path), 0)?
@@ -123,6 +132,12 @@ async fn run() -> libssbm_assets::Result<()> {
     let mut costume = 0;
     let mut rendered = 0;
     let mut meshes = make_meshes(&actor);
+    let mut platform = if entry_mode {
+        Some(Presentation::platform(std::path::Path::new(&path))?)
+    } else {
+        None
+    };
+    let mut platform_meshes = platform.as_ref().map(make_meshes);
     let mut last_hit = String::new();
     let mut particle_clock = 0f64;
     loop {
@@ -186,6 +201,33 @@ async fn run() -> libssbm_assets::Result<()> {
         read_pad(&mut input, forward, right);
         sim.advance(&mut host, input, dt as f64);
         actor.update(&sim, dt);
+        if entry_mode {
+            let params = libssbm_assets::params::entry(
+                std::path::Path::new(&path),
+                &libssbm_assets::fighter::SAMUS,
+            )?;
+            let entry = libssbm::entry::State {
+                params,
+                frame: pose_frame as u32,
+            };
+            sim.entry = Some(entry);
+            sim.motion.select("Entry", 0.);
+            actor.update(&sim, 0.);
+            if let Some(platform) = platform.as_mut() {
+                let scale = params.platform;
+                let transform = ::glam::Mat4::from_scale(::glam::Vec3::new(
+                    scale,
+                    (scale * entry.platform_y()).max(0.001),
+                    scale,
+                ));
+                platform.world = platform
+                    .model
+                    .bind_world()
+                    .into_iter()
+                    .map(|m| transform * m)
+                    .collect();
+            }
+        }
         if let Some(clip) = pose_clip.as_deref() {
             if !actor.animations.clips.contains_key(clip) {
                 return Err(format!("Unknown clip {clip}").into());
@@ -219,10 +261,10 @@ async fn run() -> libssbm_assets::Result<()> {
         }
         shots.retain(|s| s.life > 0.);
         clear_background(Color::from_rgba(10, 17, 28, 255));
-        if article.is_some() {
+        if article.is_some() || effect.is_some() {
             actor.object_pose(pose_frame);
         }
-        let object = article.is_some() || emitter.is_some();
+        let object = article.is_some() || effect.is_some() || emitter.is_some();
         let center = gv(sim.position) + vec3(0., if object { 0. } else { 12. }, 0.);
         let distance = if object { 25. } else { 65. };
         let camera = center
@@ -297,6 +339,26 @@ async fn run() -> libssbm_assets::Result<()> {
         }
         for s in &shots {
             draw_sphere(s.at, s.radius, None, s.color);
+        }
+        if let (Some(platform), Some(meshes)) = (&platform, &mut platform_meshes) {
+            for (i, mesh) in meshes.iter_mut().enumerate() {
+                for (v, (p, n)) in mesh
+                    .vertices
+                    .iter_mut()
+                    .zip(platform.model.skin(i, &platform.world))
+                {
+                    v.position = gv(rotation.transform_point3(p) + sim.position);
+                    let light = 0.4 + 0.6 * n.dot(::glam::Vec3::Y).max(0.);
+                    let c = platform.model.batches[i].color;
+                    v.color = [
+                        (c[0] * light * 255.) as u8,
+                        (c[1] * light * 255.) as u8,
+                        (c[2] * light * 255.) as u8,
+                        255,
+                    ];
+                }
+                draw_mesh(mesh);
+            }
         }
         if let Some(renderer) = &particle_renderer {
             if capture.is_none() {

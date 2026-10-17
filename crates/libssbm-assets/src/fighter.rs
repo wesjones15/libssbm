@@ -84,6 +84,7 @@ pub const SAMUS: FighterAssets<'static> = FighterAssets {
         },
         joint: 51,
         frame: 16,
+        grid_joint: 27,
     },
 };
 impl<'a> FighterAssets<'a> {
@@ -106,6 +107,7 @@ impl<'a> FighterAssets<'a> {
             || self.portrait.archive.root.is_empty()
             || self.portrait.frame >= 30
             || self.portrait.joint >= 2048
+            || self.portrait.grid_joint >= 2048
             || self
                 .articles
                 .iter()

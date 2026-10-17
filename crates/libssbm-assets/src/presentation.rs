@@ -13,6 +13,27 @@ pub struct Presentation {
     pub duration: f32,
 }
 impl Presentation {
+    pub fn platform(dir: &Path) -> Result<Self> {
+        let bytes = std::fs::read(dir.join(crate::fighter::COMMON_DATA.file))?;
+        let d = crate::dat::Dat::parse(&bytes)?;
+        let model = Model::from_joint(
+            &d,
+            d.required_ptr(d.root(crate::fighter::COMMON_DATA.root)? + 0x40)?,
+        )?;
+        let world = model.bind_world();
+        Ok(Self {
+            model,
+            world,
+            animations: Animations {
+                clips: Default::default(),
+            },
+            clip: "Object".into(),
+            frame: 0.,
+            ball: false,
+            material_tracks: Vec::new(),
+            duration: 0.,
+        })
+    }
     pub fn effect(dir: &Path, id: u32) -> Result<Self> {
         let archive = if id >= 2000 {
             crate::fighter::SAMUS.effects
@@ -106,6 +127,12 @@ impl Presentation {
         self.world = self
             .animations
             .pose(&self.model, clip, self.frame, sim.motion.looping());
+        if let Some(entry) = sim.entry {
+            let transform = entry.transform();
+            for world in &mut self.world {
+                *world = transform * *world;
+            }
+        }
     }
     pub fn visible(&self, batch: usize) -> bool {
         let b = &self.model.batches[batch];

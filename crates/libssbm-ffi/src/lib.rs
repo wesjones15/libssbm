@@ -260,10 +260,12 @@ pub unsafe extern "C" fn ssbm_portrait(
     }
     guarded(0, || {
         let result = (|| -> libssbm_assets::Result<_> {
-            libssbm_assets::portrait::load(
+            if costume >= libssbm_assets::fighter::SAMUS.costumes.len() as u32 {
+                return Err("invalid costume".into());
+            }
+            libssbm_assets::portrait::load_grid(
                 unsafe { path(dir) }?,
                 &libssbm_assets::fighter::SAMUS,
-                costume as usize,
             )
         })();
         match result {
@@ -593,7 +595,7 @@ pub extern "C" fn ssbm_effect_target(id: u32) -> i32 {
 pub extern "C" fn ssbm_effect_flags(id: u32) -> u32 {
     // Attachment policy from ftCo_8009F834 and efAlt_Spawn.
     match id {
-        1026 | 1027 | 1060 | 1154 | 1159 => 1,
+        1026 | 1027 | 1060 | 1086 | 1154 | 1159 => 1,
         _ => 0,
     }
 }
@@ -886,6 +888,73 @@ pub unsafe extern "C" fn ssbm_effect_new(dir: *const c_char, id: u32) -> *mut Vi
                 std::ptr::null_mut()
             }
         }
+    })
+}
+/// # Safety
+/// Valid UTF-8 cache path; returned platform is freed with ssbm_view_free.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn ssbm_entry_platform_new(dir: *const c_char) -> *mut View {
+    guarded(std::ptr::null_mut(), || {
+        match (|| Presentation::platform(unsafe { path(dir) }?))() {
+            Ok(a) => Box::into_raw(Box::new(View::new(a))),
+            Err(e) => {
+                error(e);
+                std::ptr::null_mut()
+            }
+        }
+    })
+}
+/// # Safety
+/// Unique live sim and valid UTF-8 cache path. Call after spawn placement.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn ssbm_sim_begin_entry(h: *mut Handle, dir: *const c_char) -> u32 {
+    if h.is_null() {
+        return 0;
+    }
+    guarded(0, || {
+        match (|| {
+            libssbm_assets::params::entry(unsafe { path(dir) }?, &libssbm_assets::fighter::SAMUS)
+        })() {
+            Ok(params) => {
+                let h = unsafe { &mut *h };
+                h.sim.interrupt();
+                h.sim.entry = Some(libssbm::entry::State::new(params));
+                1
+            }
+            Err(e) => {
+                error(e);
+                0
+            }
+        }
+    })
+}
+/// # Safety
+/// Unique live platform view and live sim. Returns zero once entry ends.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn ssbm_entry_platform_update(v: *mut View, h: *const Handle) -> u32 {
+    if v.is_null() || h.is_null() {
+        return 0;
+    }
+    let Some(entry) = unsafe { &*h }.sim.entry else {
+        return 0;
+    };
+    guarded(0, || {
+        let v = unsafe { &mut *v };
+        let scale = entry.params.platform;
+        let transform = glam::Mat4::from_scale(Vec3::new(
+            scale,
+            (scale * entry.platform_y()).max(0.001),
+            scale,
+        ));
+        v.actor.world = v
+            .actor
+            .model
+            .bind_world()
+            .into_iter()
+            .map(|m| transform * m)
+            .collect();
+        v.refresh();
+        1
     })
 }
 /// # Safety

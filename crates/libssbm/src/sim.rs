@@ -134,6 +134,7 @@ impl Default for Options {
 }
 
 pub struct Sim {
+    pub entry: Option<crate::entry::State>,
     pub action: crate::action::ActionState,
     pub motion: crate::motion::MotionState,
     pub move_started_grounded: bool,
@@ -166,6 +167,7 @@ pub struct Sim {
 impl Sim {
     pub fn new(params: Params, position: Vec3) -> Self {
         Self {
+            entry: None,
             action: crate::action::ActionState::default(),
             motion: crate::motion::MotionState::default(),
             move_started_grounded: false,
@@ -219,6 +221,7 @@ impl Sim {
         ticks
     }
     pub fn teleport(&mut self, position: Vec3) {
+        self.entry = None;
         self.pad_gravity = None;
         self.position = position;
         self.velocity = Vec3::ZERO;
@@ -375,6 +378,44 @@ impl Sim {
     }
     fn tick(&mut self, host: &mut impl Host, input: Input, pressed: u32) {
         self.frame += 1;
+        if let Some(mut entry) = self.entry {
+            if entry.frame == 0 {
+                self.action.sounds.push(crate::action::SoundCue {
+                    sound: 0x8b,
+                    volume: 127,
+                    pan: 64,
+                    channel: 0,
+                    stop: false,
+                });
+                self.action.effects.push(crate::action::GfxCue {
+                    id: 0x43e,
+                    bone: 0,
+                    common: false,
+                    cycle: 0,
+                    destroy_on_change: false,
+                    offset: Vec3::ZERO,
+                    param: 1.,
+                    clip: "Entry",
+                    frame: 0.,
+                    origin: self.position,
+                    facing: self.facing,
+                });
+            }
+            self.current_move = None;
+            self.velocity = Vec3::ZERO;
+            self.action.active.clear();
+            self.motion.select("Entry", 0.);
+            self.motion.frame = 0.;
+            entry.frame += 1;
+            self.entry = if entry.finished() {
+                self.motion.select("Wait", 1.);
+                None
+            } else {
+                Some(entry)
+            };
+            self.previous = input;
+            return;
+        }
         self.phase_frame = self.phase_frame.saturating_add(1);
         self.flick_age = self.flick_age.saturating_add(1);
         self.modifier_age = self.modifier_age.saturating_add(1);

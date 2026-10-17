@@ -179,3 +179,19 @@ The portrait uses a separate silent idle actor. A native-boundary regression
 checks up-special start, audible PCM and completion at 30/60/144 Hz. Shared host
 checks cover selection/reselection, pause, audio failures and release cleanup.
 This user-requested menu behavior is an adaptation, not original Melee menu logic.
+# Entry and presentation checkpoint (2026-10-17)
+
+Generic entry reads PlCo's grow/release duration and flattening ratio, the
+fighter's trophy scale, and the shared trophy platform joint. `ft_0C31.c`
+(`ftCo_800C6408`, EntryStart/EntryEnd physics) specifies the grow/release flow;
+the host keeps collision feet on safe ground while presentation rises and grows.
+Input is blocked during the entry, with source sound 139 and effect 1086.
+The platform and halfway-grown fighter were inspected in the viewer. Source
+colour animation 0x75 remains a fidelity gap; RoR2 playtest remains necessary.
+
+Portrait registration now uses the original CSS grid tile: the menu model's
+Samus joint 27 and CI8/TLUT texture, 64 x 56, rather than the large costume photo.
+All 207 disc action GFX attachment cues resolve, including the special cycling
+parts 0x8D and alternate part 0x8E. Shared attack emitter programs also execute
+without unsupported commands in real-disc tests.
+

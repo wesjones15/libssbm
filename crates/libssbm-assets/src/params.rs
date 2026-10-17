@@ -2,6 +2,34 @@
 use crate::{Result, dat::Dat};
 use libssbm::Params;
 use std::path::Path;
+pub fn entry(
+    dir: &Path,
+    profile: &crate::fighter::FighterAssets<'_>,
+) -> Result<libssbm::entry::Params> {
+    profile.required()?;
+    let b = std::fs::read(dir.join(profile.data.file))?;
+    let fighter = Dat::parse(&b)?;
+    let co = fighter.required_ptr(fighter.root(profile.data.root)?)?;
+    let b = std::fs::read(dir.join(crate::fighter::COMMON_DATA.file))?;
+    let common = Dat::parse(&b)?;
+    let attrs = common.required_ptr(common.root(crate::fighter::COMMON_DATA.root)?)?;
+    let p = libssbm::entry::Params {
+        grow: common.u32(attrs + 0x6bc)?,
+        release: common.u32(attrs + 0x6c0)?,
+        flat: common.f32(attrs + 0x6c4)?,
+        platform: fighter.f32(co + 0x110)?,
+    };
+    if p.grow == 0
+        || p.grow > 600
+        || p.release == 0
+        || p.release > 600
+        || !(0. ..=1.).contains(&p.flat)
+        || p.platform <= 0.
+    {
+        return Err("invalid entry parameters".into());
+    }
+    Ok(p)
+}
 
 pub fn load(dir: &Path) -> Result<Params> {
     let fighter_bytes = std::fs::read(dir.join("PlSs.dat"))?;
