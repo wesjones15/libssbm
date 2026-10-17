@@ -55,7 +55,7 @@ explicit control adaptation, off by default. CANCEL stores charge without a shie
 
 `ssbm-extract` reads ISO/GCM/CISO GALE01 rev 2. Its output was compared with the
 gc2ror2 MCP extraction. Caches belong in ignored `assets/` / `build/`. First-run
-asset discovery in the RoR2 plugin is the next milestone.
+asset discovery also runs on the RoR2 plugin's first-launch worker.
 
 ## Native and RoR2 adapter status
 

@@ -1,6 +1,6 @@
 //! C ABI v1. Main-thread handles; caller owns all pointers passed in.
 //! Panics poison a handle and never unwind into the host.
-#![allow(clippy::missing_safety_doc)]
+
 use glam::Vec3;
 use libssbm::{Contact, Event, Host, Input, Sim};
 use libssbm_assets::presentation::Presentation;
@@ -190,6 +190,7 @@ pub extern "C" fn ssbm_abi_version() -> u32 {
 pub extern "C" fn ssbm_last_error() -> *const c_char {
     ERROR.with(|e| e.borrow().as_ptr())
 }
+/// # Safety
 /// Caller supplies `max` writable u32 slots, or null to query count.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn ssbm_struct_sizes(out: *mut u32, max: u32) -> u32 {
@@ -209,6 +210,7 @@ pub unsafe extern "C" fn ssbm_struct_sizes(out: *mut u32, max: u32) -> u32 {
     .map(|s| s as u32);
     unsafe { copy(&sizes, out, max) }
 }
+/// # Safety
 /// UTF-8 NUL-terminated cache folder path; returns 1 only for a complete cache.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn ssbm_assets_complete(dir: *const c_char) -> u32 {
@@ -220,6 +222,7 @@ pub unsafe extern "C" fn ssbm_assets_complete(dir: *const c_char) -> u32 {
         }
     })
 }
+/// # Safety
 /// Paths must be valid UTF-8 NUL-terminated strings for this call.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn ssbm_extract(disc: *const c_char, dir: *const c_char) -> u32 {
@@ -235,6 +238,7 @@ pub unsafe extern "C" fn ssbm_extract(disc: *const c_char, dir: *const c_char) -
         }
     })
 }
+/// # Safety
 /// A valid cache path and finite starting position. Free once with ssbm_sim_free.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn ssbm_sim_new(dir: *const c_char, pos: V3) -> *mut Handle {
@@ -256,6 +260,7 @@ pub unsafe extern "C" fn ssbm_sim_new(dir: *const c_char, pos: V3) -> *mut Handl
         }
     })
 }
+/// # Safety
 /// `handle` is null or a live unique handle; consume it exactly once.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn ssbm_sim_free(handle: *mut Handle) {
@@ -297,6 +302,7 @@ impl Host for Adapter<'_> {
         }
     }
 }
+/// # Safety
 /// All pointers must be valid throughout the call; callbacks must not throw/reenter.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn ssbm_sim_step(
@@ -333,6 +339,7 @@ pub unsafe extern "C" fn ssbm_sim_step(
         }
     }
 }
+/// # Safety
 /// Live handle and writable State pointer. Returns 0 for poisoned handles.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn ssbm_sim_state(handle: *const Handle, out: *mut State) -> u32 {
@@ -360,6 +367,7 @@ pub unsafe extern "C" fn ssbm_sim_state(handle: *const Handle, out: *mut State) 
     }
     1
 }
+/// # Safety
 /// Live handle and finite/bounded tuning. Invalid tuning leaves previous values intact.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn ssbm_sim_tuning(handle: *mut Handle, t: Tuning) -> u32 {
@@ -386,6 +394,7 @@ pub unsafe extern "C" fn ssbm_sim_tuning(handle: *mut Handle, t: Tuning) -> u32 
     };
     1
 }
+/// # Safety
 /// Live handle; finite vector. kind=0 teleports, kind=1 applies velocity in units/tick.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn ssbm_sim_place(handle: *mut Handle, v: V3, kind: u32) {
@@ -455,6 +464,7 @@ impl View {
         v
     }
 }
+/// # Safety
 /// UTF-8 cache path; costume index 0..4. Free with ssbm_view_free.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn ssbm_view_new(dir: *const c_char, costume: u32) -> *mut View {
@@ -469,6 +479,7 @@ pub unsafe extern "C" fn ssbm_view_new(dir: *const c_char, costume: u32) -> *mut
         }
     })
 }
+/// # Safety
 /// Unique live view or null; consume exactly once.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn ssbm_view_free(v: *mut View) {
@@ -476,6 +487,7 @@ pub unsafe extern "C" fn ssbm_view_free(v: *mut View) {
         guarded((), || drop(unsafe { Box::from_raw(v) }));
     }
 }
+/// # Safety
 /// Live view and simulation, main thread only. Positions remain valid until next update/free.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn ssbm_view_update(v: *mut View, h: *const Handle, dt: f32) -> u32 {
@@ -515,6 +527,7 @@ pub unsafe extern "C" fn ssbm_view_update(v: *mut View, h: *const Handle, dt: f3
         }
     }
 }
+/// # Safety
 /// Live view and writable model-info pointer.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn ssbm_view_model(v: *const View, out: *mut ModelInfo) -> u32 {
@@ -528,7 +541,7 @@ pub unsafe extern "C" fn ssbm_view_model(v: *const View, out: *mut ModelInfo) ->
 }
 macro_rules! array_export {
     ($name:ident,$field:ident,$ty:ty) => {
-        #[doc = "Live view; output has `max` writable elements, or is null to query count."]
+        #[doc = "# Safety\nLive view; output has `max` writable elements, or is null to query count."]
         #[unsafe(no_mangle)]
         pub unsafe extern "C" fn $name(v: *const View, out: *mut $ty, max: u32) -> u32 {
             if v.is_null() {
@@ -543,7 +556,7 @@ array_export!(ssbm_view_indices, indices, i32);
 array_export!(ssbm_view_uvs, uvs, f32);
 macro_rules! pointer_export {
     ($name:ident,$field:ident,$ty:ty) => {
-        #[doc = "Live view and writable count. Borrowed pointer valid until update/free."]
+        #[doc = "# Safety\nLive view and writable count. Borrowed pointer valid until update/free."]
         #[unsafe(no_mangle)]
         pub unsafe extern "C" fn $name(v: *const View, count: *mut u32) -> *const $ty {
             if v.is_null() || count.is_null() {
@@ -561,6 +574,7 @@ pointer_export!(ssbm_view_positions, positions, V3);
 pointer_export!(ssbm_view_normals, normals, V3);
 pointer_export!(ssbm_view_colors, colors, [f32; 4]);
 pointer_export!(ssbm_view_texture_ids, texture_ids, i32);
+/// # Safety
 /// Live view; texture id is batch index. Null pixels queries dimensions.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn ssbm_view_texture(
@@ -605,6 +619,7 @@ pub unsafe extern "C" fn ssbm_view_texture(
 }
 
 /// # Safety
+/// # Safety
 /// `handle` must be a live uniquely borrowed simulation, or null.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn ssbm_sim_interrupt(handle: *mut Handle) {
@@ -615,6 +630,7 @@ pub unsafe extern "C" fn ssbm_sim_interrupt(handle: *mut Handle) {
         }
     }
 }
+/// # Safety
 /// # Safety
 /// Live unique handle or null; velocity is units/tick, gravity units/tick squared.
 #[unsafe(no_mangle)]

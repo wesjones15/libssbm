@@ -146,7 +146,7 @@ mod tests {
         let mut b = [0; 32];
         b[4..8].fill(255);
         let p = decode(&b, 0, 4, 4, 14, None).unwrap();
-        assert!(p.chunks_exact(4).all(|v| v[3] == 0));
+        assert!(p.as_chunks::<4>().0.iter().all(|v| v[3] == 0));
         assert!(decode(&[0; 31], 0, 8, 8, 14, None).is_err());
     }
 }

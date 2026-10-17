@@ -246,31 +246,31 @@ fn material(d: &Dat, at: Option<usize>) -> Result<([f32; 4], Option<Texture>)> {
         if !seen.insert(t) || seen.len() > 16 {
             return Err("cyclic texture chain".into());
         }
-        if d.u32(t + 0x40)? & 15 == 0 {
-            if let Some(image) = d.ptr(t + 0x4c)? {
-                let start = d.required_ptr(image)?;
-                let width = d.u16(image + 4)?;
-                let height = d.u16(image + 6)?;
-                let fmt = d.u32(image + 8)?;
-                let pal = d
-                    .ptr(t + 0x50)?
-                    .map(|p| -> Result<_> {
-                        Ok((
-                            d.bytes(d.required_ptr(p)?, d.u16(p + 12)? as usize * 2)?,
-                            d.u32(p + 4)?,
-                        ))
-                    })
-                    .transpose()?;
-                let rgba = crate::texture::decode(d.data, start, width, height, fmt, pal)?;
-                return Ok((
-                    color,
-                    Some(Texture {
-                        width,
-                        height,
-                        rgba,
-                    }),
-                ));
-            }
+        if d.u32(t + 0x40)? & 15 == 0
+            && let Some(image) = d.ptr(t + 0x4c)?
+        {
+            let start = d.required_ptr(image)?;
+            let width = d.u16(image + 4)?;
+            let height = d.u16(image + 6)?;
+            let fmt = d.u32(image + 8)?;
+            let pal = d
+                .ptr(t + 0x50)?
+                .map(|p| -> Result<_> {
+                    Ok((
+                        d.bytes(d.required_ptr(p)?, d.u16(p + 12)? as usize * 2)?,
+                        d.u32(p + 4)?,
+                    ))
+                })
+                .transpose()?;
+            let rgba = crate::texture::decode(d.data, start, width, height, fmt, pal)?;
+            return Ok((
+                color,
+                Some(Texture {
+                    width,
+                    height,
+                    rgba,
+                }),
+            ));
         }
         tex = d.ptr(t + 4)?;
     }

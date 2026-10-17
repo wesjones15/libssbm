@@ -172,7 +172,7 @@ async fn run() -> libssbm_assets::Result<()> {
                 v.position = gv(p);
                 let n = rotation.transform_vector3(n);
                 let light = 0.4 + 0.6 * n.dot(::glam::Vec3::new(0.4, 0.8, 0.5).normalize()).max(0.);
-                let flash = sim.phase == Phase::SmashCharge && (sim.frame / 4) % 2 == 0;
+                let flash = sim.phase == Phase::SmashCharge && (sim.frame / 4) & 1 == 0;
                 v.color = if flash {
                     [255, 240, 70, 255]
                 } else {
@@ -216,7 +216,7 @@ async fn run() -> libssbm_assets::Result<()> {
         let y = screen_height() - 100.;
         draw_rectangle(18., y, 600., 82., Color::from_rgba(7, 11, 18, 230));
         draw_text(
-            &format!(
+            format!(
                 "{:?}  {}  costume {}",
                 sim.phase,
                 actor.clip,
@@ -228,7 +228,7 @@ async fn run() -> libssbm_assets::Result<()> {
             WHITE,
         );
         draw_text(
-            &format!(
+            format!(
                 "Charge {}/{}  jumps {}/{}  {}",
                 sim.shot_charge,
                 sim.params.charge_steps,
@@ -249,8 +249,10 @@ async fn run() -> libssbm_assets::Result<()> {
             GRAY,
         );
         rendered += 1;
-        if capture.is_some() && rendered == 5 {
-            get_screen_data().export_png(capture.as_ref().unwrap());
+        if let Some(path) = capture.as_deref()
+            && rendered == 5
+        {
+            get_screen_data().export_png(path);
             println!("Rendered Samus screenshot with disc model/animation");
             break;
         }

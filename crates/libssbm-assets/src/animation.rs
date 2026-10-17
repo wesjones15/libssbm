@@ -240,9 +240,10 @@ impl Animations {
                     5 => t[j].x = v,
                     6 => t[j].y = v,
                     7 => t[j].z = v,
-                    8 => s[j].x = v,
-                    9 => s[j].y = v,
-                    10 => s[j].z = v,
+                    // HSD_JObjUpdateFunc clamps near-zero animated scale.
+                    8 => s[j].x = if v.abs() < 0.001 { 0.001 } else { v },
+                    9 => s[j].y = if v.abs() < 0.001 { 0.001 } else { v },
+                    10 => s[j].z = if v.abs() < 0.001 { 0.001 } else { v },
                     _ => (),
                 }
             }

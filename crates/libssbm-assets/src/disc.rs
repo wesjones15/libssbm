@@ -111,18 +111,18 @@ impl Disc {
         let mut out = vec![0; count];
         let mut done = 0;
         while done < count {
-            let (physical, n) = if self.block_size == 0 {
-                (Some(offset), count - done)
-            } else {
+            let (physical, n) = if let Some(block) = offset.checked_div(self.block_size) {
                 let slot = *self
                     .slots
-                    .get((offset / self.block_size) as usize)
+                    .get(block as usize)
                     .ok_or("CISO read outside map")?;
                 let within = offset % self.block_size;
                 (
                     slot.map(|s| 0x8000 + s * self.block_size + within),
                     ((self.block_size - within) as usize).min(count - done),
                 )
+            } else {
+                (Some(offset), count - done)
             };
             if let Some(at) = physical {
                 if at.checked_add(n as u64).is_none_or(|end| end > self.len) {
