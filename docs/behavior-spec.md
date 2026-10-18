@@ -120,19 +120,19 @@ aim, cooldowns and RoR2 damage ratios are host extensions. Scale only at adapter
 | HSD model, animation, materials, audio | baselib jobj/pobj/tobj/fobj; lb/lbanim.h | Partial: real meshes, textures, envelope skinning, 208 FigaTree clips; audio/TEV pending |
 | Alternate disc costumes and unlocks | ftsamus.c ftSs_Init_CostumeStrings | Five costumes render; RoR2 stage 1..4 unlock adapter compiled, gameplay unverified |
 
-Controller interpretation from the idea file: RT = A attacks, LT = B specials,
-LB/RB = up/down modifiers, A = jump, LS click = sprint, X = interact (grab later).
-Shield is omitted. B is unassigned until a useful action is defined. Keyboard
-equivalents must be documented. The idea file is design context, not a source of
-repository policy.
+Current requested host controls: RT neutral-B, LT contextual A/smash, RB side-B,
+LB up-B, X down-B with Shield / Air Feint as its loadout alternate. A always
+jumps, LS click sprints and B aims Z-grab. Captured non-boss throws use raw LS
+plus LT/RT; bosses pull the player and cannot enter throws. Existing Interact
+prompts own X. The idea file is historical design context, not repository policy.
 
 ## Current limits and verification
 
 The fixed-step prototype has synthetic scenario tests for frame partitioning,
 short hop, double/extra jumps, input latching, shoulder modifiers, smash release,
 stored charge, airborne firing, missile selection and Screw Attack helplessness.
-It is not a frame-perfect port. Attack hitboxes, startup/active/recovery timing,
-smash charge curve and projectile damage still need the disc command streams.
+It is not a frame-perfect port. Later sections document the disc command streams
+now supplying attack hitboxes, startup/active/recovery, smash charge and projectile data.
 `Params::fixture()` parameters are synthetic test
 data; runtime creation requires valid disc tuning. `Options::hold_charge` is an
 explicit control adaptation, off by default. CANCEL stores charge without a shield.

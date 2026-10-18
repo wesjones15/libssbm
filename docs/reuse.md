@@ -32,7 +32,7 @@ renamed files and a renamed fighter symbol, with no canonical Samus files in tha
 test cache. This is reader reuse, not proof of a second fighter's behavior.
 
 Character select follows the shared `ror2-common/MeleeSelectDisplay` rule: play
-the fighter's up-B (LB+B) animation, effects and source sounds, idle and repeat on UI time.
+the fighter's up-B animation, effects and source sounds once, then idle on UI time.
 An `IMeleeSelectSource` supplies native stepping, the view and PCM; the common
 wrapper owns device output and completion/deselection cleanup. Samus supplies
 Screw Attack through her native simulation with a flat preview floor, no damage
