@@ -157,6 +157,19 @@ struct Rig {
     cycle_bones: Vec<usize>,
 }
 impl Rig {
+    fn pose_for_sim(&self, sim: &Sim, clip: &str, frame: f32) -> Vec<glam::Mat4> {
+        if clip == sim.motion.clip {
+            libssbm_assets::presentation::mobile_pose(
+                &self.model,
+                &self.animations,
+                sim,
+                frame,
+                libssbm_assets::fighter::SAMUS.upper_body_root,
+            )
+        } else {
+            self.animations.pose(&self.model, clip, frame, false)
+        }
+    }
     fn load(dir: &Path) -> libssbm_assets::Result<Self> {
         let fighter_bytes = std::fs::read(dir.join("PlSs.dat"))?;
         let fighter = libssbm_assets::dat::Dat::parse(&fighter_bytes)?;
@@ -448,10 +461,7 @@ pub unsafe extern "C" fn ssbm_sim_hitboxes(
             } else {
                 Some(hit.bone)
             };
-            let pose = h
-                .rig
-                .animations
-                .pose(&h.rig.model, sample.clip, sample.frame, false);
+            let pose = h.rig.pose_for_sim(&h.sim, sample.clip, sample.frame);
             if joint == Some(139) {
                 let local = *h
                     .rig
@@ -563,10 +573,7 @@ pub unsafe extern "C" fn ssbm_sim_gfx(
             } else {
                 part
             };
-            let pose = h
-                .rig
-                .animations
-                .pose(&h.rig.model, cue.clip, cue.frame, false);
+            let pose = h.rig.pose_for_sim(&h.sim, cue.clip, cue.frame);
             let Some(joint) = pose.get(bone) else {
                 error(format!(
                     "GFX bone outside rig: effect {} clip {} frame {} part {} common {} resolved {}",
@@ -611,10 +618,9 @@ pub unsafe extern "C" fn ssbm_sim_bone(handle: *const Handle, bone: u32, out: *m
             }
             return 1;
         }
-        let pose =
-            h.rig
-                .animations
-                .pose(&h.rig.model, h.sim.motion.clip, h.sim.motion.frame, false);
+        let pose = h
+            .rig
+            .pose_for_sim(&h.sim, h.sim.motion.clip, h.sim.motion.frame);
         let Some(joint) = pose.get(bone as usize) else {
             return 0;
         };
@@ -818,10 +824,30 @@ impl Host for Adapter<'_> {
     fn event(&mut self, e: Event) {
         if let Some(f) = self.0.event {
             let position = if let Some(bone) = e.attachment {
-                let pose = self
+                let action_loop = self
                     .1
                     .animations
-                    .pose(&self.1.model, e.clip, e.pose_frame, false);
+                    .clips
+                    .get(e.clip)
+                    .is_some_and(|c| c.looping);
+                let gait_loop = self
+                    .1
+                    .animations
+                    .clips
+                    .get(e.gait_clip)
+                    .is_some_and(|c| c.looping);
+                let pose = libssbm_assets::presentation::mobile_pose_layers(
+                    &self.1.model,
+                    &self.1.animations,
+                    e.clip,
+                    e.pose_frame,
+                    action_loop,
+                    e.gait_clip,
+                    e.gait_frame,
+                    gait_loop,
+                    e.gait_weight,
+                    libssbm_assets::fighter::SAMUS.upper_body_root,
+                );
                 pose.get(bone)
                     .map(|joint| {
                         (fighter_matrix(e.position, e.facing) * *joint).transform_point3(Vec3::ZERO)
@@ -963,7 +989,21 @@ pub unsafe extern "C" fn ssbm_sim_tuning(handle: *mut Handle, t: Tuning) -> u32 
         extra_jumps: t.extra_jumps,
         hold_charge: t.hold_charge != 0,
         smash_max_frames: t.smash_max_frames,
+        mobile_moves: h.sim.options.mobile_moves,
     };
+    1
+}
+/// Host-defined mobile actions; bit N corresponds to Move discriminant N.
+/// The core owns the movement and independent gait clock. No ABI layout changes.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn ssbm_sim_mobile_moves(handle: *mut Handle, mask: u64) -> u32 {
+    let Some(h) = (unsafe { handle.as_mut() }) else {
+        return 0;
+    };
+    if h.poisoned {
+        return 0;
+    }
+    h.sim.options.mobile_moves = mask;
     1
 }
 /// # Safety

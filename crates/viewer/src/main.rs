@@ -47,6 +47,7 @@ async fn run() -> libssbm_assets::Result<()> {
         .cloned();
     let selection = args.iter().any(|s| s == "--selection");
     let dash_preview = args.iter().any(|s| s == "--dash-preview");
+    let mobile_preview = args.iter().any(|s| s == "--mobile-preview");
     let rebirth_preview = args.iter().any(|s| s == "--rebirth-preview");
     let move_after = args
         .iter()
@@ -162,6 +163,25 @@ async fn run() -> libssbm_assets::Result<()> {
             pose_frame, sim.motion.clip, sim.position
         );
     }
+    if mobile_preview {
+        sim.options.mobile_moves = 1 << libssbm::Move::ChargeShot as u32;
+        sim.advance(&mut host, Input::idle(), 1. / 60.);
+        for _ in 0..(pose_frame as usize).max(20) {
+            sim.advance(
+                &mut host,
+                Input {
+                    movement: ::glam::Vec3::X,
+                    buttons: libssbm::NEUTRAL_B,
+                    ..Input::idle()
+                },
+                1. / 60.,
+            );
+        }
+        println!(
+            "Mobile preview: {:?} {:?}, gait {:?} {:?}, world {:?}",
+            sim.phase, sim.motion.clip, sim.locomotion.clip, sim.locomotion.frame, sim.position
+        );
+    }
     if rebirth_preview {
         let dir = std::path::Path::new(&path);
         sim.begin_rebirth(
@@ -240,7 +260,7 @@ async fn run() -> libssbm_assets::Result<()> {
             input.buttons |= SPECIAL;
         }
         read_pad(&mut input, forward, right);
-        if !dash_preview && !rebirth_preview {
+        if !dash_preview && !rebirth_preview && !(mobile_preview && capture.is_some()) {
             sim.advance(&mut host, input, dt as f64);
         }
         actor.update(&sim, dt);

@@ -14,6 +14,7 @@ pub struct Presentation {
     pub duration: f32,
     pub commands: Vec<libssbm::action::TimedCommand>,
     pub object_scale: f32,
+    pub upper_body_root: Option<usize>,
 }
 impl Presentation {
     pub fn platform(dir: &Path) -> Result<Self> {
@@ -38,6 +39,7 @@ impl Presentation {
             duration: 0.,
             commands: Vec::new(),
             object_scale: 1.,
+            upper_body_root: None,
         })
     }
     pub fn effect(dir: &Path, id: u32) -> Result<Self> {
@@ -79,6 +81,7 @@ impl Presentation {
             duration: model.lifetime,
             commands: Vec::new(),
             object_scale: 1.,
+            upper_body_root: None,
         })
     }
     pub fn article(dir: &Path, kind: u32, state: u32) -> Result<Self> {
@@ -115,6 +118,7 @@ impl Presentation {
             duration,
             commands: a.commands,
             object_scale,
+            upper_body_root: None,
         })
     }
     pub fn object_pose(&mut self, frame: f32) {
@@ -139,6 +143,12 @@ impl Presentation {
         fighter: &crate::fighter::FighterAssets<'_>,
     ) -> Result<Self> {
         let model = Model::load_for(dir, costume, fighter)?;
+        if fighter
+            .upper_body_root
+            .is_some_and(|root| root >= model.joints.len())
+        {
+            return Err("upper-body joint outside fighter rig".into());
+        }
         let world = model.bind_world();
         Ok(Self {
             model,
@@ -152,6 +162,7 @@ impl Presentation {
             duration: 0.,
             commands: Vec::new(),
             object_scale: 1.,
+            upper_body_root: fighter.upper_body_root,
         })
     }
     pub fn update(&mut self, sim: &Sim, _dt: f32) {
@@ -163,9 +174,13 @@ impl Presentation {
             .rebirth
             .as_ref()
             .is_some_and(|s| s.phase == libssbm::rebirth::Phase::Ko);
-        self.world = self
-            .animations
-            .pose(&self.model, clip, self.frame, sim.motion.looping());
+        self.world = mobile_pose(
+            &self.model,
+            &self.animations,
+            sim,
+            self.frame,
+            self.upper_body_root,
+        );
         let neutral = match clip {
             "FallF" | "FallB" => Some("Fall"),
             "FallAerialF" | "FallAerialB" => Some("FallAerial"),
@@ -246,6 +261,70 @@ impl Presentation {
 }
 pub fn clip_name(s: &Sim) -> &'static str {
     s.motion.clip
+}
+/// Render the action on its original clock while a separately timed gait drives
+/// the root, pelvis and legs. `upper_root` is fighter data, not a vertex cut.
+pub fn mobile_pose(
+    model: &Model,
+    animations: &Animations,
+    sim: &Sim,
+    action_frame: f32,
+    upper_root: Option<usize>,
+) -> Vec<Mat4> {
+    mobile_pose_layers(
+        model,
+        animations,
+        sim.motion.clip,
+        action_frame,
+        sim.motion.looping(),
+        sim.locomotion.clip,
+        sim.locomotion.render_frame(sim.alpha()),
+        sim.locomotion.looping(),
+        if sim.mobile_action() {
+            sim.locomotion_weight
+        } else {
+            0.
+        },
+        upper_root,
+    )
+}
+pub fn mobile_pose_layers(
+    model: &Model,
+    animations: &Animations,
+    action_clip: &str,
+    action_frame: f32,
+    action_loop: bool,
+    gait_clip: &str,
+    gait_frame: f32,
+    gait_loop: bool,
+    weight: f32,
+    upper_root: Option<usize>,
+) -> Vec<Mat4> {
+    let action = animations.pose(model, action_clip, action_frame, action_loop);
+    let Some(root) = upper_root else {
+        return action;
+    };
+    if weight <= 0. || root >= model.joints.len() {
+        return action;
+    }
+    let gait = animations.pose(model, gait_clip, gait_frame, gait_loop);
+    let combined = splice_pose(model, &gait, &action, root);
+    blend_pose(model, &action, &combined, weight)
+}
+/// Combine local transforms, then rebuild the hierarchy. Matrix cuts in world
+/// space would shear the armor and move the cannon away from its attachment.
+pub fn splice_pose(model: &Model, lower: &[Mat4], upper: &[Mat4], upper_root: usize) -> Vec<Mat4> {
+    let mut world = Vec::with_capacity(model.joints.len());
+    let mut upper_branch = vec![false; model.joints.len()];
+    for (i, joint) in model.joints.iter().enumerate() {
+        upper_branch[i] = i == upper_root || joint.parent.is_some_and(|p| upper_branch[p]);
+        let source = if upper_branch[i] { upper } else { lower };
+        let local = joint
+            .parent
+            .map_or(source[i], |p| source[p].inverse() * source[i]);
+        world.push(joint.parent.map_or(local, |p| world[p] * local));
+    }
+    world
 }
 /// ftCo_Fall_Anim_Inner blends local joint transforms, then concatenates the
 /// hierarchy. Blending world matrices would shorten limbs during rotations.

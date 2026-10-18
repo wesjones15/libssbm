@@ -180,7 +180,6 @@ pub fn select(s: &Sim, input: Input) -> (&'static str, f32) {
             },
         );
     }
-    let speed = s.velocity.with_y(0.).length();
     if !s.grounded {
         // Jump animation completion, not the sign of vertical velocity, enters Fall.
         if s.motion.clip.starts_with("Jump") && !s.motion.finished() {
@@ -191,22 +190,9 @@ pub fn select(s: &Sim, input: Input) -> (&'static str, f32) {
     if s.motion.clip.starts_with("Landing") && !s.motion.finished() {
         return (s.motion.clip, 1.);
     }
-    if speed > 0.05 {
-        let scaled = speed / s.options.speed_scale.max(0.01);
-        if input.buttons & SPRINT != 0 {
-            return ("Run", speed / s.params.run_animation_rate);
-        }
-        let gait = if scaled >= s.params.walk_speed * s.params.walk_animation_thresholds[1] {
-            2
-        } else if scaled >= s.params.walk_speed * s.params.walk_animation_thresholds[0] {
-            1
-        } else {
-            0
-        };
-        return (
-            ["WalkSlow", "WalkMiddle", "WalkFast"][gait],
-            speed / s.params.walk_animation_rates[gait],
-        );
+    let gait = locomotion(s, input);
+    if gait.0 != "Wait" {
+        return gait;
     }
     if input.buttons & DOWN != 0 {
         return (
@@ -219,6 +205,33 @@ pub fn select(s: &Sim, input: Input) -> (&'static str, f32) {
         );
     }
     ("Wait", 1.)
+}
+
+/// Generic grounded gait independent of the action clip. Mobile upper-body
+/// attacks keep this clock moving through startup, hold and recovery.
+pub fn locomotion(s: &Sim, input: Input) -> (&'static str, f32) {
+    if !s.grounded {
+        return ("Wait", 1.);
+    }
+    let speed = s.velocity.with_y(0.).length();
+    if speed <= 0.05 {
+        return ("Wait", 1.);
+    }
+    let scaled = speed / s.options.speed_scale.max(0.01);
+    if input.buttons & SPRINT != 0 && !s.mobile_action() {
+        return ("Run", speed / s.params.run_animation_rate);
+    }
+    let gait = if scaled >= s.params.walk_speed * s.params.walk_animation_thresholds[1] {
+        2
+    } else if scaled >= s.params.walk_speed * s.params.walk_animation_thresholds[0] {
+        1
+    } else {
+        0
+    };
+    (
+        ["WalkSlow", "WalkMiddle", "WalkFast"][gait],
+        speed / s.params.walk_animation_rates[gait],
+    )
 }
 fn fall_clip(s: &Sim, special: bool) -> &'static str {
     let drift = s.velocity.with_y(0.).dot(s.facing)

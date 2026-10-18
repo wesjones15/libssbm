@@ -129,6 +129,9 @@ pub struct Event {
     pub facing: Vec3,
     pub clip: &'static str,
     pub pose_frame: f32,
+    pub gait_clip: &'static str,
+    pub gait_frame: f32,
+    pub gait_weight: f32,
     pub attachment: Option<usize>,
     pub attachment_offset: Vec3,
 }
@@ -165,6 +168,9 @@ pub struct Options {
     pub hold_charge: bool,
     /// Prototype max charge; true move command values will replace this schedule.
     pub smash_max_frames: u32,
+    /// Host adaptation: bit per Move whose grounded action can steer at walking speed.
+    /// The animation presenter may overlay its upper body on a separate gait.
+    pub mobile_moves: u64,
 }
 impl Default for Options {
     fn default() -> Self {
@@ -174,6 +180,7 @@ impl Default for Options {
             extra_jumps: 0,
             hold_charge: false,
             smash_max_frames: 60,
+            mobile_moves: 0,
         }
     }
 }
@@ -186,6 +193,9 @@ pub struct Sim {
     pub rebirth: Option<crate::rebirth::State>,
     pub action: crate::action::ActionState,
     pub motion: crate::motion::MotionState,
+    /// Independent 60 Hz gait clock for upper-body action overlays.
+    pub locomotion: crate::motion::MotionState,
+    pub locomotion_weight: f32,
     pub move_started_grounded: bool,
     pub params: Params,
     pub options: Options,
@@ -227,6 +237,8 @@ impl Sim {
             rebirth: None,
             action: crate::action::ActionState::default(),
             motion: crate::motion::MotionState::default(),
+            locomotion: crate::motion::MotionState::default(),
+            locomotion_weight: 0.,
             move_started_grounded: false,
             params,
             options: Options::default(),
@@ -261,6 +273,15 @@ impl Sim {
     }
     pub fn alpha(&self) -> f32 {
         (self.accumulator * TICK_HZ) as f32
+    }
+    pub fn mobile_action(&self) -> bool {
+        self.grounded
+            && self.reaction.is_none()
+            && self.entry.is_none()
+            && self.rebirth.is_none()
+            && self
+                .current_move
+                .is_some_and(|m| self.options.mobile_moves & (1u64 << m as u32) != 0)
     }
     pub fn advance(&mut self, host: &mut impl Host, mut input: Input, dt: f64) -> u32 {
         // Explicit neutral-B keeps the existing charge hold/fire protocol while
@@ -326,6 +347,9 @@ impl Sim {
         self.action.reset();
         self.motion.select("Wait", 1.);
         self.motion.frame = 0.;
+        self.locomotion.select("Wait", 1.);
+        self.locomotion.frame = 0.;
+        self.locomotion_weight = 0.;
         self.reaction = None;
         self.entry = None;
         self.rebirth = None;
@@ -411,6 +435,13 @@ impl Sim {
             facing: self.facing,
             clip: self.motion.clip,
             pose_frame: self.motion.frame,
+            gait_clip: self.locomotion.clip,
+            gait_frame: self.locomotion.frame,
+            gait_weight: if self.mobile_action() {
+                self.locomotion_weight
+            } else {
+                0.
+            },
             attachment,
             attachment_offset,
         });
@@ -715,7 +746,6 @@ impl Sim {
                 self.facing = movement.normalize();
             }
         }
-        let phase = self.phase;
         if matches!(
             self.current_move,
             Some(Move::ChargeShot | Move::Missile | Move::SuperMissile)
@@ -728,7 +758,27 @@ impl Sim {
                     .unwrap_or_else(|| input.aim.with_y(0.).normalize());
             }
         }
-        match phase {
+        let was_mobile = self.mobile_action();
+        // RoR2 mobile neutral-B adaptation. Sprint is the explicit store/cancel
+        // gesture while walking is allowed. The source charge amount survives.
+        // ftSamus_SpecialNHold_IASA is the reference for storing charge; sprint
+        // is a host control decision, not a claim about Melee's original input.
+        if self.current_move == Some(Move::ChargeShot)
+            && matches!(self.phase, Phase::Startup | Phase::ChargeShot)
+            && self.options.mobile_moves & (1u64 << Move::ChargeShot as u32) != 0
+            && input.buttons & SPRINT != 0
+        {
+            self.emit(
+                host,
+                EventKind::ChargeStored,
+                Move::ChargeShot as u32,
+                self.shot_charge as f32,
+            );
+            self.action.reset();
+            self.current_move = None;
+            self.set_phase(Phase::Free);
+        }
+        match self.phase {
             Phase::Free => {
                 if self.reaction.is_some()
                     || self.motion.clip.starts_with("Landing") && !self.motion.finished()
@@ -887,7 +937,8 @@ impl Sim {
             }
         }
         let movable = self.reaction.is_none()
-            && matches!(self.phase, Phase::Free | Phase::JumpSquat | Phase::Helpless)
+            && (matches!(self.phase, Phase::Free | Phase::JumpSquat | Phase::Helpless)
+                || self.mobile_action())
             || !self.grounded;
         if let Some(gravity) = self.pad_gravity {
             self.velocity += gravity;
@@ -1064,8 +1115,24 @@ impl Sim {
         } else {
             self.fall_blend = 0.;
         }
+        let (gait, gait_rate) = crate::motion::locomotion(self, input);
+        if self.locomotion.definitions.is_empty() && !self.motion.definitions.is_empty() {
+            self.locomotion.definitions = self.motion.definitions.clone();
+        }
+        self.locomotion.select(gait, gait_rate);
+        self.locomotion.advance();
         self.motion.select(clip, rate);
         self.motion.advance();
+        if was_mobile && !self.mobile_action() && clip == self.locomotion.clip {
+            // Handoff to ordinary locomotion without restarting the foot cycle.
+            self.motion.frame = self.locomotion.frame;
+        }
+        let target = if self.mobile_action() && self.velocity.with_y(0.).length() > 0.05 {
+            1.
+        } else {
+            0.
+        };
+        self.locomotion_weight += (target - self.locomotion_weight).clamp(-0.25, 0.25);
         if !self.action.definitions.is_empty() {
             self.execute_disc_commands(host, input);
         }

@@ -14,6 +14,7 @@ special actions. Adding another fighter must not duplicate the Samus plugin.
 | Meshes, particle quads, PCM device output | ror2-common | `ModelView`, `ParticleView`/`IParticleSource`, `PcmStream`; no native DLL name in these components |
 | World collision, input, damage/procs, pause and run cleanup | RoR2 adapter + ror2-common | Reusable primitives exist; parts of the Samus driver still need consolidation |
 | Character file references, costumes, article table bounds | fighter definition | `fighter::SAMUS`; readers accept other `FighterAssets` values |
+| Mobile action movement and split skeleton pose | libssbm + libssbm-assets | Opt-in Move bitmask, independent 60-Hz gait clock, fighter-profile upper-body root and local-joint blend; Samus enables Charge Shot |
 | Charge Shot, missiles, bombs, Screw Attack | Samus behavior module | Native source article tuning/physics, impact callbacks and held charge; full rendering fidelity/playtest pending |
 | Survivor name, icons, unlocks, skill-slot policy | character plugin | RoR2-specific character choices |
 

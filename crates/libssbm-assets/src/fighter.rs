@@ -27,6 +27,8 @@ pub struct FighterAssets<'a> {
     pub common_index: usize,
     /// Optional alternate DObj choice; Samus uses choice 1 for the morph ball.
     pub morph_visibility: Option<usize>,
+    /// Root joint of the upper-body subtree for host-enabled mobile actions.
+    pub upper_body_root: Option<usize>,
     pub portrait: crate::portrait::Portrait<'a>,
 }
 pub const COMMON_DATA: Archive<'static> = Archive {
@@ -77,6 +79,8 @@ pub const SAMUS: FighterAssets<'static> = FighterAssets {
     ],
     common_index: 13,
     morph_visibility: Some(1),
+    // PlSsNr's hips are joint 4: legs branch at 5/12, torso at 19.
+    upper_body_root: Some(19),
     portrait: crate::portrait::Portrait {
         archive: Archive {
             file: "MnSlChr.usd",
@@ -108,6 +112,7 @@ impl<'a> FighterAssets<'a> {
             || self.portrait.frame >= 30
             || self.portrait.joint >= 2048
             || self.portrait.grid_joint >= 2048
+            || self.upper_body_root.is_some_and(|root| root >= 2048)
             || self
                 .articles
                 .iter()

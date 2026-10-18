@@ -77,5 +77,6 @@ pub fn part(dir: &Path, part: u32) -> Result<Presentation> {
         duration: 0.,
         commands: vec![],
         object_scale: 1.,
+        upper_body_root: None,
     })
 }

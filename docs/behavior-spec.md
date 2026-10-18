@@ -1,6 +1,23 @@
 # Samus / Melee behavior specification
 
-## Current checkpoint: 0.2.10, 2026-10-17
+## Current checkpoint: 0.2.12, 2026-10-18
+
+Grounded RT Charge Shot now permits walking through startup, charging and
+firing recovery. This is an explicit RoR2 adaptation: the source action clock,
+charge amount, firing command and upper-body pose remain intact while a separate
+fixed-60-Hz gait clock drives the pelvis and legs. The fighter asset profile
+selects the torso subtree root; local joint transforms are composed before
+skinning, with a four-frame gait blend. Live bones, source GFX/hitboxes and the
+shot attachment use the same layered pose. Sprint during startup/charge stores
+the existing amount and enters normal sprint movement; jump/grab cancellation
+and the shot's recovery remain separate. The core exposes a mobile-Move bitmask
+for future fighters; the Samus host opts Charge Shot in. This is not original
+Melee movement. Source action references: ftSamus/ftsamusspecialn.c
+SpecialNHold_Anim/IASA; locomotion references: ftCommon walk/run callbacks.
+Headless 30/60/144-Hz movement/storage, real-asset all-costume pose bounds and
+viewer capture pass. Unity playtest pending.
+
+## Earlier checkpoint: 0.2.10, 2026-10-17
 
 Initial spawn now enters `begin_arrival`, the same Figurine phase used after the
 falloff KO, without playing that KO. Both use identical source Entry parameters,
