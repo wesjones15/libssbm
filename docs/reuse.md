@@ -33,13 +33,13 @@ renamed files and a renamed fighter symbol, with no canonical Samus files in tha
 test cache. This is reader reuse, not proof of a second fighter's behavior.
 
 Character select follows the shared `ror2-common/MeleeSelectDisplay` rule: play
-the fighter's up-B animation, effects and source sounds once, then idle on UI time.
+the fighter's chosen intro animation, effects and source sounds once, then idle on UI time.
 An `IMeleeSelectSource` supplies native stepping, the view and PCM; the common
 wrapper owns device output and completion/deselection cleanup. Samus supplies
-Screw Attack through her native simulation with a flat preview floor, no damage
+down-B through her native simulation with a flat preview floor, no damage
 callback and a stationary drawn origin. Portraits use a separate silent idle
 source (`intro:false`) so icon rendering does not play the intro. This preview is
-a host UI policy, not a claim that Melee's original menu uses up-special.
+a host UI policy, not a claim that Melee's original menu uses down-B.
 
 Portrait icons now use the original CSS grid tile. The character profile defines
 its menu archive and grid joint. `portrait::load_grid` finds the CI8/TLUT art in

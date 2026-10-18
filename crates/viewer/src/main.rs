@@ -48,6 +48,7 @@ async fn run() -> libssbm_assets::Result<()> {
         .cloned();
     let selection = args.iter().any(|s| s == "--selection");
     let dash_preview = args.iter().any(|s| s == "--dash-preview");
+    let sideb_preview = args.iter().any(|s| s == "--sideb-preview");
     let mobile_preview = args.iter().any(|s| s == "--mobile-preview");
     let rebirth_preview = args.iter().any(|s| s == "--rebirth-preview");
     let move_after = args
@@ -164,6 +165,14 @@ async fn run() -> libssbm_assets::Result<()> {
             pose_frame, sim.motion.clip, sim.position
         );
     }
+    if sideb_preview {
+        sim.grounded = true;
+        sim.start_move(&mut host, libssbm::Move::Missile, Input::idle());
+        for _ in 0..pose_frame as usize {
+            sim.advance(&mut host, Input::idle(), 1. / 60.);
+        }
+        println!("Side-B preview tick {pose_frame}: {:?}", sim.motion.clip);
+    }
     if mobile_preview {
         sim.options.mobile_moves = 1 << libssbm::Move::ChargeShot as u32;
         sim.advance(&mut host, Input::idle(), 1. / 60.);
@@ -261,7 +270,11 @@ async fn run() -> libssbm_assets::Result<()> {
             input.buttons |= SPECIAL;
         }
         read_pad(&mut input, forward, right);
-        if !dash_preview && !rebirth_preview && !(mobile_preview && capture.is_some()) {
+        if !dash_preview
+            && !sideb_preview
+            && !rebirth_preview
+            && !(mobile_preview && capture.is_some())
+        {
             sim.advance(&mut host, input, dt as f64);
         }
         actor.update(&sim, dt);

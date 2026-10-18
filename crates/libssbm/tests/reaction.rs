@@ -81,3 +81,46 @@ fn contextual_attack_tapped_in_hitstun_executes_once_when_recovered() {
         1
     );
 }
+
+#[test]
+fn knockdown_blocks_repeat_hits_through_get_up_and_for_one_second_after() {
+    let mut s = Sim::new(Params::fixture(), Vec3::ZERO);
+    for (clip, frames) in [("DamageN2", 5.), ("Wait", 60.), ("Attack11", 20.)] {
+        s.motion.definitions.insert(
+            clip.into(),
+            MotionDef {
+                root_forward: None,
+                frames,
+                looping: clip == "Wait",
+            },
+        );
+    }
+    let mut host = FlatHost::default();
+    s.advance(&mut host, Input::idle(), 1. / 60.);
+    s.hurt();
+    assert_eq!(s.defense_flags() & 64, 64);
+    for _ in 0..4 {
+        s.hurt();
+        assert_eq!(s.reaction, Some(Stage::GroundHit));
+        s.advance(&mut host, Input::idle(), 1. / 60.);
+    }
+    for _ in 0..4 {
+        s.advance(&mut host, Input::idle(), 1. / 60.);
+    }
+    assert_eq!(s.reaction, None);
+    assert_eq!(s.defense_flags() & 64, 64);
+    for _ in 0..30 {
+        s.advance(&mut host, Input::idle(), 1. / 60.);
+    }
+    s.hold_knockdown_protection(); // RoR2's original stun still owns input.
+    for _ in 0..59 {
+        s.advance(&mut host, Input::idle(), 1. / 60.);
+    }
+    assert_eq!(s.defense_flags() & 64, 64);
+    s.advance(&mut host, Input::idle(), 1. / 60.);
+    assert_eq!(s.defense_flags() & 64, 0);
+    s.hurt();
+    assert_eq!(s.reaction, Some(Stage::GroundHit));
+    s.teleport(Vec3::ZERO);
+    assert_eq!(s.defense_flags() & 64, 0);
+}

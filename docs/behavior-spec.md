@@ -1,6 +1,21 @@
 # Samus / Melee behavior specification
 
-## Current checkpoint: 0.2.13, 2026-10-18
+## Current checkpoint: 0.2.14, 2026-10-18
+
+Shared hurt reactions now reject repeat hits through DamageN2/DamageFall,
+DownBoundU and DownStandU, followed by 60 native frames of protection after
+get-up. If the RoR2 host still holds control in a stun state, it extends that
+window until control returns. A buffered contextual A can start during the
+post-get-up window. This immunity is an anti-stunlock RoR2 adaptation, not
+Melee's original percent/hitstun rules; final death and external teleports
+clear it. Samus's selected intro is now one grounded down-B followed by idle.
+The shared selection presenter lets each fighter choose its own intro move.
+Side-B/Super Missile rotate only Samus's upper rig from the extracted vertical
+cannon pose toward the live camera vector; pelvis/legs keep their gait and the
+posed muzzle used for missile spawning receives the same correction. Viewer and
+native-boundary tests pass; Unity gameplay feel remains unverified.
+
+## Earlier checkpoint: 0.2.13, 2026-10-18
 
 All five grounded specials now default to mobile movement with the shared
 gait/upper-body composition; contextual A, grabs and authored dashes remain
@@ -294,9 +309,9 @@ posed attachments and source model lifetimes are connected in the RoR2 adapter.
 These changes compile and pass boundary checks; gameplay visual verification is
 still pending.
 
-Host character-select policy: the shared Melee display plays up-special once,
-using the same native action and original sound commands as gameplay. Samus uses
-Screw Attack; the drawn origin is stationary and there is no damage callback.
+Host character-select policy at this checkpoint: the shared Melee display played
+up-special once, using the same native action and sound commands as gameplay.
+Samus used Screw Attack; the drawn origin was stationary and had no damage callback.
 The portrait uses a separate silent idle actor. A native-boundary regression
 checks up-special start, audible PCM and completion at 30/60/144 Hz. Shared host
 checks cover selection/reselection, pause, audio failures and release cleanup.

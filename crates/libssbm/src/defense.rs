@@ -73,14 +73,20 @@ impl Sim {
                     * p.hard_scale)
     }
     pub fn defense_flags(&self) -> u32 {
-        match self.defense.mode {
+        let defense = match self.defense.mode {
             Some(Mode::On) => 1 | 16 | 32,
             Some(Mode::Hold) => 1 | 16,
             Some(Mode::Air) => 8 | if self.action.hurt_state != 0 { 2 } else { 0 },
             Some(Mode::Broken) => 4,
             Some(Mode::Off) => 16,
             None => 0,
-        }
+        };
+        defense
+            | if self.reaction.is_some() || self.knockdown_grace > 0 {
+                64
+            } else {
+                0
+            }
     }
     pub fn shield_hit(&mut self, damage: f32) -> bool {
         if self.defense_flags() & 1 == 0 || !damage.is_finite() || damage < 0. {

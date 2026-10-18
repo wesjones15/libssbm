@@ -227,6 +227,7 @@ pub struct Sim {
     sampled_buttons: u32,
     pending_pressed: u32,
     buffered_attack: u32,
+    pub(crate) knockdown_grace: u32,
     previous: Input,
     flick_age: u32,
     modifier_age: u32,
@@ -271,6 +272,7 @@ impl Sim {
             sampled_buttons: 0,
             pending_pressed: 0,
             buffered_attack: 0,
+            knockdown_grace: 0,
             previous: Input::idle(),
             flick_age: 100,
             modifier_age: 100,
@@ -293,6 +295,12 @@ impl Sim {
             && self
                 .current_move
                 .is_some_and(|m| self.options.mobile_moves & (1u64 << m as u32) != 0)
+    }
+    /// Melee's side-B cannon points up in the extracted pose. Turn only its
+    /// upper rig toward the live camera ray; locomotion and body yaw stay put.
+    pub fn side_special_upper_aim(&self) -> Option<(f32, f32)> {
+        matches!(self.current_move, Some(Move::Missile | Move::SuperMissile))
+            .then(|| side_special_upper_angles(self.move_aim, self.facing))
     }
     pub fn advance(&mut self, host: &mut impl Host, mut input: Input, dt: f64) -> u32 {
         // Explicit neutral-B keeps the existing charge hold/fire protocol while
@@ -363,6 +371,7 @@ impl Sim {
         self.locomotion_weight = 0.;
         self.reaction = None;
         self.buffered_attack = 0;
+        self.knockdown_grace = 0;
         self.entry = None;
         self.rebirth = None;
         self.pad_gravity = None;
@@ -396,7 +405,7 @@ impl Sim {
     }
     /// Host damage notification, deliberately independent of engine health types.
     pub fn hurt(&mut self) {
-        if self.defense_flags() & 2 != 0 {
+        if self.defense_flags() & (2 | 64) != 0 {
             return;
         }
         if self.entry.is_some() || self.rebirth.is_some() {
@@ -412,6 +421,13 @@ impl Sim {
         self.motion.select(stage.clip(), 1.);
         self.motion.frame = 0.;
         self.action.active.clear();
+    }
+    /// Keep the post-get-up window open while a host stun still owns control.
+    /// It cannot grant protection to an unrelated crowd-control state.
+    pub fn hold_knockdown_protection(&mut self) {
+        if self.reaction.is_some() || self.knockdown_grace > 0 {
+            self.knockdown_grace = 60;
+        }
     }
     fn emit(&self, host: &mut impl Host, kind: EventKind, move_id: u32, strength: f32) {
         let attachment = if kind == EventKind::Hit {
@@ -729,7 +745,14 @@ impl Sim {
         if let Some(stage) = self.reaction {
             if self.motion.finished() {
                 self.reaction = stage.after();
+                if self.reaction.is_none() {
+                    // A full second after regaining control is long enough to
+                    // start a buffered attack without another hit restarting stun.
+                    self.knockdown_grace = 60;
+                }
             }
+        } else {
+            self.knockdown_grace = self.knockdown_grace.saturating_sub(1);
         }
         // A short contextual-A press during hitstun should execute once control
         // returns. Keep the request bounded and retain the live aim/stick vector.
@@ -1211,6 +1234,20 @@ fn recovery(m: Move) -> u32 {
         Move::ScrewAttack => 36,
         _ => 24,
     }
+}
+
+/// Source side-B points the muzzle toward local -Y. Correct its 90-degree
+/// pitch, then turn the upper rig from body heading to the live aim vector.
+pub fn side_special_upper_angles(aim: Vec3, facing: Vec3) -> (f32, f32) {
+    let horizontal = aim.with_y(0.).normalize_or_zero();
+    let body = facing.with_y(0.).normalize_or_zero();
+    let yaw = if horizontal.length_squared() > 0. && body.length_squared() > 0. {
+        (body.z * horizontal.x - body.x * horizontal.z).atan2(body.dot(horizontal))
+    } else {
+        0.
+    };
+    let pitch = -std::f32::consts::FRAC_PI_2 - aim.y.atan2(aim.with_y(0.).length());
+    (pitch, yaw)
 }
 
 #[derive(Default)]

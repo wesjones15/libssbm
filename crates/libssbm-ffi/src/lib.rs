@@ -836,7 +836,7 @@ impl Host for Adapter<'_> {
                     .clips
                     .get(e.gait_clip)
                     .is_some_and(|c| c.looping);
-                let pose = libssbm_assets::presentation::mobile_pose_layers(
+                let mut pose = libssbm_assets::presentation::mobile_pose_layers(
                     &self.1.model,
                     &self.1.animations,
                     e.clip,
@@ -848,6 +848,18 @@ impl Host for Adapter<'_> {
                     e.gait_weight,
                     libssbm_assets::fighter::SAMUS.upper_body_root,
                 );
+                if matches!(e.move_id, 21 | 22)
+                    && let Some(root) = libssbm_assets::fighter::SAMUS.upper_body_root
+                {
+                    let (pitch, yaw) = libssbm::side_special_upper_angles(e.direction, e.facing);
+                    libssbm_assets::presentation::aim_upper_body(
+                        &self.1.model,
+                        &mut pose,
+                        root,
+                        pitch,
+                        yaw,
+                    );
+                }
                 pose.get(bone)
                     .map(|joint| {
                         (fighter_matrix(e.position, e.facing) * *joint).transform_point3(Vec3::ZERO)
@@ -1069,13 +1081,21 @@ pub unsafe extern "C" fn ssbm_sim_jump_height(handle: *mut Handle, height: f32) 
 }
 /// # Safety
 /// Live fighter or null. Bits: shield=1, dodge invulnerability=2, broken=4,
-/// air dodge=8, shield pose=16, guard-on=32.
+/// air dodge=8, shield pose=16, guard-on=32, knockdown/get-up immunity=64.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn ssbm_sim_defense_flags(h: *const Handle) -> u32 {
     unsafe { h.as_ref() }
         .filter(|h| !h.poisoned)
         .map(|h| h.sim.defense_flags())
         .unwrap_or(0)
+}
+/// Extend an existing knockdown's recovery immunity while host stun owns input.
+/// Does nothing when no knockdown protection is active.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn ssbm_sim_hold_knockdown(h: *mut Handle) {
+    if let Some(h) = unsafe { h.as_mut() }.filter(|h| !h.poisoned) {
+        h.sim.hold_knockdown_protection();
+    }
 }
 /// # Safety
 /// Unique fighter or null, damage as a finite fraction of host maximum health.
