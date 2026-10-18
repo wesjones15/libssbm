@@ -8,7 +8,7 @@ fn input(pitch: f32, movement: bool, buttons: u32) -> Input {
         aim: Vec3::new(0., angle.sin(), angle.cos()),
         movement: if movement { Vec3::Z } else { Vec3::ZERO },
         buttons,
-        allowed: 15,
+        allowed: 31,
     }
 }
 fn select(p: Input, air: bool, held: bool, fps: u32) -> Move {
@@ -109,7 +109,7 @@ fn host_yaw_faces_body_without_rotating_drift_or_latched_attacks() {
         let mut p = Input {
             aim: Vec3::Z,
             movement: Vec3::X,
-            allowed: 15,
+            allowed: 31,
             buttons: 0,
         };
         s.set_host_facing(Vec3::Z);

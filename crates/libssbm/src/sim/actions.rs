@@ -110,7 +110,7 @@ impl Sim {
         self.emit(host, EventKind::Hit, m as u32, strength);
     }
 
-    pub(super) fn execute_disc_commands(&mut self, host: &mut impl Host, input: Input) {
+    pub(crate) fn execute_disc_commands(&mut self, host: &mut impl Host, input: Input) {
         let clip = self.motion.clip;
         let frame = self.motion.frame;
         if self.action.script_clip != clip || frame < self.action.script_frame {
@@ -241,6 +241,11 @@ impl Sim {
                     self.action.visibility.insert(group, choice);
                 }
                 Command::Raw { opcode, words } => {
+                    // ftAction_80071A14/1A58: global override/all-capsule hurt state.
+                    // EscapeAir uses 26 (not per-bone command 28).
+                    if opcode == 26 || opcode == 27 {
+                        self.action.hurt_state = words[0] & 0x03ffffff;
+                    }
                     // lb/types.h set_throw_hitbox_0/1/2 and ftAction_80071E04.
                     if opcode == 34 && words[0] >> 23 & 7 == 0 {
                         self.action.throw_hit = Some(crate::action::Hitbox {

@@ -49,6 +49,8 @@ impl Presentation {
         let mut effect = Self::effect_from(dir, archive, if id >= 2000 { id - 2000 } else { id })?;
         if id == 25 {
             crate::effects::ko_palette(dir, &mut effect.model, 0)?;
+        } else if (11..=14).contains(&id) {
+            crate::effects::shield_palette(dir, &mut effect.model, 0, usize::from(id == 11))?;
         }
         Ok(effect)
     }

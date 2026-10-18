@@ -362,8 +362,44 @@ released. Jump-pad/knockback movement is ignored during the locked return.
 The safe-ground figurine, rather than Melee's aerial revival platform, is the
 requested RoR2 adaptation; no stock/percent reset or HP penalty is introduced.
 Normal collision unsticking and wall correction do not count as a falloff. An
-initial game spawn still waits for the vanilla Start interaction. Native/core
+initial game spawn uses this same automatic return, without the KO. Native/core
 checks cover 30/60/144 Hz, visibility, sounds/cues, early/timeout release, flash,
 protection expiry, repeated falls and external placement cleanup. Common checks
 cover threshold ownership and buff balancing. Viewer captures show the source KO
 model, waiting figurine and released fighter; Unity playtest remains pending.
+
+## Five-skill host controls and defense
+
+The host explicitly selects neutral-B, side-B, up-B and down-B using additive
+input bits 256/512/1024/2048. Contextual A remains bit 2. Skill gates now map to
+neutral-B=0, A=1, side-B=2, up-B=3, down-B/defense=4. Legacy SPECIAL/UP/DOWN
+input remains available to development previews. RoR2 binds X to down-B by
+default, with Shield / Air Feint as its loadout alternate; LB always selects up-B.
+These controls are a requested host adaptation, not Melee's original pad layout.
+
+`controls::jump_velocity` inverts the fixed-tick gravity-before-displacement
+apex. Optional `host_jump_height` gives ground, short and aerial jumps the same
+actual apex as the host's standard jump. Without it, source jump tuning remains.
+Screw Attack and other attack-authored velocities retain their own rules.
+
+`defense` follows ftCommon/ftCo_Guard, ftCo_EscapeAir and ftCo_Furafura behavior:
+GuardOn/Guard/GuardOff, common shield drain/regen/hit costs, depletion stun and
+restore; one directional EscapeAir per airtime, decay then gravity, helpless
+fall and landing. Raw command 26 reads whole-fighter hurt state from source
+ftAction_80071A14 (27 applies all-capsule state via 1A58), controlling dodge
+invulnerability. Production parameters come
+from PlCo.dat attributes, including shield-break duration at zero source damage.
+Host incoming damage is converted from fraction of maximum health to fraction
+of source shield maximum; this is a RoR2 balance adaptation. Shield sounds use
+common IDs 110/127/128/129. Guard models 11/13/14 use extracted common effects.
+Shield tilt, light-shield analog depth, shield hitlag/pushback, power-shield
+reflection and source percent-dependent stun are not implemented. Core tests
+cover stock gates, equal jump apices and shield/dodge transitions at fixed rates;
+this does not establish Unity visual or controller playtest fidelity.
+
+The additive ABI-4 exports `ssbm_sim_jump_height`, `ssbm_sim_defense_flags`,
+`ssbm_sim_shield_hit`, `ssbm_sim_shield_fraction`, and `ssbm_sim_anchor` preserve
+all existing struct layouts. Anchor placement preserves move clocks and accepts
+only host collision-resolved positions, for a boss grapple without capturing it.
+
+Shield size uses fighter initial_shield_size (+0x90) and PlCo x264/x2D4 health scaling. Common player palette x48 is baked through each guard model's source TEV stage (GuardOn uses the second TObj); texture alpha remains independent. The host centers this bubble on body.corePosition. This omits source shield tilt/attachment blending and full multi-texture TEV reproduction. ssbm_sim_shield_scale exposes the disc scale without changing ABI layouts.

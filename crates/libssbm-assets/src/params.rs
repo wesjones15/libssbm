@@ -139,6 +139,60 @@ pub fn rebirth(dir: &Path) -> Result<libssbm::rebirth::Params> {
     }
     Ok(params)
 }
+pub fn defense(dir: &Path) -> Result<libssbm::defense::Params> {
+    defense_for(dir, &crate::fighter::SAMUS)
+}
+pub fn defense_for(
+    dir: &Path,
+    profile: &crate::fighter::FighterAssets<'_>,
+) -> Result<libssbm::defense::Params> {
+    profile.required()?;
+    let bytes = std::fs::read(dir.join(crate::fighter::COMMON_DATA.file))?;
+    let d = Dat::parse(&bytes)?;
+    let a = d.required_ptr(d.root(crate::fighter::COMMON_DATA.root)?)?;
+    let fighter_bytes = std::fs::read(dir.join(profile.data.file))?;
+    let fighter = Dat::parse(&fighter_bytes)?;
+    let attributes = fighter.required_ptr(fighter.root(profile.data.root)?)?;
+    let duration = (d.f32(a + 0x2f8)? + d.f32(a + 0x2fc)?) / d.f32(a + 0x300)?;
+    if !duration.is_finite() || duration <= 0. || duration > 3600. {
+        return Err("invalid shield break duration".into());
+    }
+    let p = libssbm::defense::Params {
+        maximum: d.f32(a + 0x260)?,
+        drain: d.f32(a + 0x278)? * d.f32(a + 0x2f0)?,
+        regen: d.f32(a + 0x27c)?,
+        hit_mul: d.f32(a + 0x284)? * (1. - d.f32(a + 0x2e0)?),
+        hit_add: d.f32(a + 0x288)?,
+        restore: d.f32(a + 0x280)?,
+        air_force: d.f32(a + 0x338)?,
+        air_decay: d.f32(a + 0x33c)?,
+        broken_frames: duration.ceil() as u32,
+        shield_size: fighter.f32(attributes + 0x90)?,
+        minimum_scale: d.f32(a + 0x264)?,
+        hard_scale: d.f32(a + 0x2d4)?,
+    };
+    if ![
+        p.maximum,
+        p.drain,
+        p.regen,
+        p.hit_mul,
+        p.hit_add,
+        p.restore,
+        p.air_force,
+        p.air_decay,
+        p.shield_size,
+        p.minimum_scale,
+        p.hard_scale,
+    ]
+    .iter()
+    .all(|n| n.is_finite() && *n >= 0.)
+        || p.maximum <= 0.
+        || p.air_decay > 1.
+    {
+        return Err("invalid common defense tuning".into());
+    }
+    Ok(p)
+}
 
 pub fn load(dir: &Path) -> Result<Params> {
     load_for(dir, &crate::fighter::SAMUS)

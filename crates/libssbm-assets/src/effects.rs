@@ -30,6 +30,24 @@ pub struct Effects {
 /// Bake the source's (tev0*(1-texture)+konst*texture) stage into the texture;
 /// alpha and source animation remain separate. Offline local fighter uses P1.
 pub fn ko_palette(dir: &Path, model: &mut Model, player: usize) -> Result<()> {
+    player_palette(dir, model, player, false, 0)
+}
+/// efasync.c 0x417..0x41A: white highlights and the common player colour.
+pub fn shield_palette(
+    dir: &Path,
+    model: &mut Model,
+    player: usize,
+    texture_stage: usize,
+) -> Result<()> {
+    player_palette(dir, model, player, true, texture_stage)
+}
+fn player_palette(
+    dir: &Path,
+    model: &mut Model,
+    player: usize,
+    shield: bool,
+    texture_stage: usize,
+) -> Result<()> {
     if player >= 4 {
         return Err("KO player palette outside common table".into());
     }
@@ -45,7 +63,10 @@ pub fn ko_palette(dir: &Path, model: &mut Model, player: usize) -> Result<()> {
             continue;
         };
         let m = d.required_ptr(dobj + 8)?;
-        let t = d.required_ptr(m + 8)?;
+        let mut t = d.required_ptr(m + 8)?;
+        for _ in 0..texture_stage {
+            t = d.required_ptr(t + 4)?;
+        }
         let Some(tev) = d.ptr(t + 0x58)? else {
             continue;
         };
@@ -59,7 +80,9 @@ pub fn ko_palette(dir: &Path, model: &mut Model, player: usize) -> Result<()> {
         {
             return Err("unsupported KO colour combiner".into());
         }
-        let (konst, tev0) = if batch.owner == 1 {
+        let (konst, tev0) = if shield {
+            (&[255u8, 255, 255][..], primary)
+        } else if batch.owner == 1 {
             (primary, secondary)
         } else {
             (d.bytes(tev + 16, 3)?, d.bytes(tev + 20, 3)?)

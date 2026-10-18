@@ -99,6 +99,7 @@ pub struct GfxCue {
 }
 #[derive(Clone, Debug, Default)]
 pub struct ActionState {
+    pub hurt_state: u32,
     pub throw_hit: Option<Hitbox>,
     pub definitions: BTreeMap<String, ActionDef>,
     pub active: BTreeMap<u32, ActiveHitbox>,
@@ -121,6 +122,7 @@ pub struct ActionState {
 }
 impl ActionState {
     pub fn reset(&mut self) {
+        self.hurt_state = 0;
         self.throw_hit = None;
         self.active.clear();
         self.variables = [0; 4];

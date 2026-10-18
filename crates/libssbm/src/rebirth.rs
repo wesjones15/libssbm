@@ -64,6 +64,8 @@ impl Sim {
         }
         self.teleport(self.position);
         self.shot_charge = 0;
+        self.defense.mode = None;
+        self.defense.air_used = false;
         self.action.reset();
         self.rebirth = Some(State {
             params,

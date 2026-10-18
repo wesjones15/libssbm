@@ -386,6 +386,8 @@ pub unsafe extern "C" fn ssbm_sim_new(dir: *const c_char, pos: V3) -> *mut Handl
         let result = (|| -> libssbm_assets::Result<(Sim, Rig, libssbm_assets::audio::Mixer)> {
             let dir = unsafe { path(dir) }?;
             let mut sim = Sim::new(libssbm_assets::params::load(dir)?, pos.into());
+            sim.defense.params = libssbm_assets::params::defense(dir)?;
+            sim.defense.health = sim.defense.params.maximum;
             let rig = Rig::load(dir)?;
             sim.motion.definitions = rig.animations.motion_definitions();
             sim.action.definitions = libssbm_assets::action::load(dir, &rig.animations)?;
@@ -991,6 +993,73 @@ pub unsafe extern "C" fn ssbm_sim_facing(handle: *mut Handle, facing: V3) {
     if let Some(h) = unsafe { handle.as_mut() } {
         if !h.poisoned {
             h.sim.set_host_facing(facing.into());
+        }
+    }
+}
+/// Set the requested jump apex in sim units; zero restores source jump tuning.
+/// # Safety
+/// Unique live handle or null.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn ssbm_sim_jump_height(handle: *mut Handle, height: f32) {
+    if let Some(h) = unsafe { handle.as_mut() } {
+        if !h.poisoned && height.is_finite() && height >= 0. {
+            h.sim.host_jump_height = if height > 0. { Some(height) } else { None };
+        }
+    }
+}
+/// # Safety
+/// Live fighter or null. Bits: shield=1, dodge invulnerability=2, broken=4,
+/// air dodge=8, shield pose=16, guard-on=32.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn ssbm_sim_defense_flags(h: *const Handle) -> u32 {
+    unsafe { h.as_ref() }
+        .filter(|h| !h.poisoned)
+        .map(|h| h.sim.defense_flags())
+        .unwrap_or(0)
+}
+/// # Safety
+/// Unique fighter or null, damage as a finite fraction of host maximum health.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn ssbm_sim_shield_hit(h: *mut Handle, damage: f32) -> u32 {
+    unsafe { h.as_mut() }
+        .filter(|h| !h.poisoned)
+        .map(|h| h.sim.shield_hit(damage * h.sim.defense.params.maximum) as u32)
+        .unwrap_or(0)
+}
+/// # Safety
+/// Live fighter or null.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn ssbm_sim_shield_fraction(h: *const Handle) -> f32 {
+    unsafe { h.as_ref() }
+        .filter(|h| !h.poisoned)
+        .map(|h| h.sim.defense.health / h.sim.defense.params.maximum)
+        .unwrap_or(0.)
+}
+/// Disc shield radius/health scale for the host's extracted guard model.
+/// # Safety
+/// Live fighter or null.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn ssbm_sim_shield_scale(h: *const Handle) -> f32 {
+    unsafe { h.as_ref() }
+        .filter(|h| !h.poisoned)
+        .map(|h| h.sim.shield_scale())
+        .unwrap_or(0.)
+}
+/// Collision-resolved self placement for a held grapple; preserves action clocks.
+/// # Safety
+/// Unique live handle or null, finite position.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn ssbm_sim_anchor(handle: *mut Handle, position: V3, grounded: u32) {
+    if let Some(h) = unsafe { handle.as_mut() } {
+        let p: Vec3 = position.into();
+        if !h.poisoned
+            && p.is_finite()
+            && h.sim.entry.is_none()
+            && !h.sim.rebirth.as_ref().is_some_and(|s| s.flags() & 1 != 0)
+        {
+            h.sim.position = p;
+            h.sim.velocity = Vec3::ZERO;
+            h.sim.grounded = grounded != 0;
         }
     }
 }

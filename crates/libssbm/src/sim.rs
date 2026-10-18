@@ -15,6 +15,11 @@ pub const DOWN: u32 = 16;
 pub const SPRINT: u32 = 32;
 pub const CANCEL: u32 = 64;
 pub const GRAB: u32 = 128;
+pub const NEUTRAL_B: u32 = 256;
+pub const SIDE_B: u32 = 512;
+pub const UP_B: u32 = 1024;
+pub const DOWN_B: u32 = 2048;
+pub const DEFEND: u32 = 4096;
 
 #[derive(Clone, Copy, Debug, Default)]
 pub struct Input {
@@ -52,7 +57,7 @@ impl Input {
     pub fn idle() -> Self {
         Self {
             aim: Vec3::X,
-            allowed: 15,
+            allowed: 31,
             ..Self::default()
         }
     }
@@ -93,10 +98,11 @@ pub enum Move {
 impl Move {
     pub fn slot(self) -> u32 {
         match self {
-            Self::ChargeShot => 1,
-            Self::Missile | Self::SuperMissile | Self::Bomb => 2,
+            Self::ChargeShot => 0,
+            Self::Missile | Self::SuperMissile => 2,
             Self::ScrewAttack => 3,
-            _ => 0,
+            Self::Bomb => 4,
+            _ => 1,
         }
     }
     pub fn is_smash(self) -> bool {
@@ -174,6 +180,7 @@ impl Default for Options {
 
 pub struct Sim {
     pub grabbed: bool,
+    pub defense: crate::defense::Defense,
     pub reaction: Option<crate::reaction::Stage>,
     pub entry: Option<crate::entry::State>,
     pub rebirth: Option<crate::rebirth::State>,
@@ -194,6 +201,7 @@ pub struct Sim {
     pub smash_charge: u32,
     pub facing: Vec3,
     host_facing: Option<Vec3>,
+    pub host_jump_height: Option<f32>,
     accumulator: f64,
     pub fall_blend: f32,
     suppress_initial_landing: bool,
@@ -203,9 +211,9 @@ pub struct Sim {
     flick_age: u32,
     modifier_age: u32,
     charge_clock: u32,
-    short_hop: bool,
+    pub(crate) short_hop: bool,
     release_phase: bool,
-    pad_gravity: Option<Vec3>,
+    pub(crate) pad_gravity: Option<Vec3>,
     move_aim: Vec3,
     move_strength: f32,
 }
@@ -213,6 +221,7 @@ impl Sim {
     pub fn new(params: Params, position: Vec3) -> Self {
         Self {
             grabbed: false,
+            defense: Default::default(),
             reaction: None,
             entry: None,
             rebirth: None,
@@ -233,6 +242,7 @@ impl Sim {
             smash_charge: 0,
             facing: Vec3::X,
             host_facing: None,
+            host_jump_height: None,
             accumulator: 0.,
             fall_blend: 0.,
             suppress_initial_landing: true,
@@ -252,7 +262,12 @@ impl Sim {
     pub fn alpha(&self) -> f32 {
         (self.accumulator * TICK_HZ) as f32
     }
-    pub fn advance(&mut self, host: &mut impl Host, input: Input, dt: f64) -> u32 {
+    pub fn advance(&mut self, host: &mut impl Host, mut input: Input, dt: f64) -> u32 {
+        // Explicit neutral-B keeps the existing charge hold/fire protocol while
+        // remaining neutral even when LS is held or the camera points upward.
+        if input.buttons & NEUTRAL_B != 0 {
+            input.buttons |= SPECIAL;
+        }
         self.action.samples.clear();
         self.action.sounds.clear();
         self.action.effects.clear();
@@ -305,6 +320,7 @@ impl Sim {
             )
     }
     pub fn teleport(&mut self, position: Vec3) {
+        self.defense.mode = None;
         self.grabbed = false;
         self.suppress_initial_landing = true;
         self.action.reset();
@@ -335,6 +351,7 @@ impl Sim {
     }
     /// Host crowd-control interruption. Stored neutral charge survives.
     pub fn interrupt(&mut self) {
+        self.defense.mode = None;
         self.grabbed = false;
         self.current_move = None;
         self.smash_charge = 0;
@@ -343,6 +360,9 @@ impl Sim {
     }
     /// Host damage notification, deliberately independent of engine health types.
     pub fn hurt(&mut self) {
+        if self.defense_flags() & 2 != 0 {
+            return;
+        }
         if self.entry.is_some() || self.rebirth.is_some() {
             return;
         }
@@ -395,7 +415,7 @@ impl Sim {
             attachment_offset,
         });
     }
-    fn set_phase(&mut self, phase: Phase) {
+    pub(crate) fn set_phase(&mut self, phase: Phase) {
         if self.phase == Phase::ChargeShot && phase != Phase::ChargeShot {
             self.action.sounds.push(crate::action::SoundCue {
                 sound: 0,
@@ -587,13 +607,17 @@ impl Sim {
         }
         self.pad_gravity = None;
         self.grounded = false;
-        self.velocity.y = if aerial {
-            self.params.jump_speed * self.params.air_jump_scale
-        } else if self.short_hop {
-            self.params.short_hop_speed
+        self.velocity.y = if let Some(height) = self.host_jump_height {
+            crate::controls::jump_velocity(height, self.params.gravity)
         } else {
-            self.params.jump_speed
-        } * self.options.jump_scale;
+            (if aerial {
+                self.params.jump_speed * self.params.air_jump_scale
+            } else if self.short_hop {
+                self.params.short_hop_speed
+            } else {
+                self.params.jump_speed
+            }) * self.options.jump_scale
+        };
         self.jumps_used += 1;
         self.set_phase(Phase::Free);
         self.emit(host, EventKind::Jump, 0, self.jumps_used as f32);
@@ -655,6 +679,10 @@ impl Sim {
             return;
         }
         self.phase_frame = self.phase_frame.saturating_add(1);
+        if self.tick_defense(host, input, pressed) {
+            self.previous = input;
+            return;
+        }
         if let Some(stage) = self.reaction {
             if self.motion.finished() {
                 self.reaction = stage.after();
@@ -722,8 +750,20 @@ impl Sim {
                         Move::Grab
                     };
                     self.start(host, m, input);
-                } else if pressed & SPECIAL != 0 {
-                    let m = if input.attack_vertical() > 0 {
+                } else if pressed & (SPECIAL | NEUTRAL_B | SIDE_B | UP_B | DOWN_B) != 0 {
+                    let m = if input.buttons & NEUTRAL_B != 0 {
+                        Move::ChargeShot
+                    } else if input.buttons & UP_B != 0 {
+                        Move::ScrewAttack
+                    } else if input.buttons & DOWN_B != 0 {
+                        Move::Bomb
+                    } else if input.buttons & SIDE_B != 0 {
+                        if self.flick_age < self.params.missile_smash_window {
+                            Move::SuperMissile
+                        } else {
+                            Move::Missile
+                        }
+                    } else if input.attack_vertical() > 0 {
                         Move::ScrewAttack
                     } else if input.attack_vertical() < 0 {
                         Move::Bomb
