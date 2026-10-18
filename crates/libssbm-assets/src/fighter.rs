@@ -57,7 +57,11 @@ pub const SAMUS: FighterAssets<'static> = FighterAssets {
         file: "EfSsData.dat",
         root: "effSamusDataTable",
     },
-    samples: &["audio/us/samus.ssm", "audio/us/main.ssm"],
+    samples: &[
+        "audio/us/samus.ssm",
+        "audio/us/main.ssm",
+        "audio/us/nr_name.ssm",
+    ],
     sequences: "audio/us/smash2.sem",
     articles: &[
         ArticleLayout {

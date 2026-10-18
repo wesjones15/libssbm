@@ -96,6 +96,15 @@ pub enum Move {
     GrabHold = 33,
 }
 impl Move {
+    /// Grounded specials that may steer while the legs retain a separate gait.
+    /// Character-specific A attacks, grabs and authored dash attacks stay whole.
+    pub const fn mobile_specials_mask() -> u64 {
+        (1u64 << Self::ChargeShot as u32)
+            | (1u64 << Self::Missile as u32)
+            | (1u64 << Self::SuperMissile as u32)
+            | (1u64 << Self::ScrewAttack as u32)
+            | (1u64 << Self::Bomb as u32)
+    }
     pub fn slot(self) -> u32 {
         match self {
             Self::ChargeShot => 0,
@@ -180,7 +189,7 @@ impl Default for Options {
             extra_jumps: 0,
             hold_charge: false,
             smash_max_frames: 60,
-            mobile_moves: 0,
+            mobile_moves: Move::mobile_specials_mask(),
         }
     }
 }
@@ -217,6 +226,7 @@ pub struct Sim {
     suppress_initial_landing: bool,
     sampled_buttons: u32,
     pending_pressed: u32,
+    buffered_attack: u32,
     previous: Input,
     flick_age: u32,
     modifier_age: u32,
@@ -260,6 +270,7 @@ impl Sim {
             suppress_initial_landing: true,
             sampled_buttons: 0,
             pending_pressed: 0,
+            buffered_attack: 0,
             previous: Input::idle(),
             flick_age: 100,
             modifier_age: 100,
@@ -351,6 +362,7 @@ impl Sim {
         self.locomotion.frame = 0.;
         self.locomotion_weight = 0.;
         self.reaction = None;
+        self.buffered_attack = 0;
         self.entry = None;
         self.rebirth = None;
         self.pad_gravity = None;
@@ -653,7 +665,7 @@ impl Sim {
         self.set_phase(Phase::Free);
         self.emit(host, EventKind::Jump, 0, self.jumps_used as f32);
     }
-    fn tick(&mut self, host: &mut impl Host, input: Input, pressed: u32) {
+    fn tick(&mut self, host: &mut impl Host, input: Input, mut pressed: u32) {
         self.frame += 1;
         if self.tick_rebirth(input) {
             self.previous = input;
@@ -719,6 +731,19 @@ impl Sim {
                 self.reaction = stage.after();
             }
         }
+        // A short contextual-A press during hitstun should execute once control
+        // returns. Keep the request bounded and retain the live aim/stick vector.
+        if self.reaction.is_some() && pressed & ATTACK != 0 {
+            self.buffered_attack = 90;
+        } else if self.reaction.is_none()
+            && self.phase == Phase::Free
+            && self.buffered_attack > 0
+            && input.allowed & (1 << 1) != 0
+        {
+            pressed |= ATTACK;
+            self.buffered_attack = 0;
+        }
+        self.buffered_attack = self.buffered_attack.saturating_sub(1);
         self.flick_age = self.flick_age.saturating_add(1);
         self.modifier_age = self.modifier_age.saturating_add(1);
         let movement = input.movement.with_y(0.).clamp_length_max(1.);

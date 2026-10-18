@@ -160,3 +160,44 @@ fn mobile_neutral_b_walks_on_an_independent_gait_and_sprint_stores_charge() {
         assert!((sim.motion.frame - sim.locomotion.frame).abs() < 1e-4);
     }
 }
+
+#[test]
+fn grounded_specials_are_mobile_by_default_but_contextual_a_is_not() {
+    assert_eq!(
+        Sim::new(Params::fixture(), Vec3::ZERO).options.mobile_moves,
+        Move::mobile_specials_mask()
+    );
+    for move_id in [
+        Move::ChargeShot,
+        Move::Missile,
+        Move::SuperMissile,
+        Move::Bomb,
+    ] {
+        let mut sim = fighter();
+        let mut host = FlatHost::default();
+        sim.advance(&mut host, Input::idle(), 1. / 60.);
+        assert!(sim.start_move(&mut host, move_id, Input::idle()));
+        assert!(sim.mobile_action(), "{move_id:?} must allow walking");
+        let old = sim.position.x;
+        for _ in 0..5 {
+            sim.advance(
+                &mut host,
+                Input {
+                    movement: Vec3::X,
+                    ..Input::idle()
+                },
+                1. / 60.,
+            );
+        }
+        assert!(sim.position.x > old, "{move_id:?} did not steer");
+        assert!(
+            sim.locomotion_weight > 0.,
+            "{move_id:?} did not layer walking legs"
+        );
+    }
+    let mut sim = fighter();
+    let mut host = FlatHost::default();
+    sim.advance(&mut host, Input::idle(), 1. / 60.);
+    assert!(sim.start_move(&mut host, Move::Jab, Input::idle()));
+    assert!(!sim.mobile_action());
+}

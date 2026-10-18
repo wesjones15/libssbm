@@ -937,6 +937,26 @@ pub unsafe extern "C" fn ssbm_sim_audio(handle: *mut Handle, out: *mut f32, fram
         frames
     })
 }
+/// Play one source sound from the fighter's extracted SEM/SSM banks.
+/// # Safety
+/// Unique live fighter; call outside host callbacks.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn ssbm_sim_play_sound(handle: *mut Handle, sound: u32) -> u32 {
+    if handle.is_null() {
+        return 0;
+    }
+    let h = unsafe { &mut *handle };
+    if h.poisoned {
+        return 0;
+    }
+    guarded(0, || match h.audio.play(sound, 127, 64, 0) {
+        Ok(()) => 1,
+        Err(e) => {
+            error(e);
+            0
+        }
+    })
+}
 /// # Safety
 /// Live handle and writable State pointer. Returns 0 for poisoned handles.
 #[unsafe(no_mangle)]
@@ -1691,6 +1711,18 @@ pub unsafe extern "C" fn ssbm_sim_launch_pad(handle: *mut Handle, velocity: V3, 
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn game_voice_uses_extracted_common_audio_bank() -> libssbm_assets::Result<()> {
+        let dir = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../assets");
+        if !libssbm_assets::complete(&dir) {
+            eprintln!("SKIP: disc cache absent");
+            return Ok(());
+        }
+        // if_2F6E.c::ifStatus_803F9628[5] selects the GAME! cue.
+        let bank = libssbm_assets::audio::Bank::load(&dir)?;
+        assert!(!bank.sample_ids(0x7c855)?.is_empty());
+        Ok(())
+    }
     #[test]
     fn every_disc_gfx_cue_resolves_a_real_posed_attachment() -> libssbm_assets::Result<()> {
         let dir = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../assets");
