@@ -1,5 +1,6 @@
 use libssbm::{
-    ATTACK, CANCEL, DOWN, EventKind, FlatHost, Input, JUMP, Phase, SPECIAL, SPRINT, Sim, UP,
+    ATTACK, CANCEL, DOWN, DOWN_B, EventKind, FlatHost, GRAB, Input, JUMP, NEUTRAL_B, Phase, SIDE_B,
+    SPECIAL, SPRINT, Sim, UP, UP_B,
 };
 use libssbm_assets::presentation::Presentation;
 use macroquad::prelude::*;
@@ -411,14 +412,9 @@ async fn run() -> libssbm_assets::Result<()> {
             .transpose()?;
         let rotation =
             ::glam::Mat4::from_rotation_y(model_yaw.unwrap_or(std::f32::consts::FRAC_PI_2 - yaw));
-        // The common RoR2 selection policy anchors the body while up-special
-        // plays. Match that policy here so jump poses stay in the preview camera.
-        let preview_offset = if selection {
-            let idle = actor.animations.pose(&actor.model, "Wait", 0., false);
-            idle[4].w_axis.truncate() - actor.world[4].w_axis.truncate()
-        } else {
-            ::glam::Vec3::ZERO
-        };
+        // The selection view keeps the fighter's actual upward displacement.
+        // It begins and ends on the floor while Screw Attack can rise freely.
+        let preview_offset = ::glam::Vec3::ZERO;
         if object {
             actor.face_camera(
                 rotation
@@ -534,7 +530,7 @@ async fn run() -> libssbm_assets::Result<()> {
             LIGHTGRAY,
         );
         draw_text(
-            "Xbox: LS move | A jump | RT attack | LT special | LB/RB up/down | B store | Tab costume | R reset",
+            "Xbox: LS move/click sprint | A jump | RT neutral B | LT contextual A | RB side B | LB up B | B down B | X grab",
             28.,
             89.,
             18.,
@@ -664,9 +660,10 @@ fn read_pad(input: &mut Input, forward: Vec3, right: Vec3) {
     input.movement = sv(right * axis(s.pad.lx) + forward * axis(s.pad.ly));
     for (mask, bit) in [
         (0x1000, JUMP),
-        (0x2000, CANCEL),
-        (0x100, UP),
-        (0x200, DOWN),
+        (0x2000, DOWN_B),
+        (0x4000, GRAB),
+        (0x100, UP_B),
+        (0x200, SIDE_B),
         (0x40, SPRINT),
     ] {
         if s.pad.buttons & mask != 0 {
@@ -674,10 +671,10 @@ fn read_pad(input: &mut Input, forward: Vec3, right: Vec3) {
         }
     }
     if s.pad.rt > 40 {
-        input.buttons |= ATTACK;
+        input.buttons |= NEUTRAL_B;
     }
     if s.pad.lt > 40 {
-        input.buttons |= SPECIAL;
+        input.buttons |= ATTACK;
     }
 }
 #[cfg(not(windows))]

@@ -14,7 +14,7 @@ special actions. Adding another fighter must not duplicate the Samus plugin.
 | Meshes, particle quads, PCM device output | ror2-common | `ModelView`, `ParticleView`/`IParticleSource`, `PcmStream`; no native DLL name in these components |
 | World collision, input, damage/procs, pause and run cleanup | RoR2 adapter + ror2-common | Reusable primitives exist; parts of the Samus driver still need consolidation |
 | Character file references, costumes, article table bounds | fighter definition | `fighter::SAMUS`; readers accept other `FighterAssets` values |
-| Mobile action movement and split skeleton pose | libssbm + libssbm-assets | Opt-in Move bitmask, independent 60-Hz gait clock, fighter-profile upper-body root and local-joint blend; Samus enables Charge Shot |
+| Mobile action movement and split skeleton pose | libssbm + libssbm-assets | Special moves mobile by default, independent 60-Hz gait clock, fighter-profile upper-body root and local-joint blend; contextual A stays full-body |
 | Charge Shot, missiles, bombs, Screw Attack | Samus behavior module | Native source article tuning/physics, impact callbacks and held charge; full rendering fidelity/playtest pending |
 | Survivor name, icons, unlocks, skill-slot policy | character plugin | RoR2-specific character choices |
 
@@ -76,3 +76,12 @@ its own invulnerability buff. Initial begin_arrival skips KO and enters that
 same figurine/automatic-release/transform/protection sequence without Interact;
 normal wall/unstuck correction remains immediate. Samus is the current adapter,
 not a separate implementation of those timers or effects.
+
+Grounded specials now default to `Move::mobile_specials_mask`. The fixed-tick
+sim advances an independent gait clock; the presenter splices lower-body local
+transforms under each fighter profile's upper-body root (Samus: joint 19).
+Contextual A, grabs and authored dash attacks remain full-body. The native
+reaction stage buffers a short A press; ror2-common buffers it during host
+stun. Shared `MeleeDeathSequence` plays a fighter-supplied fall pose before
+its source KO effect/sound, and `MeleeGameBanner` displays GAME! with a
+fighter-supplied round-end cue. Samus is the first consumer.

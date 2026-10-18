@@ -1,6 +1,27 @@
 # Samus / Melee behavior specification
 
-## Current checkpoint: 0.2.12, 2026-10-18
+## Current checkpoint: 0.2.13, 2026-10-18
+
+All five grounded specials now default to mobile movement with the shared
+gait/upper-body composition; contextual A, grabs and authored dashes remain
+whole-body actions. Screw Attack still launches and uses aerial drift once
+airborne. Both the RoR2 input adapter and the native damage reaction retain a
+bounded LT press through stun/get-up, then execute it once with live direction.
+The Samus host shortens Charge Shot, missile, Screw Attack and bomb recharge
+intervals as RoR2 balance values, not source Melee timing.
+
+The shared character-select renderer now preserves native upward displacement
+and returns to grounded idle after Screw Attack. On final death, the shared
+host sequence plays the source DownBoundU fall pose for 30 frames, then invokes
+the same 0x42b/0x61 KO effect and audio as falloff and hides the fighter. This
+visible pre-KO fall is a RoR2 adaptation; ft_0D31.c::ftCo_800D3BC8 instead
+enters DeadDown and spawns the effect immediately. At RoR2 game over, the
+shared GAME! banner plays 0x7C855 from if_2F6E.c::ifStatus_803F9628[5] via
+if_2F72.c::fn_802F7288. The extra sample lives in the player's nr_name.ssm;
+older caches re-extract on first run. UI type and timing are host approximations,
+not a decoder of Melee's ScInfCnt scene archive. Unity playtest is pending.
+
+## Earlier checkpoint: 0.2.12, 2026-10-18
 
 Grounded RT Charge Shot now permits walking through startup, charging and
 firing recovery. This is an explicit RoR2 adaptation: the source action clock,
@@ -390,8 +411,9 @@ model, waiting figurine and released fighter; Unity playtest remains pending.
 The host explicitly selects neutral-B, side-B, up-B and down-B using additive
 input bits 256/512/1024/2048. Contextual A remains bit 2. Skill gates now map to
 neutral-B=0, A=1, side-B=2, up-B=3, down-B/defense=4. Legacy SPECIAL/UP/DOWN
-input remains available to development previews. RoR2 binds X to down-B by
-default, with Shield / Air Feint as its loadout alternate; LB always selects up-B.
+input remains available to development previews. RoR2 binds B to down-B by
+default, with Shield / Air Feint as its loadout alternate; X is camera-aimed
+grab and yields to visible interact prompts. LB always selects up-B.
 These controls are a requested host adaptation, not Melee's original pad layout.
 
 `controls::jump_velocity` inverts the fixed-tick gravity-before-displacement

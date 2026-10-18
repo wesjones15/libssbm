@@ -1721,6 +1721,14 @@ mod tests {
         // if_2F6E.c::ifStatus_803F9628[5] selects the GAME! cue.
         let bank = libssbm_assets::audio::Bank::load(&dir)?;
         assert!(!bank.sample_ids(0x7c855)?.is_empty());
+        let mut mixer = libssbm_assets::audio::Mixer::new(bank);
+        mixer.play(0x7c855, 127, 64, 0)?;
+        let mut pcm = vec![0.; 32000 * 2];
+        mixer.render(&mut pcm);
+        assert!(
+            pcm.iter().any(|x| x.abs() > 0.0001),
+            "GAME cue decoded silence"
+        );
         Ok(())
     }
     #[test]

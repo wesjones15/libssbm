@@ -45,6 +45,10 @@ fn common_ko_palette_flash_and_return_assets_are_original_and_visible() -> Resul
                 .is_some_and(|t| t.rgba.chunks_exact(4).any(|p| p[3] > 0))
     }));
     let mut actor = Presentation::load(&dir, 0)?;
+    assert!(
+        actor.animations.clips.contains_key("DownBoundU"),
+        "death knockdown pose missing"
+    );
     let mut sim = libssbm::Sim::new(libssbm_assets::params::load(&dir)?, glam::Vec3::ZERO);
     sim.begin_rebirth(
         params,

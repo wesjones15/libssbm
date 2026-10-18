@@ -13,7 +13,7 @@ fn real_banks_decode_and_action_cues_resolve_to_audible_pcm() -> Result<()> {
         return Ok(());
     }
     let bank = Bank::load(&dir)?;
-    assert_eq!(bank.samples.len(), 271);
+    assert_eq!(bank.samples.len(), 323);
     assert!(bank.samples.values().all(|s| {
         !s.pcm.is_empty()
             && s.pcm
