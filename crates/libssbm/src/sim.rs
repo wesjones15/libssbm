@@ -766,7 +766,7 @@ impl Sim {
         if self.current_move == Some(Move::ChargeShot)
             && matches!(self.phase, Phase::Startup | Phase::ChargeShot)
             && self.options.mobile_moves & (1u64 << Move::ChargeShot as u32) != 0
-            && input.buttons & SPRINT != 0
+            && pressed & SPRINT != 0
         {
             self.emit(
                 host,
@@ -945,7 +945,7 @@ impl Sim {
         } else {
             let horizontal = self.velocity.with_y(0.);
             let (speed, friction) = if self.grounded {
-                if input.buttons & SPRINT != 0 {
+                if input.buttons & SPRINT != 0 && !self.mobile_action() {
                     (self.params.run_speed, self.params.friction)
                 } else {
                     (self.params.walk_speed, self.params.friction)
@@ -962,7 +962,7 @@ impl Sim {
             let step = if movable && target.length_squared() > 0.001 {
                 // The source scales the stick component, then adds base accel.
                 let (mul, base) = if self.grounded {
-                    if input.buttons & SPRINT != 0 {
+                    if input.buttons & SPRINT != 0 && !self.mobile_action() {
                         (self.params.dash_accel, self.params.dash_base)
                     } else {
                         (self.params.walk_accel, self.params.walk_base)

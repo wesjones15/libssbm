@@ -95,6 +95,32 @@ fn jump_pose_continues_after_apex_and_gaits_keep_cycle_phase() {
 #[test]
 fn mobile_neutral_b_walks_on_an_independent_gait_and_sprint_stores_charge() {
     for fps in [30, 60, 144] {
+        let mut already_sprinting = fighter();
+        already_sprinting.options.mobile_moves = 1 << Move::ChargeShot as u32;
+        let mut sprint_host = FlatHost::default();
+        already_sprinting.advance(&mut sprint_host, Input::idle(), 1. / 60.);
+        for _ in 0..fps / 4 {
+            already_sprinting.advance(
+                &mut sprint_host,
+                Input {
+                    movement: Vec3::X,
+                    buttons: SPRINT,
+                    ..Input::idle()
+                },
+                1. / fps as f64,
+            );
+        }
+        already_sprinting.advance(
+            &mut sprint_host,
+            Input {
+                movement: Vec3::X,
+                buttons: SPRINT | NEUTRAL_B,
+                ..Input::idle()
+            },
+            1. / 30.,
+        );
+        assert_eq!(already_sprinting.current_move, Some(Move::ChargeShot));
+
         let mut sim = fighter();
         sim.options.mobile_moves = 1 << Move::ChargeShot as u32;
         let mut host = FlatHost::default();
