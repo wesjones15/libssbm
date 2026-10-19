@@ -306,12 +306,18 @@ impl Sim {
             && self.rebirth.is_none()
             && matches!(self.current_move, Some(Move::Missile | Move::SuperMissile))
     }
+    /// Down-B and Screw Attack spin the whole body: the disc clips flip the joints below the
+    /// spine (joints 2-4, 180 degrees at a time), which a gait layer would replace, leaving only
+    /// the upper body bobbing and restarting. They keep any steering but draw the raw clip.
+    pub fn spins_whole_body(&self) -> bool {
+        matches!(self.current_move, Some(Move::Bomb | Move::ScrewAttack))
+    }
     /// How much of the gait/idle pose replaces the action's own legs: all of it for side-B,
     /// the walking blend for other mobile moves, none otherwise.
     pub fn gait_layer_weight(&self) -> f32 {
         if self.side_special_layered() {
             1.
-        } else if self.mobile_action() {
+        } else if self.mobile_action() && !self.spins_whole_body() {
             self.locomotion_weight
         } else {
             0.

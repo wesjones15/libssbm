@@ -135,7 +135,8 @@ impl Projectile {
                             }
                         }
                         self.velocity = self.direction * self.params.speed;
-                    } else if self.velocity.length() > self.params.min_speed {
+                    } else if self.params.life.is_finite() && self.velocity.length() > self.params.min_speed {
+                        // A host that lifts the lifetime cap (unlimited range) keeps the cruise speed.
                         self.velocity *= self.params.decay;
                     }
                 }

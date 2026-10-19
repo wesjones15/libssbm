@@ -201,3 +201,28 @@ fn grounded_specials_are_mobile_by_default_but_contextual_a_is_not() {
     assert!(sim.start_move(&mut host, Move::Jab, Input::idle()));
     assert!(!sim.mobile_action());
 }
+
+// Down-B and Screw Attack spin the whole body in joints a gait layer would replace, so they
+// are drawn from their own clip even when they steer; side-B is always layered over the legs.
+#[test]
+fn spin_moves_are_not_gait_layered_but_side_b_always_is() {
+    let mut sim = Sim::new(Params::fixture(), Vec3::ZERO);
+    sim.grounded = true;
+    sim.locomotion_weight = 0.75;
+    for (m, expect) in [
+        (Move::Bomb, 0.),
+        (Move::ScrewAttack, 0.),
+        (Move::ChargeShot, 0.75),
+        (Move::Missile, 1.),
+        (Move::SuperMissile, 1.),
+    ] {
+        sim.current_move = Some(m);
+        assert!(sim.options.mobile_moves & (1u64 << m as u32) != 0, "{m:?} should still steer");
+        assert_eq!(sim.gait_layer_weight(), expect, "{m:?}");
+    }
+    sim.current_move = Some(Move::Missile);
+    sim.grounded = false;
+    assert_eq!(sim.gait_layer_weight(), 1., "airborne side-B is layered too");
+    sim.current_move = Some(Move::Bomb);
+    assert_eq!(sim.gait_layer_weight(), 0.);
+}
