@@ -144,6 +144,7 @@ async fn run() -> libssbm_assets::Result<()> {
     let mut costume = 0;
     let mut rendered = 0;
     let mut meshes = make_meshes(&actor);
+    let mut texture_frames = vec![None; meshes.len()];
     let model_alpha = models::blended(false)?;
     let model_additive = models::blended(true)?;
     let mut platform = if entry_mode || rebirth_preview {
@@ -224,6 +225,7 @@ async fn run() -> libssbm_assets::Result<()> {
             costume = (costume + 1) % 5;
             actor = Presentation::load(std::path::Path::new(&path), costume)?;
             meshes = make_meshes(&actor);
+            texture_frames = vec![None; meshes.len()];
         }
         if is_key_pressed(KeyCode::R) {
             sim.teleport(::glam::Vec3::ZERO);
@@ -445,6 +447,14 @@ async fn run() -> libssbm_assets::Result<()> {
             }
             let skin = actor.model.skin(i, &actor.world);
             let batch = &actor.model.batches[i];
+            let frame = actor.texture_frame(i);
+            if frame != texture_frames[i] {
+                if let (Some(texture), Some(image)) = (&mesh.texture, actor.texture(i)) {
+                    texture.update_from_bytes(image.width as u32, image.height as u32, &image.rgba);
+                }
+                texture_frames[i] = frame;
+            }
+            let texture_matrix = actor.texture_matrix(i);
             let mut color = actor.color(i);
             if rebirth_preview && let Some(overlay) = sim.rebirth.as_ref().and_then(|s| s.overlay())
             {
@@ -476,7 +486,8 @@ async fn run() -> libssbm_assets::Result<()> {
                         (color[3] * 255.) as u8,
                     ]
                 };
-                v.uv = vec2(original.uv.x, original.uv.y);
+                let uv = texture_matrix.transform_point3(original.uv.extend(0.));
+                v.uv = vec2(uv.x, uv.y);
             }
             if batch.blend >= 2 {
                 gl_use_material(if batch.blend == 3 {

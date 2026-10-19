@@ -457,3 +457,6 @@ all existing struct layouts. Anchor placement preserves move clocks and accepts
 only host collision-resolved positions, for a boss grapple without capturing it.
 
 Shield size uses fighter initial_shield_size (+0x90) and PlCo x264/x2D4 health scaling. Common player palette x48 is baked through each guard model's source TEV stage (GuardOn uses the second TObj); texture alpha remains independent. The host centers this bubble on body.corePosition. This omits source shield tilt/attachment blending and full multi-texture TEV reproduction. ssbm_sim_shield_scale exposes the disc scale without changing ABI layouts.
+
+### Effect texture animation
+Common HSD effect models now retain TObj image tables and animate image selection plus translation, scale and rotation channels (tobj.c TObjUpdateFunc/MakeTextureMtx). SpecialHi's initial ground burst uses common model 3 via cue 1021 and needs image-frame animation. Borrowed frame UVs and texture versions feed the shared host renderer; static fades remain independent. Disc checks verify moving burst pixels and common effect SRT. Texture palettes retain the first palette; animated palette selection remains unimplemented. In-game visual confirmation remains manual.

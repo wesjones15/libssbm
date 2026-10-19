@@ -41,7 +41,7 @@ pub fn part(dir: &Path, part: u32) -> Result<Presentation> {
     } else {
         None
     };
-    let model = Model::from_joint(
+    let mut model = Model::from_joint(
         &d,
         if let Some(beam) = beam {
             d.required_ptr(beam)?
@@ -62,7 +62,7 @@ pub fn part(dir: &Path, part: u32) -> Result<Presentation> {
         let extra = &extra.clips["Object"];
         base.frames = base.frames.max(extra.frames);
         base.tracks.extend(extra.tracks.clone());
-        material_tracks = Animations::materials(&d, d.ptr(beam + 12)?, &model)?;
+        material_tracks = Animations::materials(&d, d.ptr(beam + 12)?, &mut model)?;
     }
     let world = model.bind_world();
     Ok(Presentation {

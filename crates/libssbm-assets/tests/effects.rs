@@ -1,6 +1,33 @@
 use libssbm_assets::{Result, effects::Effects};
 use std::path::PathBuf;
 #[test]
+fn screw_attack_ground_texture_moves_on_its_own_clock() -> Result<()> {
+    let dir = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../assets");
+    if !dir.join("EfSsData.dat").exists() { eprintln!("SKIP: effect archives absent"); return Ok(()); }
+    // SpecialHi's initial ground cue 1021 resolves to common effect model 3.
+    let mut actor = libssbm_assets::presentation::Presentation::effect(&dir, 3)?;
+    actor.object_pose(0.);
+    let before: Vec<_> = (0..actor.model.batches.len()).map(|i| actor.texture(i).map(|t| t.rgba.clone())).collect();
+    actor.object_pose(6.);
+    assert!((0..actor.model.batches.len()).any(|i| before[i].as_ref() != actor.texture(i).map(|t| &t.rgba)), "Screw Attack ground texture remains static");
+    for batch in &actor.model.batches {
+        if let Some(base) = &batch.texture {
+            assert!(batch.texture_frames.iter().all(|t| (t.width, t.height) == (base.width, base.height)), "animated texture dimensions must fit the persistent host texture");
+        }
+    }
+    // SRT tracks on other common effects share the same renderer path.
+    let bank = Effects::load(&dir, false)?;
+    let moving = |t: &&libssbm_assets::animation::Track| (102..=108).contains(&t.channel) && t.keys.windows(2).any(|k| (k[0].value - k[1].value).abs() > 0.0001);
+    let id = bank.models.iter().position(|m| m.material_tracks.iter().any(|t| moving(&t))).unwrap();
+    let track = bank.models[id].material_tracks.iter().find(moving).unwrap();
+    let mut actor = libssbm_assets::presentation::Presentation::effect(&dir, id as u32)?;
+    actor.object_pose(track.keys.first().unwrap().time);
+    let before: Vec<_> = (0..actor.model.batches.len()).map(|i| actor.texture_matrix(i)).collect();
+    actor.object_pose(track.keys.last().unwrap().time);
+    assert!((0..actor.model.batches.len()).any(|i| !before[i].abs_diff_eq(actor.texture_matrix(i), 0.00001)), "common effect SRT tracks remain frozen");
+    Ok(())
+}
+#[test]
 fn charged_shot_keeps_its_spinning_core_facing_cameras_from_all_sides() -> Result<()> {
     let dir = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../assets");
     if !dir.join("PlSs.dat").exists() {

@@ -34,6 +34,8 @@ pub struct Texture {
 }
 #[derive(Clone, Debug)]
 pub struct Batch {
+    pub texture_transform: Option<TextureTransform>,
+    pub texture_frames: Vec<Texture>,
     pub instance: Option<(usize, usize)>,
     pub material_dobj: usize,
     pub vertices: Vec<Vertex>,
@@ -47,6 +49,27 @@ pub struct Batch {
     /// HSD TObj alpha operation and its independently animated interpolation.
     pub texture_alpha: u8,
     pub texture_blend: f32,
+}
+
+#[derive(Clone, Copy, Debug)]
+pub struct TextureTransform {
+    pub id: u32,
+    pub rotation: Vec3,
+    pub scale: Vec3,
+    pub translation: Vec3,
+    pub repeat: Vec2,
+    pub mirror_t: bool,
+}
+impl TextureTransform {
+    /// baselib/tobj.c::MakeTextureMtx, also used by animated TObj channels.
+    pub fn matrix(&self) -> Mat4 {
+        let x = if self.scale.x.abs() < f32::EPSILON { 0. } else { self.repeat.x / self.scale.x };
+        let y = if self.scale.y.abs() < f32::EPSILON { 0. } else { self.repeat.y / self.scale.y };
+        let mirror = if self.mirror_t && y != 0. { 1. / y } else { 0. };
+        Mat4::from_scale(Vec3::new(x, y, self.scale.z))
+            * Mat4::from_quat(Quat::from_euler(EulerRot::ZYX, -self.rotation.z, self.rotation.y, self.rotation.x))
+            * Mat4::from_translation(Vec3::new(-self.translation.x, -self.translation.y - mirror, self.translation.z))
+    }
 }
 #[derive(Clone)]
 pub struct Model {
@@ -171,8 +194,11 @@ impl Model {
                 }
                 let (color, texture, texture_alpha, texture_blend) = material(d, d.ptr(at + 8)?)?;
                 let (blend, lit) = render_flags(d, d.ptr(at + 8)?)?;
-                let uv_matrix = texture_matrix(d, d.ptr(at + 8)?)?;
+                let texture_transform = texture_transform(d, d.ptr(at + 8)?)?;
+                let uv_matrix = texture_transform.map_or(Mat4::IDENTITY, |t| t.matrix());
                 let mut batch = Batch {
+                    texture_transform,
+                    texture_frames: Vec::new(),
                     instance: None,
                     material_dobj: dobj_index,
                     texture_alpha,
@@ -401,6 +427,15 @@ fn material(d: &Dat, at: Option<usize>) -> Result<([f32; 4], Option<Texture>, u8
     }
     Ok((color, None, 3, 1.))
 }
+pub(crate) fn texture_frame(d: &Dat, image: usize, palette: Option<usize>, base: &Texture) -> Result<Texture> {
+    let palette = palette.map(|p| -> Result<_> {
+        Ok((d.bytes(d.required_ptr(p)?, d.u16(p + 12)? as usize * 2)?, d.u32(p + 4)?))
+    }).transpose()?;
+    let width = d.u16(image + 4)?;
+    let height = d.u16(image + 6)?;
+    let rgba = crate::texture::decode(d.data, d.required_ptr(image)?, width, height, d.u32(image + 8)?, palette)?;
+    Ok(Texture { width, height, rgba, wrap_s: base.wrap_s, wrap_t: base.wrap_t })
+}
 fn wrap_mode(gx: u32) -> u8 {
     match gx {
         0 => 1,
@@ -411,9 +446,9 @@ fn wrap_mode(gx: u32) -> u8 {
 /// baselib/tobj.c MakeTextureMtx: repeat/scale * rotation * translation,
 /// including the mirrored-T offset. A quarter texture repeated/mirrored twice
 /// is the complete Charge Shot core, rather than a cropped rectangular patch.
-fn texture_matrix(d: &Dat, material: Option<usize>) -> Result<Mat4> {
+fn texture_transform(d: &Dat, material: Option<usize>) -> Result<Option<TextureTransform>> {
     let Some(material) = material else {
-        return Ok(Mat4::IDENTITY);
+        return Ok(None);
     };
     let mut at = d.ptr(material + 8)?;
     let mut seen = HashSet::new();
@@ -426,28 +461,12 @@ fn texture_matrix(d: &Dat, material: Option<usize>) -> Result<Mat4> {
             let s = vector(d, t + 0x1c)?;
             let tr = vector(d, t + 0x28)?;
             let repeat = d.bytes(t + 0x3c, 2)?;
-            let x = if s.x.abs() < f32::EPSILON {
-                0.
-            } else {
-                repeat[0] as f32 / s.x
-            };
-            let y = if s.y.abs() < f32::EPSILON {
-                0.
-            } else {
-                repeat[1] as f32 / s.y
-            };
-            let mirror = if d.u32(t + 0x38)? == 2 && y != 0. {
-                1. / y
-            } else {
-                0.
-            };
-            return Ok(Mat4::from_scale(Vec3::new(x, y, s.z))
-                * Mat4::from_quat(Quat::from_euler(EulerRot::ZYX, -r.z, r.y, r.x))
-                * Mat4::from_translation(Vec3::new(-tr.x, -tr.y - mirror, tr.z)));
+            return Ok(Some(TextureTransform { id: d.u32(t + 8)?, rotation: r, scale: s, translation: tr,
+                repeat: Vec2::new(repeat[0] as f32, repeat[1] as f32), mirror_t: d.u32(t + 0x38)? == 2 }));
         }
         at = d.ptr(t + 4)?;
     }
-    Ok(Mat4::IDENTITY)
+    Ok(None)
 }
 fn render_flags(d: &Dat, at: Option<usize>) -> Result<(u8, u8)> {
     let Some(at) = at else {

@@ -227,6 +227,40 @@ impl Presentation {
         }
         (color, blending)
     }
+    /// Animated TObj SRT relative to the matrix already applied to bind UVs.
+    pub fn texture_matrix(&self, batch: usize) -> Mat4 {
+        let b = &self.model.batches[batch];
+        let Some(base) = b.texture_transform else { return Mat4::IDENTITY };
+        let mut animated = base;
+        let mut changed = false;
+        for track in &self.material_tracks {
+            if track.joint != b.material_dobj { continue; }
+            let Some(value) = track.sample(self.frame) else { continue };
+            match track.channel {
+                102 => animated.translation.x = value,
+                103 => animated.translation.y = value,
+                104 => animated.scale.x = value,
+                105 => animated.scale.y = value,
+                106..=108 => animated.rotation[(track.channel - 106) as usize] = value,
+                _ => continue,
+            }
+            changed = true;
+        }
+        let matrix = base.matrix();
+        if !changed || matrix.determinant().abs() < 1e-8 { return Mat4::IDENTITY; }
+        animated.matrix() * matrix.inverse()
+    }
+    pub fn texture_frame(&self, batch: usize) -> Option<usize> {
+        let b = self.model.batches.get(batch)?;
+        if b.texture_frames.is_empty() { return None; }
+        let frame = self.material_tracks.iter().filter(|t| t.joint == b.material_dobj && t.channel == 101)
+            .filter_map(|t| t.sample(self.frame)).last().unwrap_or(0.).max(0.) as usize;
+        Some(frame.min(b.texture_frames.len() - 1))
+    }
+    pub fn texture(&self, batch: usize) -> Option<&crate::model::Texture> {
+        let b = self.model.batches.get(batch)?;
+        self.texture_frame(batch).map(|i| &b.texture_frames[i]).or(b.texture.as_ref())
+    }
     /// Normalized source metadata for the common host alpha adapter. The
     /// viewer keeps the same resolution below; no HSD flags cross into Unity.
     pub fn alpha_source(&self, batch: usize) -> [f32; 3] {

@@ -171,9 +171,9 @@ impl Effects {
             if !d.relocations.contains(&(desc + 4)) {
                 break;
             }
-            let model = Model::from_joint(d, d.required_ptr(desc + 4)?)?;
+            let mut model = Model::from_joint(d, d.required_ptr(desc + 4)?)?;
             let animations = Animations::object(d, d.ptr(desc + 8)?, &model)?;
-            let material_tracks = Animations::materials(d, d.ptr(desc + 12)?, &model)?;
+            let material_tracks = Animations::materials(d, d.ptr(desc + 12)?, &mut model)?;
             models.push(EffectModel {
                 lifetime: d.f32(desc)?,
                 model,

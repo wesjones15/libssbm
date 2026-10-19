@@ -156,7 +156,7 @@ impl Track {
 impl Animations {
     /// MatAnimJoint -> per-DObj material AObj tracks. Material channel definitions
     /// and application are specified by mobj.h/HSD_MObjUpdateFunc.
-    pub fn materials(d: &Dat, root: Option<usize>, model: &Model) -> Result<Vec<Track>> {
+    pub fn materials(d: &Dat, root: Option<usize>, model: &mut Model) -> Result<Vec<Track>> {
         let mut result = Vec::new();
         let mut stack = root.map(|p| vec![p]).unwrap_or_default();
         let mut joint = 0;
@@ -171,7 +171,13 @@ impl Animations {
             if let Some(child) = d.ptr(at)? {
                 stack.push(child);
             }
-            let batches: Vec<_> = model.batches.iter().filter(|b| b.owner == joint).collect();
+            let batches: Vec<_> = model
+                .batches
+                .iter()
+                .enumerate()
+                .filter(|(_, b)| b.owner == joint && b.instance.is_none())
+                .map(|(i, _)| i)
+                .collect();
             let mut material = d.ptr(at + 8)?;
             let mut index = 0;
             let mut visited = std::collections::HashSet::new();
@@ -179,7 +185,8 @@ impl Animations {
                 if !visited.insert(m) || visited.len() > 4096 {
                     return Err("cyclic material animation chain".into());
                 }
-                if let (Some(batch), Some(aobj)) = (batches.get(index), d.ptr(m + 4)?) {
+                if let (Some(&batch_index), Some(aobj)) = (batches.get(index), d.ptr(m + 4)?) {
+                    let batch = &model.batches[batch_index];
                     let mut fobj = d.ptr(aobj + 8)?;
                     let mut tracks = std::collections::HashSet::new();
                     while let Some(f) = fobj {
@@ -188,7 +195,7 @@ impl Animations {
                         }
                         let frac = d.bytes(f + 13, 2)?;
                         result.push(Track {
-                            joint: batch.dobj,
+                            joint: batch.material_dobj,
                             channel: d.bytes(f + 12, 1)?[0],
                             keys: keys(
                                 d.bytes(d.required_ptr(f + 16)?, d.u32(f + 4)? as usize)?,
@@ -203,30 +210,70 @@ impl Animations {
                 // HSD_MObjAddAnim delegates the separate TexAnim/AObj chain to
                 // HSD_TObjAddAnimAll. Screw Attack fades via TObj blending, not
                 // material alpha (which remains zero throughout the effect).
-                if let (Some(batch), Some(texanim)) = (batches.get(index), d.ptr(m + 8)?) {
-                    if let Some(aobj) = d.ptr(texanim + 8)? {
-                        let mut fobj = d.ptr(aobj + 8)?;
-                        let mut tracks = std::collections::HashSet::new();
-                        while let Some(f) = fobj {
-                            if !tracks.insert(f) || tracks.len() > 64 {
-                                return Err("cyclic texture tracks".into());
-                            }
-                            let channel = d.bytes(f + 12, 1)?[0];
-                            if channel == 9 {
-                                let frac = d.bytes(f + 13, 2)?;
-                                result.push(Track {
-                                    joint: batch.dobj,
-                                    channel: 109,
-                                    keys: keys(
-                                        d.bytes(d.required_ptr(f + 16)?, d.u32(f + 4)? as usize)?,
-                                        frac[0],
-                                        frac[1],
-                                        d.f32(f + 8)?,
-                                    )?,
-                                });
-                            }
-                            fobj = d.ptr(f)?;
+                if let (Some(&batch_index), Some(texanim)) = (batches.get(index), d.ptr(m + 8)?) {
+                    let batch = &mut model.batches[batch_index];
+                    let mut tex = Some(texanim);
+                    let mut visited_tex = std::collections::HashSet::new();
+                    while let Some(texanim) = tex {
+                        if !visited_tex.insert(texanim) || visited_tex.len() > 16 {
+                            return Err("cyclic texture animation chain".into());
                         }
+                        let texture_id = d.u32(texanim + 4)?;
+                        if batch.texture_transform.is_some_and(|t| t.id != texture_id) {
+                            tex = d.ptr(texanim)?;
+                            continue;
+                        }
+                        if let (Some(images), Some(base)) =
+                            (d.ptr(texanim + 12)?, batch.texture.as_ref())
+                        {
+                            let count = d.u16(texanim + 20)? as usize;
+                            if count > 256 {
+                                return Err("texture animation frame budget exceeded".into());
+                            }
+                            let palette = d
+                                .ptr(texanim + 16)?
+                                .map(|table| d.ptr(table))
+                                .transpose()?
+                                .flatten();
+                            batch.texture_frames = (0..count)
+                                .map(|i| {
+                                    crate::model::texture_frame(
+                                        d,
+                                        d.required_ptr(images + i * 4)?,
+                                        palette,
+                                        base,
+                                    )
+                                })
+                                .collect::<Result<_>>()?;
+                        }
+                        if let Some(aobj) = d.ptr(texanim + 8)? {
+                            let mut fobj = d.ptr(aobj + 8)?;
+                            let mut tracks = std::collections::HashSet::new();
+                            while let Some(f) = fobj {
+                                if !tracks.insert(f) || tracks.len() > 64 {
+                                    return Err("cyclic texture tracks".into());
+                                }
+                                let channel = d.bytes(f + 12, 1)?[0];
+                                if (1..=9).contains(&channel) {
+                                    let frac = d.bytes(f + 13, 2)?;
+                                    result.push(Track {
+                                        joint: batch.material_dobj,
+                                        channel: 100 + channel,
+                                        keys: keys(
+                                            d.bytes(
+                                                d.required_ptr(f + 16)?,
+                                                d.u32(f + 4)? as usize,
+                                            )?,
+                                            frac[0],
+                                            frac[1],
+                                            d.f32(f + 8)?,
+                                        )?,
+                                    });
+                                }
+                                fobj = d.ptr(f)?;
+                            }
+                        }
+                        tex = d.ptr(texanim)?;
                     }
                 }
                 material = d.ptr(m)?;

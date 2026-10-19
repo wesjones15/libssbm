@@ -34,7 +34,7 @@ impl Article {
         let table = d.required_ptr(d.root(fighter.data.root)? + 0x48)?;
         let article = d.required_ptr(table + kind as usize * 4)?;
         let desc = d.required_ptr(article + 16)?;
-        let model = Model::from_joint(&d, d.required_ptr(desc)?)?;
+        let mut model = Model::from_joint(&d, d.required_ptr(desc)?)?;
         let animation = if let Some(array) = d.ptr(article + 12)? {
             d.ptr(array + state as usize * 16)?
         } else {
@@ -46,7 +46,7 @@ impl Article {
             .map(|array| d.ptr(array + state as usize * 16 + 4))
             .transpose()?
             .flatten();
-        let material_tracks = Animations::materials(&d, material, &model)?;
+        let material_tracks = Animations::materials(&d, material, &mut model)?;
         let horizon = animations
             .clips
             .get("Object")

@@ -244,6 +244,7 @@ pub struct View {
     batches: Vec<Batch>,
     indices: Vec<i32>,
     uvs: Vec<f32>,
+    frame_uvs: Vec<f32>,
     positions: Vec<V3>,
     normals: Vec<V3>,
     colors: Vec<[f32; 4]>,
@@ -1159,9 +1160,13 @@ impl View {
             let visible = self.actor.visible(i);
             self.colors[i] = self.actor.color(i);
             self.alpha_sources[i] = self.actor.alpha_source(i);
+            let texture_matrix = self.actor.texture_matrix(i);
             for (p, n) in self.actor.model.skin(i, &self.actor.world) {
                 self.positions[offset] = if visible { p.into() } else { V3::default() };
                 self.normals[offset] = n.into();
+                let uv = texture_matrix.transform_point3(glam::Vec3::new(self.uvs[offset * 2], self.uvs[offset * 2 + 1], 0.));
+                self.frame_uvs[offset * 2] = uv.x;
+                self.frame_uvs[offset * 2 + 1] = uv.y;
                 offset += 1;
             }
         }
@@ -1174,6 +1179,7 @@ impl View {
             batches: vec![],
             indices: vec![],
             uvs: vec![],
+            frame_uvs: vec![],
             positions: vec![],
             normals: vec![],
             colors: vec![],
@@ -1217,6 +1223,7 @@ impl View {
             lo: lo.into(),
             hi: hi.into(),
         };
+        v.frame_uvs = v.uvs.clone();
         v.refresh();
         v
     }
@@ -1629,6 +1636,13 @@ pub unsafe extern "C" fn ssbm_view_uvs(v: *const View, out: *mut f32, max: u32) 
         count as u32
     }
 }
+/// # Safety
+/// Live view and writable vertex count. Pointer survives until update/free.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn ssbm_view_frame_uvs(v: *const View, count: *mut u32) -> *const f32 {
+    if v.is_null() || count.is_null() { return std::ptr::null(); }
+    unsafe { *count = ((*v).frame_uvs.len() / 2) as u32; (*v).frame_uvs.as_ptr() }
+}
 macro_rules! pointer_export {
     ($name:ident,$field:ident,$ty:ty) => {
         #[doc = "# Safety\nLive view and writable count. Borrowed pointer valid until update/free."]
@@ -1664,12 +1678,7 @@ pub unsafe extern "C" fn ssbm_view_texture(
         return 0;
     }
     let v = unsafe { &*v };
-    let Some(t) = v
-        .actor
-        .model
-        .batches
-        .get(id as usize)
-        .and_then(|b| b.texture.as_ref())
+    let Some(t) = v.actor.texture(id as usize)
     else {
         return 0;
     };
@@ -1692,6 +1701,14 @@ pub unsafe extern "C" fn ssbm_view_texture(
         }
     }
     1
+}
+
+/// # Safety
+/// Live view or null. Zero means an immutable texture.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn ssbm_view_texture_version(v: *const View, id: u32) -> u32 {
+    if v.is_null() { return 0; }
+    unsafe { (*v).actor.texture_frame(id as usize).map_or(0, |frame| frame as u32 + 1) }
 }
 
 /// # Safety
