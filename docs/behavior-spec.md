@@ -1,6 +1,23 @@
 # Samus / Melee behavior specification
 
-## Current checkpoint: 0.2.19, 2026-10-19
+## Current checkpoint: 0.2.20, 2026-10-19
+
+The shared melee plumbing is now fighter-parameterized, so a second fighter is a
+purely additive change (an asset profile, a `Behavior`, and a C# plugin) rather
+than edits to shared code. `libssbm-assets` gains a `FighterKind` selector with a
+`fighter(kind)` registry, and every fighter-specific asset path (`presentation`
+effect/article/load, `effects`, `action`, `params::defense`, audio bank,
+disc extraction) resolves through a `&FighterAssets` instead of the hardcoded
+`SAMUS`. The FFI replaces its remaining `SAMUS` references with `kind` parameters
+(`ssbm_announce_sound`, `ssbm_portrait`, `ssbm_assets_complete`, `ssbm_extract`,
+`ssbm_view_new`, `ssbm_article_new`, `ssbm_effect_new`), stores the fighter kind
+in the sim handle so entry/rebirth resolve it, and uses the rig's own
+`upper_body_root` for the side-special aim correction. ABI is bumped to 5; the
+C# `MeleeNative` bindings carry the kind through, and `NativeCheck` passes end to
+end for Samus. `FighterKind::Fox` is reserved and returns a clean
+"not implemented" error until its `FighterAssets` and `Behavior` are added.
+
+## Earlier checkpoint: 0.2.19, 2026-10-19
 
 Three presentation fixes from the first live playtest. The side-B/Super Missile
 upper-body aim was applied 180 degrees off: `side_special_upper_angles` now

@@ -82,8 +82,15 @@ impl Presentation {
         })
     }
     pub fn effect(dir: &Path, id: u32) -> Result<Self> {
+        Self::effect_for(dir, id, &crate::fighter::SAMUS)
+    }
+    pub fn effect_for(
+        dir: &Path,
+        id: u32,
+        fighter: &crate::fighter::FighterAssets<'_>,
+    ) -> Result<Self> {
         let archive = if id >= 2000 {
-            crate::fighter::SAMUS.effects
+            fighter.effects
         } else {
             crate::fighter::COMMON_EFFECTS
         };

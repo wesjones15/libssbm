@@ -12,7 +12,7 @@ use std::{
     panic::{AssertUnwindSafe, catch_unwind},
     path::Path,
 };
-pub const SSBM_ABI_VERSION: u32 = 4;
+pub const SSBM_ABI_VERSION: u32 = 5;
 #[repr(C)]
 #[derive(Clone, Copy, Default)]
 pub struct V3 {
@@ -144,6 +144,7 @@ pub struct Handle {
     sim: Sim,
     rig: Rig,
     audio: libssbm_assets::audio::Mixer,
+    kind: libssbm_assets::fighter::FighterKind,
     poisoned: bool,
 }
 struct Rig {
@@ -285,6 +286,17 @@ unsafe fn copy<T: Copy>(data: &[T], out: *mut T, max: u32) -> u32 {
     }
     data.len() as u32
 }
+/// Resolve a fighter kind to its asset profile. `Fox` is reserved until its
+/// `FighterAssets` is defined; the error keeps that path honest rather than
+/// falling back to Samus assets.
+fn fighter_assets(
+    kind: u32,
+) -> Result<&'static libssbm_assets::fighter::FighterAssets<'static>, Box<dyn std::error::Error + Send + Sync>>
+{
+    libssbm_assets::fighter::FighterKind::from_u32(kind)
+        .and_then(|k| k.assets())
+        .ok_or_else(|| format!("unsupported or unimplemented fighter kind {kind}").into())
+}
 
 #[unsafe(no_mangle)]
 pub extern "C" fn ssbm_abi_version() -> u32 {
@@ -294,8 +306,8 @@ pub extern "C" fn ssbm_abi_version() -> u32 {
 /// select screen. gm_1601.c::gm_80168C5C (invoked from mncharsel.c) maps the
 /// CharacterKind to the 0x7C83X name bank; nr_name.ssm holds the samples.
 #[unsafe(no_mangle)]
-pub extern "C" fn ssbm_announce_sound() -> u32 {
-    libssbm_assets::fighter::SAMUS.announce_sound
+pub extern "C" fn ssbm_announce_sound(kind: u32) -> u32 {
+    fighter_assets(kind).map_or(0, |f| f.announce_sound)
 }
 /// Decode the player's original character-select photo, rows top first.
 /// # Safety
@@ -303,6 +315,7 @@ pub extern "C" fn ssbm_announce_sound() -> u32 {
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn ssbm_portrait(
     dir: *const c_char,
+    kind: u32,
     costume: u32,
     info: *mut TextureInfo,
     rgba: *mut u8,
@@ -313,13 +326,11 @@ pub unsafe extern "C" fn ssbm_portrait(
     }
     guarded(0, || {
         let result = (|| -> libssbm_assets::Result<_> {
-            if costume >= libssbm_assets::fighter::SAMUS.costumes.len() as u32 {
+            let fighter = fighter_assets(kind)?;
+            if costume >= fighter.costumes.len() as u32 {
                 return Err("invalid costume".into());
             }
-            libssbm_assets::portrait::load_grid(
-                unsafe { path(dir) }?,
-                &libssbm_assets::fighter::SAMUS,
-            )
+            libssbm_assets::portrait::load_grid(unsafe { path(dir) }?, fighter)
         })();
         match result {
             Ok(photo) => {
@@ -381,22 +392,34 @@ pub unsafe extern "C" fn ssbm_struct_sizes(out: *mut u32, max: u32) -> u32 {
 /// # Safety
 /// UTF-8 NUL-terminated cache folder path; returns 1 only for a complete cache.
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn ssbm_assets_complete(dir: *const c_char) -> u32 {
-    guarded(0, || match unsafe { path(dir) } {
-        Ok(p) => libssbm_assets::complete(p) as u32,
-        Err(e) => {
-            error(e);
-            0
+pub unsafe extern "C" fn ssbm_assets_complete(dir: *const c_char, kind: u32) -> u32 {
+    guarded(0, || {
+        let result = (|| -> libssbm_assets::Result<u32> {
+            let fighter = fighter_assets(kind)?;
+            Ok(fighter.complete(unsafe { path(dir) }?) as u32)
+        })();
+        match result {
+            Ok(n) => n,
+            Err(e) => {
+                error(e);
+                0
+            }
         }
     })
 }
 /// # Safety
 /// Paths must be valid UTF-8 NUL-terminated strings for this call.
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn ssbm_extract(disc: *const c_char, dir: *const c_char) -> u32 {
+pub unsafe extern "C" fn ssbm_extract(disc: *const c_char, dir: *const c_char, kind: u32) -> u32 {
     guarded(0, || {
-        let result =
-            (|| libssbm_assets::disc::extract(unsafe { path(disc) }?, unsafe { path(dir) }?))();
+        let result = (|| -> libssbm_assets::Result<()> {
+            let fighter = fighter_assets(kind)?;
+            libssbm_assets::disc::extract_for(
+                unsafe { path(disc) }?,
+                unsafe { path(dir) }?,
+                fighter,
+            )
+        })();
         match result {
             Ok(()) => 1,
             Err(e) => {
@@ -418,41 +441,55 @@ pub unsafe extern "C" fn ssbm_sim_new(dir: *const c_char, pos: V3) -> *mut Handl
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn ssbm_sim_new_fighter(dir: *const c_char, pos: V3, kind: u32) -> *mut Handle {
     guarded(std::ptr::null_mut(), || {
-        let result = (|| -> libssbm_assets::Result<(Sim, Rig, libssbm_assets::audio::Mixer)> {
+        let result = (|| -> libssbm_assets::Result<(
+            Sim,
+            Rig,
+            libssbm_assets::audio::Mixer,
+            libssbm_assets::fighter::FighterKind,
+        )> {
             let dir = unsafe { path(dir) }?;
+            let fk = libssbm_assets::fighter::FighterKind::from_u32(kind)
+                .ok_or_else(|| format!("unsupported fighter kind {kind}"))?;
+            let fighter = fk
+                .assets()
+                .ok_or_else(|| format!("fighter kind {kind} not implemented"))?;
             let (params, behavior): (
                 libssbm::Params,
                 Box<dyn libssbm::behavior::Behavior>,
-            ) = match kind {
-                0 => (
-                    libssbm_assets::params::load_common(dir, &libssbm_assets::fighter::SAMUS)?,
+            ) = match fk {
+                libssbm_assets::fighter::FighterKind::Samus => (
+                    libssbm_assets::params::load_common(dir, fighter)?,
                     Box::new(libssbm::samus::Samus::new(
                         libssbm_assets::params::load_samus_specials(dir)?,
-                        libssbm_assets::fighter::SAMUS.upper_body_root,
+                        fighter.upper_body_root,
                     )),
                 ),
-                other => return Err(format!("unsupported fighter kind {other}").into()),
+                libssbm_assets::fighter::FighterKind::Fox => {
+                    return Err(format!("fighter kind {kind} (Fox) behavior not implemented").into());
+                }
             };
             let mut sim = Sim::with_behavior(params, behavior, pos.into());
-            sim.defense.params = libssbm_assets::params::defense(dir)?;
+            sim.defense.params = libssbm_assets::params::defense_for(dir, fighter)?;
             sim.defense.health = sim.defense.params.maximum;
-            let rig = Rig::load_for(dir, &libssbm_assets::fighter::SAMUS)?;
+            let rig = Rig::load_for(dir, fighter)?;
             sim.motion.definitions = rig.animations.motion_definitions();
-            sim.action.definitions = libssbm_assets::action::load(dir, &rig.animations)?;
+            sim.action.definitions = libssbm_assets::action::load_for(dir, &rig.animations, fighter)?;
             for (name, action) in &sim.action.definitions {
                 if let Some(motion) = sim.motion.definitions.get_mut(name) {
                     motion.looping |= action.looping;
                 }
             }
-            let audio = libssbm_assets::audio::Mixer::new(libssbm_assets::audio::Bank::load(dir)?);
-            Ok((sim, rig, audio))
+            let audio =
+                libssbm_assets::audio::Mixer::new(libssbm_assets::audio::Bank::load_for(dir, fighter)?);
+            Ok((sim, rig, audio, fk))
         })();
         match result {
-            Ok((sim, rig, audio)) if Vec3::from(pos).is_finite() => {
+            Ok((sim, rig, audio, kind)) if Vec3::from(pos).is_finite() => {
                 Box::into_raw(Box::new(Handle {
                     sim,
                     rig,
                     audio,
+                    kind,
                     poisoned: false,
                 }))
             }
@@ -882,10 +919,10 @@ impl Host for Adapter<'_> {
                     e.gait_frame,
                     gait_loop,
                     e.gait_weight,
-                    libssbm_assets::fighter::SAMUS.upper_body_root,
+                    self.1.upper_body_root,
                 );
                 if matches!(e.move_id, 21 | 22)
-                    && let Some(root) = libssbm_assets::fighter::SAMUS.upper_body_root
+                    && let Some(root) = self.1.upper_body_root
                 {
                     let (_, yaw) = libssbm::side_special_upper_angles(e.direction, e.facing);
                     libssbm_assets::presentation::aim_upper_body(
@@ -1259,9 +1296,12 @@ impl View {
 /// # Safety
 /// UTF-8 cache path; costume index 0..4. Free with ssbm_view_free.
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn ssbm_view_new(dir: *const c_char, costume: u32) -> *mut View {
+pub unsafe extern "C" fn ssbm_view_new(dir: *const c_char, kind: u32, costume: u32) -> *mut View {
     guarded(std::ptr::null_mut(), || {
-        let result = (|| Presentation::load(unsafe { path(dir) }?, costume as usize))();
+        let result = (|| {
+            let fighter = fighter_assets(kind)?;
+            Presentation::load_for(unsafe { path(dir) }?, costume as usize, fighter)
+        })();
         match result {
             Ok(a) => Box::into_raw(Box::new(View::new(a))),
             Err(e) => {
@@ -1274,9 +1314,17 @@ pub unsafe extern "C" fn ssbm_view_new(dir: *const c_char, costume: u32) -> *mut
 /// # Safety
 /// UTF-8 cache path and Samus article kind 0..3/state. Free with ssbm_view_free.
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn ssbm_article_new(dir: *const c_char, kind: u32, state: u32) -> *mut View {
+pub unsafe extern "C" fn ssbm_article_new(
+    dir: *const c_char,
+    fighter_kind: u32,
+    article_kind: u32,
+    state: u32,
+) -> *mut View {
     guarded(std::ptr::null_mut(), || {
-        let result = (|| Presentation::article(unsafe { path(dir) }?, kind, state))();
+        let result = (|| {
+            let fighter = fighter_assets(fighter_kind)?;
+            Presentation::article_for(unsafe { path(dir) }?, article_kind, state, fighter)
+        })();
         match result {
             Ok(a) => Box::into_raw(Box::new(View::new(a))),
             Err(e) => {
@@ -1289,9 +1337,13 @@ pub unsafe extern "C" fn ssbm_article_new(dir: *const c_char, kind: u32, state: 
 /// # Safety
 /// NUL-terminated asset path, common model index or Samus model ID 2000..2002.
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn ssbm_effect_new(dir: *const c_char, id: u32) -> *mut View {
+pub unsafe extern "C" fn ssbm_effect_new(dir: *const c_char, fighter_kind: u32, id: u32) -> *mut View {
     guarded(std::ptr::null_mut(), || {
-        match (|| Presentation::effect(unsafe { path(dir) }?, id))() {
+        let result = (|| {
+            let fighter = fighter_assets(fighter_kind)?;
+            Presentation::effect_for(unsafe { path(dir) }?, id, fighter)
+        })();
+        match result {
             Ok(a) => Box::into_raw(Box::new(View::new(a))),
             Err(e) => {
                 error(e);
@@ -1336,9 +1388,12 @@ pub unsafe extern "C" fn ssbm_sim_begin_entry(h: *mut Handle, dir: *const c_char
         return 0;
     }
     guarded(0, || {
-        match (|| {
-            libssbm_assets::params::entry(unsafe { path(dir) }?, &libssbm_assets::fighter::SAMUS)
-        })() {
+        let kind = unsafe { (&*h).kind };
+        let Some(fighter) = kind.assets() else {
+            error(format!("fighter kind {kind:?} not implemented"));
+            return 0;
+        };
+        match (|| libssbm_assets::params::entry(unsafe { path(dir) }?, fighter))() {
             Ok(params) => {
                 let h = unsafe { &mut *h };
                 h.sim.interrupt();
@@ -1379,11 +1434,15 @@ unsafe fn begin_return(h: *mut Handle, dir: *const c_char, destination: V3, init
         return 0;
     }
     guarded(0, || {
+        let kind = unsafe { (&*h).kind };
         let result = (|| -> libssbm_assets::Result<_> {
             let dir = unsafe { path(dir) }?;
+            let fighter = kind
+                .assets()
+                .ok_or_else(|| format!("fighter kind {kind:?} not implemented"))?;
             Ok((
                 libssbm_assets::params::rebirth(dir)?,
-                libssbm_assets::params::entry(dir, &libssbm_assets::fighter::SAMUS)?,
+                libssbm_assets::params::entry(dir, fighter)?,
             ))
         })();
         match result {
@@ -1848,6 +1907,7 @@ mod tests {
             ),
             rig: Rig::load_for(&dir, &libssbm_assets::fighter::SAMUS)?,
             audio: libssbm_assets::audio::Mixer::new(libssbm_assets::audio::Bank::load(&dir)?),
+            kind: libssbm_assets::fighter::FighterKind::Samus,
             poisoned: false,
         };
         let actions = libssbm_assets::action::load(&dir, &h.rig.animations)?;

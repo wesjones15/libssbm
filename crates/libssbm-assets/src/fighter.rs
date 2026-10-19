@@ -106,6 +106,37 @@ pub const SAMUS: FighterAssets<'static> = FighterAssets {
     },
     announce_sound: 0x7C84E,
 };
+/// The FFI's fighter selector. Adding a fighter means adding a variant here, a
+/// `FighterAssets` definition, and returning it from [`FighterKind::assets`].
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[repr(u32)]
+pub enum FighterKind {
+    Samus = 0,
+    Fox = 1,
+}
+impl FighterKind {
+    pub fn from_u32(kind: u32) -> Option<Self> {
+        match kind {
+            0 => Some(Self::Samus),
+            1 => Some(Self::Fox),
+            _ => None,
+        }
+    }
+    pub fn name(self) -> &'static str {
+        match self {
+            Self::Samus => "Samus",
+            Self::Fox => "Fox",
+        }
+    }
+    /// The fighter's asset profile, once defined. `Fox` is reserved for the
+    /// second fighter and returns `None` until its `FighterAssets` is filled in.
+    pub fn assets(self) -> Option<&'static FighterAssets<'static>> {
+        match self {
+            Self::Samus => Some(&SAMUS),
+            Self::Fox => None,
+        }
+    }
+}
 impl<'a> FighterAssets<'a> {
     /// Exact dependencies for first-run extraction and old-cache migration.
     /// Validate before using this definition as either a read or a write path.
