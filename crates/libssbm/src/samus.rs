@@ -118,7 +118,14 @@ impl Behavior for Samus {
             });
             sim.pad_gravity = None;
             sim.grounded = false;
-            sim.velocity.y = self.specials.screw_velocity * sim.options.jump_scale;
+            // The up-B (Screw Attack) rises to the host's standard jump apex, like
+            // every other jump, instead of Melee's smaller recovery rise. Without a
+            // host height (tests/viewer) the source screw velocity remains.
+            sim.velocity.y = if let Some(height) = sim.host_jump_height {
+                crate::controls::jump_velocity(height, sim.params.gravity)
+            } else {
+                self.specials.screw_velocity * sim.options.jump_scale
+            };
             sim.jumps_used = sim.params.jumps + sim.options.extra_jumps;
         } else if m == Move::Bomb && !sim.grounded {
             sim.pad_gravity = None;

@@ -474,8 +474,10 @@ These controls are a requested host adaptation, not Melee's original pad layout.
 
 `controls::jump_velocity` inverts the fixed-tick gravity-before-displacement
 apex. Optional `host_jump_height` gives ground, short and aerial jumps the same
-actual apex as the host's standard jump. Without it, source jump tuning remains.
-Screw Attack and other attack-authored velocities retain their own rules.
+actual apex as the host's standard jump, and now also sets the up special
+(Screw Attack) launch so its height gain matches the host's standard jump apex.
+Without a host height, source jump/screw tuning remains. Other attack-authored
+velocities retain their own rules.
 
 `defense` follows ftCommon/ftCo_Guard, ftCo_EscapeAir and ftCo_Furafura behavior:
 GuardOn/Guard/GuardOff, common shield drain/regen/hit costs, depletion stun and

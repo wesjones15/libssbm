@@ -133,6 +133,35 @@ fn host_jump_height_matches_short_full_and_aerial_apices() {
 }
 
 #[test]
+fn host_jump_height_matches_the_up_special_apex() {
+    for fps in [30, 60, 144] {
+        let mut s = Sim::new(Params::fixture(), Vec3::ZERO);
+        let mut h = FlatHost::default();
+        s.host_jump_height = Some(40.);
+        s.advance(&mut h, Input::idle(), 1. / 60.);
+        let base = s.position.y;
+        let mut max = base;
+        for frame in 0..fps * 2 {
+            let buttons = if frame < fps / 30 { UP_B } else { 0 };
+            s.advance(
+                &mut h,
+                Input {
+                    buttons,
+                    ..Input::idle()
+                },
+                1. / fps as f64,
+            );
+            max = max.max(s.position.y);
+        }
+        assert!(
+            (max - base - 40.).abs() < 0.002,
+            "fps={fps}: {}",
+            max - base
+        );
+    }
+}
+
+#[test]
 fn shield_uses_native_meter_break_release_and_jump_cancel() {
     let mut s = fighter();
     let mut h = FlatHost::default();
