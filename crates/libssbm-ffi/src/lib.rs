@@ -283,6 +283,13 @@ unsafe fn copy<T: Copy>(data: &[T], out: *mut T, max: u32) -> u32 {
 pub extern "C" fn ssbm_abi_version() -> u32 {
     SSBM_ABI_VERSION
 }
+/// Announcer name-call sound for the current fighter, played on the character
+/// select screen. gm_1601.c::gm_80168C5C (invoked from mncharsel.c) maps the
+/// CharacterKind to the 0x7C83X name bank; nr_name.ssm holds the samples.
+#[unsafe(no_mangle)]
+pub extern "C" fn ssbm_announce_sound() -> u32 {
+    libssbm_assets::fighter::SAMUS.announce_sound
+}
 /// Decode the player's original character-select photo, rows top first.
 /// # Safety
 /// Valid cache path, writable info, and `len` writable output bytes (or null).
@@ -1764,6 +1771,27 @@ mod tests {
         assert!(
             pcm.iter().any(|x| x.abs() > 0.0001),
             "GAME cue decoded silence"
+        );
+        Ok(())
+    }
+    #[test]
+    fn announcer_name_uses_extracted_name_bank() -> libssbm_assets::Result<()> {
+        let dir = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../assets");
+        if !libssbm_assets::complete(&dir) {
+            eprintln!("SKIP: disc cache absent");
+            return Ok(());
+        }
+        let sound = libssbm_assets::fighter::SAMUS.announce_sound;
+        assert_eq!(sound, 0x7C84E);
+        let bank = libssbm_assets::audio::Bank::load(&dir)?;
+        assert!(!bank.sample_ids(sound)?.is_empty());
+        let mut mixer = libssbm_assets::audio::Mixer::new(bank);
+        mixer.play(sound, 127, 64, 0)?;
+        let mut pcm = vec![0.; 32000 * 2];
+        mixer.render(&mut pcm);
+        assert!(
+            pcm.iter().any(|x| x.abs() > 0.0001),
+            "announcer name cue decoded silence"
         );
         Ok(())
     }

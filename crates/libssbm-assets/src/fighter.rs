@@ -30,6 +30,10 @@ pub struct FighterAssets<'a> {
     /// Root joint of the upper-body subtree for host-enabled mobile actions.
     pub upper_body_root: Option<usize>,
     pub portrait: crate::portrait::Portrait<'a>,
+    /// Announcer name call played when the fighter is picked on the character
+    /// select screen. gm_1601.c::gm_80168C5C maps CharacterKind -> sound; the
+    /// CKind_Samus (= 0x10) case selects 0x7C84E in the nr_name.ssm bank.
+    pub announce_sound: u32,
 }
 pub const COMMON_DATA: Archive<'static> = Archive {
     file: "PlCo.dat",
@@ -94,6 +98,7 @@ pub const SAMUS: FighterAssets<'static> = FighterAssets {
         frame: 16,
         grid_joint: 27,
     },
+    announce_sound: 0x7C84E,
 };
 impl<'a> FighterAssets<'a> {
     /// Exact dependencies for first-run extraction and old-cache migration.
