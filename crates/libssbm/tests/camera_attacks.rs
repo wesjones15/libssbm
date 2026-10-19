@@ -49,13 +49,13 @@ fn directional_camera_bands_and_shoulders_are_consistent_at_render_rates() {
             (-60., true, ATTACK, true, false, Move::DownAir),
             (80., false, ATTACK, false, false, Move::Jab),
             (80., false, ATTACK, true, false, Move::NeutralAir),
-            (30., true, SPECIAL, false, false, Move::ScrewAttack),
-            (-60., true, SPECIAL, false, false, Move::Bomb),
-            (80., false, SPECIAL, false, false, Move::ChargeShot),
+            (30., true, SPECIAL, false, false, Move::SpecialHi),
+            (-60., true, SPECIAL, false, false, Move::SpecialLw),
+            (80., false, SPECIAL, false, false, Move::SpecialN),
             (-80., true, ATTACK | UP, true, false, Move::UpAir),
             (80., true, ATTACK | DOWN, true, false, Move::DownAir),
-            (-80., true, SPECIAL | UP, false, false, Move::ScrewAttack),
-            (80., true, SPECIAL | DOWN, false, false, Move::Bomb),
+            (-80., true, SPECIAL | UP, false, false, Move::SpecialHi),
+            (80., true, SPECIAL | DOWN, false, false, Move::SpecialLw),
         ] {
             assert_eq!(
                 select(input(pitch, moving, button), air, held, fps),

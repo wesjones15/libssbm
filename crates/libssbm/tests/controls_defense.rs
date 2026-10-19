@@ -48,10 +48,10 @@ fn tick(s: &mut Sim, h: &mut FlatHost, buttons: u32) {
 fn explicit_skills_ignore_camera_and_stick_and_respect_five_stock_masks() {
     for fps in [30, 60, 144] {
         for (button, want, slot) in [
-            (NEUTRAL_B, Move::ChargeShot, 0),
-            (SIDE_B, Move::SuperMissile, 2),
-            (UP_B, Move::ScrewAttack, 3),
-            (DOWN_B, Move::Bomb, 4),
+            (NEUTRAL_B, Move::SpecialN, 0),
+            (SIDE_B, Move::SpecialS2, 2),
+            (UP_B, Move::SpecialHi, 3),
+            (DOWN_B, Move::SpecialLw, 4),
         ] {
             for ready in [false, true] {
                 let mut s = Sim::new(Params::fixture(), Vec3::ZERO);

@@ -175,7 +175,7 @@ async fn run() -> libssbm_assets::Result<()> {
     }
     if sideb_preview {
         sim.grounded = true;
-        sim.start_move(&mut host, libssbm::Move::Missile, Input::idle());
+        sim.start_move(&mut host, libssbm::Move::SpecialS, Input::idle());
         for _ in 0..pose_frame as usize {
             sim.advance(&mut host, Input::idle(), 1. / 60.);
         }

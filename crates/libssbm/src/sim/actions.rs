@@ -50,7 +50,7 @@ impl Sim {
         if !self.motion.finished() {
             return;
         }
-        if m == Move::ChargeShot && self.phase == Phase::Startup {
+        if m == Move::SpecialN && self.phase == Phase::Startup {
             if !self.using_behavior(|b, s| b.resolve_startup(s, input)) {
                 self.fire(host);
             }

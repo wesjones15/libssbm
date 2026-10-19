@@ -56,7 +56,7 @@ fn samus_walk_legs_keep_the_action_torso_and_cannon() -> Result<()> {
 
         let mut sim = Sim::new(Params::fixture(), glam::Vec3::ZERO);
         sim.grounded = true;
-        sim.current_move = Some(Move::ChargeShot);
+        sim.current_move = Some(Move::SpecialN);
         sim.motion.definitions = animations.motion_definitions();
         sim.locomotion.definitions = sim.motion.definitions.clone();
         sim.motion.select("SpecialNHold", 1.);
@@ -81,7 +81,7 @@ fn samus_walk_legs_keep_the_action_torso_and_cannon() -> Result<()> {
             let v = pose[56].w_axis.truncate() - pose[51].w_axis.truncate();
             glam::Vec3::new(-v.x, v.y, v.z).normalize_or_zero()
         };
-        sim.current_move = Some(Move::Missile);
+        sim.current_move = Some(Move::SpecialS);
         sim.locomotion_weight = 0.; // standing still: no walking blend
         sim.locomotion.select("Wait", 1.);
         sim.locomotion.frame = 0.;

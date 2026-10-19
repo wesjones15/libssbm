@@ -56,49 +56,49 @@ impl Samus {
 impl Behavior for Samus {
     fn slot(&self, m: Move) -> u32 {
         match m {
-            Move::ChargeShot => 0,
-            Move::Missile | Move::SuperMissile => 2,
-            Move::ScrewAttack => 3,
-            Move::Bomb => 4,
+            Move::SpecialN => 0,
+            Move::SpecialS | Move::SpecialS2 => 2,
+            Move::SpecialHi => 3,
+            Move::SpecialLw => 4,
             _ => 1,
         }
     }
     fn mobile_moves(&self) -> u64 {
-        (1u64 << Move::ChargeShot as u32)
-            | (1u64 << Move::Missile as u32)
-            | (1u64 << Move::SuperMissile as u32)
-            | (1u64 << Move::ScrewAttack as u32)
-            | (1u64 << Move::Bomb as u32)
+        (1u64 << Move::SpecialN as u32)
+            | (1u64 << Move::SpecialS as u32)
+            | (1u64 << Move::SpecialS2 as u32)
+            | (1u64 << Move::SpecialHi as u32)
+            | (1u64 << Move::SpecialLw as u32)
     }
     fn upper_body_root(&self) -> Option<usize> {
         self.upper_body_root
     }
     fn is_up_special(&self, m: Move) -> bool {
-        m == Move::ScrewAttack
+        m == Move::SpecialHi
     }
 
     fn select_special(&self, sim: &Sim, input: Input, movement: Vec3) -> Option<Move> {
         let smash = sim.flick_age < self.specials.missile_smash_window;
         Some(if input.buttons & NEUTRAL_B != 0 {
-            Move::ChargeShot
+            Move::SpecialN
         } else if input.buttons & UP_B != 0 {
-            Move::ScrewAttack
+            Move::SpecialHi
         } else if input.buttons & DOWN_B != 0 {
-            Move::Bomb
+            Move::SpecialLw
         } else if input.buttons & SIDE_B != 0 {
-            if smash { Move::SuperMissile } else { Move::Missile }
+            if smash { Move::SpecialS2 } else { Move::SpecialS }
         } else if input.attack_vertical() > 0 {
-            Move::ScrewAttack
+            Move::SpecialHi
         } else if input.attack_vertical() < 0 {
-            Move::Bomb
+            Move::SpecialLw
         } else if movement.length() > 0.3 {
-            if smash { Move::SuperMissile } else { Move::Missile }
+            if smash { Move::SpecialS2 } else { Move::SpecialS }
         } else {
-            Move::ChargeShot
+            Move::SpecialN
         })
     }
     fn enter_special(&self, sim: &mut Sim, _host: &mut dyn Host, m: Move, _input: Input) {
-        if m == Move::ScrewAttack {
+        if m == Move::SpecialHi {
             sim.action.effects.push(GfxCue {
                 id: 1154,
                 bone: 3,
@@ -127,16 +127,16 @@ impl Behavior for Samus {
                 self.specials.screw_velocity * sim.options.jump_scale
             };
             sim.jumps_used = sim.params.jumps + sim.options.extra_jumps;
-        } else if m == Move::Bomb && !sim.grounded {
+        } else if m == Move::SpecialLw && !sim.grounded {
             sim.pad_gravity = None;
             sim.velocity.y = self.specials.bomb_velocity;
         }
     }
     fn aimable(&self, m: Move) -> bool {
-        matches!(m, Move::ChargeShot | Move::Missile | Move::SuperMissile)
+        matches!(m, Move::SpecialN | Move::SpecialS | Move::SpecialS2)
     }
     fn is_charge_move(&self, m: Move) -> bool {
-        m == Move::ChargeShot
+        m == Move::SpecialN
     }
     fn charge_voice_band(&self, sim: &Sim) -> u32 {
         (sim.shot_charge * 5 / self.specials.charge_steps.max(1)).min(4)
@@ -148,14 +148,14 @@ impl Behavior for Samus {
         (self.specials.charge_visual_min, self.specials.charge_visual_max)
     }
     fn store_special(&self, sim: &mut Sim, host: &mut dyn Host, pressed: u32) -> bool {
-        if sim.current_move == Some(Move::ChargeShot)
+        if sim.current_move == Some(Move::SpecialN)
             && matches!(sim.phase, Phase::Startup | Phase::ChargeShot)
             && pressed & crate::sim::SPRINT != 0
         {
             sim.emit(
                 host,
                 EventKind::ChargeStored,
-                Move::ChargeShot as u32,
+                Move::SpecialN as u32,
                 sim.shot_charge as f32,
             );
             sim.action.reset();
@@ -167,7 +167,7 @@ impl Behavior for Samus {
         }
     }
     fn resolve_startup(&self, sim: &mut Sim, input: Input) -> bool {
-        if sim.current_move == Some(Move::ChargeShot)
+        if sim.current_move == Some(Move::SpecialN)
             && sim.grounded
             && sim.shot_charge < self.specials.charge_steps
             && !(sim.options.hold_charge && input.buttons & crate::sim::SPECIAL == 0)
@@ -180,7 +180,7 @@ impl Behavior for Samus {
         }
     }
     fn fire_strength(&self, sim: &mut Sim, m: Move) -> f32 {
-        if m == Move::ChargeShot {
+        if m == Move::SpecialN {
             let ratio = sim.shot_charge as f32 / self.specials.charge_steps as f32;
             sim.shot_charge = 0;
             ratio
@@ -203,7 +203,7 @@ impl Behavior for Samus {
             sim.emit(
                 host,
                 EventKind::ChargeStored,
-                Move::ChargeShot as u32,
+                Move::SpecialN as u32,
                 sim.shot_charge as f32,
             );
             sim.set_phase(if sim.action.definitions.is_empty() {
@@ -234,7 +234,7 @@ impl Behavior for Samus {
 
     fn clip(&self, sim: &Sim, m: Move) -> &'static str {
         match m {
-            Move::ChargeShot => {
+            Move::SpecialN => {
                 if sim.phase == Phase::Startup {
                     if sim.move_started_grounded {
                         "SpecialNStart"
@@ -247,48 +247,48 @@ impl Behavior for Samus {
                     "SpecialAirN"
                 }
             }
-            Move::Missile => {
+            Move::SpecialS => {
                 if sim.grounded { "SpecialS" } else { "SpecialAirS" }
             }
-            Move::SuperMissile => {
+            Move::SpecialS2 => {
                 if sim.grounded { "Special" } else { "SpecialAir" }
             }
-            Move::ScrewAttack => {
+            Move::SpecialHi => {
                 if sim.move_started_grounded {
                     "SpecialHi"
                 } else {
                     "SpecialAirHi"
                 }
             }
-            Move::Bomb => {
+            Move::SpecialLw => {
                 if sim.grounded { "SpecialLw" } else { "SpecialAirLw" }
             }
             _ => "",
         }
     }
     fn landing(&self, _sim: &Sim, m: Move) -> &'static str {
-        if m == Move::ScrewAttack { "LandingFallSpecial" } else { "Landing" }
+        if m == Move::SpecialHi { "LandingFallSpecial" } else { "Landing" }
     }
     fn facing_locked(&self, m: Move) -> bool {
-        matches!(m, Move::ScrewAttack | Move::Bomb)
+        matches!(m, Move::SpecialHi | Move::SpecialLw)
     }
     fn spins_whole_body(&self, m: Move) -> bool {
-        matches!(m, Move::Bomb | Move::ScrewAttack)
+        matches!(m, Move::SpecialLw | Move::SpecialHi)
     }
     fn side_special_layered(&self, m: Move) -> bool {
-        matches!(m, Move::Missile | Move::SuperMissile)
+        matches!(m, Move::SpecialS | Move::SpecialS2)
     }
     fn side_special_upper_aim(&self, sim: &Sim) -> Option<(f32, f32)> {
-        matches!(sim.current_move, Some(Move::Missile | Move::SuperMissile))
+        matches!(sim.current_move, Some(Move::SpecialS | Move::SpecialS2))
             .then(|| side_special_upper_angles(sim.move_aim, sim.facing))
     }
     fn hit_attachment(&self, sim: &Sim, m: Move) -> (Option<usize>, Vec3) {
         match m {
-            Move::ChargeShot => (Some(51), Vec3::ZERO),
-            Move::Missile | Move::SuperMissile => {
+            Move::SpecialN => (Some(51), Vec3::ZERO),
+            Move::SpecialS | Move::SpecialS2 => {
                 (Some(56), sim.facing * self.specials.missile_spawn_offset)
             }
-            Move::Bomb => (
+            Move::SpecialLw => (
                 Some(0),
                 sim.facing * self.specials.bomb_spawn_offset[0]
                     + Vec3::Y * self.specials.bomb_spawn_offset[1]
@@ -301,13 +301,13 @@ impl Behavior for Samus {
     fn projectile_move(&self, m: Move) -> bool {
         matches!(
             m,
-            Move::ChargeShot | Move::Missile | Move::SuperMissile | Move::Bomb
+            Move::SpecialN | Move::SpecialS | Move::SpecialS2 | Move::SpecialLw
         )
     }
     fn projectile_cue(&self, m: Move) -> Option<(u32, usize, bool)> {
         match m {
-            Move::ChargeShot => Some((1158, 51, false)),
-            Move::Missile | Move::SuperMissile => Some((1155, 56, false)),
+            Move::SpecialN => Some((1158, 51, false)),
+            Move::SpecialS | Move::SpecialS2 => Some((1155, 56, false)),
             _ => None,
         }
     }
@@ -338,19 +338,19 @@ impl Behavior for Samus {
 
     fn startup(&self, m: Move) -> Option<u32> {
         match m {
-            Move::ChargeShot => Some(12),
-            Move::Missile | Move::SuperMissile => Some(12),
-            Move::Bomb => Some(10),
-            Move::ScrewAttack => Some(3),
+            Move::SpecialN => Some(12),
+            Move::SpecialS | Move::SpecialS2 => Some(12),
+            Move::SpecialLw => Some(10),
+            Move::SpecialHi => Some(3),
             _ => None,
         }
     }
     fn recovery(&self, m: Move) -> Option<u32> {
         match m {
-            Move::ChargeShot => Some(24),
-            Move::Missile | Move::SuperMissile => Some(24),
-            Move::Bomb => Some(25),
-            Move::ScrewAttack => Some(36),
+            Move::SpecialN => Some(24),
+            Move::SpecialS | Move::SpecialS2 => Some(24),
+            Move::SpecialLw => Some(25),
+            Move::SpecialHi => Some(36),
             _ => None,
         }
     }

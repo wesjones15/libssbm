@@ -28,8 +28,8 @@ fn real_disc_attacks_keep_all_hit_windows_at_different_host_rates() -> Result<()
         (Move::BackAir, true, "AttackAirB"),
         (Move::UpAir, true, "AttackAirHi"),
         (Move::DownAir, true, "AttackAirLw"),
-        (Move::ScrewAttack, false, "SpecialHi"),
-        (Move::ScrewAttack, true, "SpecialAirHi"),
+        (Move::SpecialHi, false, "SpecialHi"),
+        (Move::SpecialHi, true, "SpecialAirHi"),
     ] {
         let mut reference = None;
         for fps in [30, 60, 120] {
@@ -82,10 +82,10 @@ fn real_disc_special_scripts_fire_one_projectile() -> Result<()> {
     }
     let animations = Animations::load(&dir)?;
     for movement in [
-        Move::ChargeShot,
-        Move::Missile,
-        Move::SuperMissile,
-        Move::Bomb,
+        Move::SpecialN,
+        Move::SpecialS,
+        Move::SpecialS2,
+        Move::SpecialLw,
     ] {
         for airborne in [false, true] {
             let mut sim = Sim::new(

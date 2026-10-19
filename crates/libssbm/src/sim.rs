@@ -80,11 +80,13 @@ pub enum Move {
     DownSmash = 12,
     Jab2 = 13,
     BackAir = 14,
-    ChargeShot = 20,
-    Missile = 21,
-    SuperMissile = 22,
-    ScrewAttack = 23,
-    Bomb = 24,
+    // Special-move slots 20..24 are fighter-neutral: each fighter's `Behavior`
+    // maps its own specials here (neutral, side, side-strong, up, down).
+    SpecialN = 20,
+    SpecialS = 21,
+    SpecialS2 = 22,
+    SpecialHi = 23,
+    SpecialLw = 24,
     Grab = 25,
     DashGrab = 26,
     AirGrab = 27,

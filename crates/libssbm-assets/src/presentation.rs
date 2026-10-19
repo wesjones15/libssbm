@@ -218,7 +218,7 @@ impl Presentation {
         let clip = sim.motion.clip;
         self.clip = clip.into();
         self.frame = sim.motion.render_frame(sim.alpha());
-        self.ball = sim.current_move == Some(Move::Bomb);
+        self.ball = sim.current_move == Some(Move::SpecialLw);
         self.hidden = sim
             .rebirth
             .as_ref()

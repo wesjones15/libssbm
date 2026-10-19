@@ -150,7 +150,7 @@ fn missile_flick_and_screw_iframes_are_distinct() {
     p.movement = Vec3::X;
     p.buttons = SPECIAL;
     frames(&mut s, &mut h, p, 1);
-    assert_eq!(s.current_move, Some(Move::SuperMissile));
+    assert_eq!(s.current_move, Some(Move::SpecialS2));
     let (mut s, mut h, mut p) = scene();
     p.buttons = SPECIAL | UP;
     frames(&mut s, &mut h, p, 40);

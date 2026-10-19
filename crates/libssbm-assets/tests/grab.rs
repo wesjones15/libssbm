@@ -100,7 +100,7 @@ fn full_charge_storage_is_silent_until_a_real_shot_and_has_source_flash() -> Res
     sim.motion.definitions = animations.motion_definitions();
     sim.action.definitions = libssbm_assets::action::load(&dir, &animations)?;
     let mut host = FlatHost::default();
-    sim.start_move(&mut host, Move::ChargeShot, Input::idle());
+    sim.start_move(&mut host, Move::SpecialN, Input::idle());
     for _ in 0..600 {
         sim.advance(&mut host, Input::idle(), 1. / 60.);
         assert!(

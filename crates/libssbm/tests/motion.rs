@@ -118,7 +118,7 @@ fn mobile_neutral_b_walks_on_an_independent_gait_and_sprint_stores_charge() {
             },
             1. / 30.,
         );
-        assert_eq!(already_sprinting.current_move, Some(Move::ChargeShot));
+        assert_eq!(already_sprinting.current_move, Some(Move::SpecialN));
 
         let mut sim = fighter();
         let mut host = FlatHost::default();
@@ -132,7 +132,7 @@ fn mobile_neutral_b_walks_on_an_independent_gait_and_sprint_stores_charge() {
         for _ in 0..fps * 7 / 20 {
             sim.advance(&mut host, walk, 1. / fps as f64);
         }
-        assert_eq!(sim.current_move, Some(Move::ChargeShot));
+        assert_eq!(sim.current_move, Some(Move::SpecialN));
         assert_eq!(sim.phase, Phase::ChargeShot);
         assert!(
             sim.position.x > start + 1.,
@@ -163,15 +163,15 @@ fn mobile_neutral_b_walks_on_an_independent_gait_and_sprint_stores_charge() {
 fn grounded_specials_are_mobile_by_default_but_contextual_a_is_not() {
     let samus = libssbm::samus::Samus::fixture();
     let mask = libssbm::behavior::Behavior::mobile_moves(&samus);
-    for m in [Move::ChargeShot, Move::Missile, Move::SuperMissile, Move::ScrewAttack, Move::Bomb] {
+    for m in [Move::SpecialN, Move::SpecialS, Move::SpecialS2, Move::SpecialHi, Move::SpecialLw] {
         assert_ne!(mask & (1u64 << m as u32), 0, "{m:?} should be mobile");
     }
     assert_eq!(mask & (1u64 << Move::Jab as u32), 0, "contextual A should stay whole-body");
     for move_id in [
-        Move::ChargeShot,
-        Move::Missile,
-        Move::SuperMissile,
-        Move::Bomb,
+        Move::SpecialN,
+        Move::SpecialS,
+        Move::SpecialS2,
+        Move::SpecialLw,
     ] {
         let mut sim = fighter();
         let mut host = FlatHost::default();
@@ -210,19 +210,19 @@ fn spin_moves_are_not_gait_layered_but_side_b_always_is() {
     sim.grounded = true;
     sim.locomotion_weight = 0.75;
     for (m, expect) in [
-        (Move::Bomb, 0.),
-        (Move::ScrewAttack, 0.),
-        (Move::ChargeShot, 0.75),
-        (Move::Missile, 1.),
-        (Move::SuperMissile, 1.),
+        (Move::SpecialLw, 0.),
+        (Move::SpecialHi, 0.),
+        (Move::SpecialN, 0.75),
+        (Move::SpecialS, 1.),
+        (Move::SpecialS2, 1.),
     ] {
         sim.current_move = Some(m);
         assert!(sim.behavior.mobile_moves() & (1u64 << m as u32) != 0, "{m:?} should still steer");
         assert_eq!(sim.gait_layer_weight(), expect, "{m:?}");
     }
-    sim.current_move = Some(Move::Missile);
+    sim.current_move = Some(Move::SpecialS);
     sim.grounded = false;
     assert_eq!(sim.gait_layer_weight(), 1., "airborne side-B is layered too");
-    sim.current_move = Some(Move::Bomb);
+    sim.current_move = Some(Move::SpecialLw);
     assert_eq!(sim.gait_layer_weight(), 0.);
 }
