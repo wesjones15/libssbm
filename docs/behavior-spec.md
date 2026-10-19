@@ -1,6 +1,20 @@
 # Samus / Melee behavior specification
 
-## Current checkpoint: 0.2.18, 2026-10-19
+## Current checkpoint: 0.2.19, 2026-10-19
+
+Three presentation fixes from the first live playtest. The side-B/Super Missile
+upper-body aim was applied 180 degrees off: `side_special_upper_angles` now
+turns the cannon to `+FRAC_PI_2` minus the heading difference instead of
+`-FRAC_PI_2` minus it, so the cannon points away from the camera with the fired
+missile rather than back at it; the mobile-pose test asserts the corrected
+barrel direction. The results-screen GAME! burst is a screen-space element
+authored in the viewer's handedness, so the shared `ModelView` now exposes a
+`MirrorX` toggle and the burst renders without the usual model X mirror, keeping
+its text left-to-right. The shared death fall + KO presentation lifetime is
+extended to match the end-of-run GAME! banner so the blast-zone effect the
+rebirth plays is not cut short when game over arrives mid-fall.
+
+## Earlier checkpoint: 0.2.18, 2026-10-19
 
 Picking the fighter on the character select screen now queues the original
 announcer name call before the intro move. `gm_1601.c::gm_80168C5C` (invoked

@@ -1127,7 +1127,7 @@ pub fn side_special_upper_angles(aim: Vec3, facing: Vec3) -> (f32, f32) {
         0.
     };
     let elevation = aim.y.atan2(aim.with_y(0.).length());
-    (elevation, -std::f32::consts::FRAC_PI_2 - yaw)
+    (elevation, std::f32::consts::FRAC_PI_2 - yaw)
 }
 
 #[derive(Default)]

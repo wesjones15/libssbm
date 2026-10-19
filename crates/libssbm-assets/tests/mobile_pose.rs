@@ -18,7 +18,7 @@ fn local(model: &Model, world: &[glam::Mat4], joint: usize) -> glam::Mat4 {
 fn samus_walk_legs_keep_the_action_torso_and_cannon() -> Result<()> {
     let (pitch, yaw) = side_special_upper_angles(glam::Vec3::Z, glam::Vec3::X);
     assert!(pitch.abs() < 1e-4);
-    assert!(yaw.abs() < 1e-4);
+    assert!((yaw.abs() - std::f32::consts::PI).abs() < 1e-4);
     let dir = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
         .join("../..")
         .join("assets");
@@ -74,8 +74,9 @@ fn samus_walk_legs_keep_the_action_torso_and_cannon() -> Result<()> {
 
         // Side-B: the disc clips fire toward local +X and bake that turn into the pelvis and
         // feet. It is layered over the idle legs even standing still, so those never turn, and
-        // only the upper rig is turned 90 degrees so the cannon fires forward (+Z, drawn with
-        // the host's X mirror).
+        // only the upper rig is turned so the cannon fires forward. In the host's mirrored
+        // barrel space the forward aim reads as -Z (in-game the cannon points away with the
+        // missile, verified against the RoR2 playtest).
         let barrel = |pose: &[glam::Mat4]| {
             let v = pose[56].w_axis.truncate() - pose[51].w_axis.truncate();
             glam::Vec3::new(-v.x, v.y, v.z).normalize_or_zero()
@@ -101,17 +102,17 @@ fn samus_walk_legs_keep_the_action_torso_and_cannon() -> Result<()> {
             "the clip's sideways pelvis turn leaked into the pose"
         );
         let forward = barrel(&aimed);
-        assert!(forward.z > 0.9 && forward.y.abs() < 0.3, "side-B cannon not forward: {forward:?}");
+        assert!(forward.z < -0.9 && forward.y.abs() < 0.3, "side-B cannon not forward: {forward:?}");
         let raised = (mobile_pose(&model, &animations, &sim, 12., Some(root))[51].w_axis.truncate()
             - mobile_pose(&model, &animations, &sim, 12., Some(root))[49].w_axis.truncate())
         .normalize_or_zero();
         assert!(raised.y > 0.8, "lost the source raised-cannon start: {raised:?}");
-        // The body lags the camera by 90 degrees: in the body's frame the cannon turns to +X
-        // (drawn mirrored), and the legs still do not follow it.
+        // The body lags the camera by 90 degrees: in the body's frame the cannon turns away
+        // with the camera aim, and the legs still do not follow it.
         sim.facing = glam::Vec3::Z;
         let turning = mobile_pose(&model, &animations, &sim, 18., Some(root));
         let aim = barrel(&turning);
-        assert!(aim.x > 0.9, "side-B cannon did not track the camera aim: {aim:?}");
+        assert!(aim.x < -0.9, "side-B cannon did not track the camera aim: {aim:?}");
         for joint in [4, 7, 8, 14, 15] {
             assert!(
                 (turning[joint] - idle[joint]).to_cols_array().iter().all(|v| v.abs() < 1e-3),
@@ -126,7 +127,7 @@ fn samus_walk_legs_keep_the_action_torso_and_cannon() -> Result<()> {
         sim.motion.frame = 14.;
         let air = mobile_pose(&model, &animations, &sim, 14., Some(root));
         let air_barrel = barrel(&air);
-        assert!(air_barrel.z > 0.9, "airborne side-B cannon not forward: {air_barrel:?}");
+        assert!(air_barrel.z < -0.9, "airborne side-B cannon not forward: {air_barrel:?}");
         assert!((air[4] - idle[4]).to_cols_array().iter().all(|v| v.abs() < 1e-3));
         let aimed = air;
         assert!(
