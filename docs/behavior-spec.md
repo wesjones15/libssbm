@@ -10,10 +10,14 @@ post-get-up window. This immunity is an anti-stunlock RoR2 adaptation, not
 Melee's original percent/hitstun rules; final death and external teleports
 clear it. Samus's selected intro is now one grounded down-B followed by idle.
 The shared selection presenter lets each fighter choose its own intro move.
-Side-B/Super Missile rotate only Samus's upper rig from the extracted vertical
-cannon pose toward the live camera vector; pelvis/legs keep their gait and the
-posed muzzle used for missile spawning receives the same correction. Viewer and
-native-boundary tests pass; Unity gameplay feel remains unverified.
+Side-B/Super Missile fire toward the clip's local +X (measured on the disc: in the raw
+clips the pelvis and feet are baked about 68 degrees toward it and the cannon sits at 180).
+They are always drawn as an upper-body layer over the gait/idle legs (`Sim::gait_layer_weight`),
+standing still or airborne as well as walking, so the legs are never turned. Only the upper rig
+is then turned 90 degrees plus the heading difference to the live camera vector
+(`side_special_upper_angles`), which makes the cannon fire forward; the posed muzzle used for
+missile spawning receives the same correction. Real-disc pose, viewer and native-boundary tests
+pass; Unity gameplay feel remains unverified.
 
 ## Earlier checkpoint: 0.2.13, 2026-10-18
 

@@ -296,7 +296,28 @@ impl Sim {
                 .current_move
                 .is_some_and(|m| self.options.mobile_moves & (1u64 << m as u32) != 0)
     }
-    /// Melee's side-B cannon points up in the extracted pose. Turn only its
+    /// Side-B (and its Super Missile) is always drawn as an upper-body layer over the
+    /// gait/idle legs, grounded or airborne, moving or still. The disc clips fire toward
+    /// the fighter's local +X and bake that turn into the pelvis and feet (about -68 degrees
+    /// toward it, with the cannon at 180 in the raw clip), so the raw pose faces sideways.
+    pub fn side_special_layered(&self) -> bool {
+        self.reaction.is_none()
+            && self.entry.is_none()
+            && self.rebirth.is_none()
+            && matches!(self.current_move, Some(Move::Missile | Move::SuperMissile))
+    }
+    /// How much of the gait/idle pose replaces the action's own legs: all of it for side-B,
+    /// the walking blend for other mobile moves, none otherwise.
+    pub fn gait_layer_weight(&self) -> f32 {
+        if self.side_special_layered() {
+            1.
+        } else if self.mobile_action() {
+            self.locomotion_weight
+        } else {
+            0.
+        }
+    }
+    /// Melee's side-B cannon fires toward local +X in the extracted pose. Turn only its
     /// upper rig toward the live camera ray; locomotion and body yaw stay put.
     pub fn side_special_upper_aim(&self) -> Option<(f32, f32)> {
         matches!(self.current_move, Some(Move::Missile | Move::SuperMissile))
@@ -465,11 +486,7 @@ impl Sim {
             pose_frame: self.motion.frame,
             gait_clip: self.locomotion.clip,
             gait_frame: self.locomotion.frame,
-            gait_weight: if self.mobile_action() {
-                self.locomotion_weight
-            } else {
-                0.
-            },
+            gait_weight: self.gait_layer_weight(),
             attachment,
             attachment_offset,
         });

@@ -314,11 +314,7 @@ pub fn mobile_pose(
         sim.locomotion.clip,
         sim.locomotion.render_frame(sim.alpha()),
         sim.locomotion.looping(),
-        if sim.mobile_action() {
-            sim.locomotion_weight
-        } else {
-            0.
-        },
+        sim.gait_layer_weight(),
         upper_root,
     );
     if let (Some(root), Some((_, yaw))) = (upper_root, sim.side_special_upper_aim()) {
