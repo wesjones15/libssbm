@@ -20,6 +20,14 @@ rejects damage for the full up-B. This is a requested RoR2 adaptation, not
 Melee's original Screw Attack vulnerability/helpless rules; landing animation
 and hit-reaction timing remain source driven. Unity playtest is pending.
 
+The character-select intro is now the up special (Screw Attack) rather than the
+grounded down-B. The selection source reports its live vertical rise
+(`IMeleeSelectSource.RiseMetres`) and the shared presenter pans the menu preview
+camera up as the fighter rises and back down as it returns, additively and
+undone on release, so the whole move stays on screen. The intro only completes
+once the up-B has run and the fighter is back on the lobby floor. Camera framing
+is a host adaptation and still needs a Unity playtest.
+
 ## Earlier checkpoint: 0.2.14, 2026-10-18
 
 Shared hurt reactions now reject repeat hits through DamageN2/DamageFall,
