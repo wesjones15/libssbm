@@ -15,6 +15,8 @@ pub struct Presentation {
     pub commands: Vec<libssbm::action::TimedCommand>,
     pub object_scale: f32,
     pub upper_body_root: Option<usize>,
+    /// Common effect models (dust, bursts): see [`Presentation::color`].
+    pub effect_fade: bool,
 }
 impl Presentation {
     pub fn platform(dir: &Path) -> Result<Self> {
@@ -40,6 +42,7 @@ impl Presentation {
             commands: Vec::new(),
             object_scale: 1.,
             upper_body_root: None,
+            effect_fade: false,
         })
     }
     pub fn effect(dir: &Path, id: u32) -> Result<Self> {
@@ -82,6 +85,7 @@ impl Presentation {
             commands: Vec::new(),
             object_scale: 1.,
             upper_body_root: None,
+            effect_fade: true,
         })
     }
     pub fn article(dir: &Path, kind: u32, state: u32) -> Result<Self> {
@@ -119,6 +123,7 @@ impl Presentation {
             commands: a.commands,
             object_scale,
             upper_body_root: None,
+            effect_fade: false,
         })
     }
     pub fn object_pose(&mut self, frame: f32) {
@@ -163,6 +168,7 @@ impl Presentation {
             commands: Vec::new(),
             object_scale: 1.,
             upper_body_root: fighter.upper_body_root,
+            effect_fade: false,
         })
     }
     pub fn update(&mut self, sim: &Sim, _dt: f32) {
@@ -289,6 +295,21 @@ impl Presentation {
                 4 => 1.,
                 _ => color[3],
             };
+            // Adaptation, not decomp behaviour: a common effect authored with MODULATE alpha and
+            // an animated blend value (the Screw Attack's ground dust ring) would otherwise hold
+            // its full size at full opacity until it is removed, which reads as a static ring.
+            // Dim it with the authored blend value and fade it out over its last 10 frames.
+            if self.effect_fade
+                && b.texture_alpha == 3
+                && self.duration > 0.
+                && self
+                    .material_tracks
+                    .iter()
+                    .any(|t| t.joint == b.material_dobj && t.channel == 109)
+            {
+                let tail = 10_f32.min(self.duration);
+                color[3] *= blending * ((self.duration - self.frame) / tail).clamp(0., 1.);
+            }
         }
         color
     }

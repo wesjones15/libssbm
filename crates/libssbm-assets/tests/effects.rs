@@ -27,6 +27,27 @@ fn screw_attack_ground_texture_moves_on_its_own_clock() -> Result<()> {
     assert!((0..actor.model.batches.len()).any(|i| !before[i].abs_diff_eq(actor.texture_matrix(i), 0.00001)), "common effect SRT tracks remain frozen");
     Ok(())
 }
+// The Screw Attack's ground dust ring (cue 1030, common model 4) grows for about 12 frames. It is
+// authored with MODULATE alpha, so it used to hold full size at full opacity until removed:
+// a static ring. It now dims by its blend track and fades out over its last frames.
+#[test]
+fn screw_attack_ground_dust_ring_fades_instead_of_holding_still() -> Result<()> {
+    let dir = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../assets");
+    if !dir.join("EfCoData.dat").exists() { eprintln!("SKIP: effect archives absent"); return Ok(()); }
+    let mut ring = libssbm_assets::presentation::Presentation::effect(&dir, 4)?;
+    let alpha = |p: &mut libssbm_assets::presentation::Presentation, f: f32| { p.object_pose(f); p.color(0)[3] };
+    let (start, grown, late, end) = (alpha(&mut ring, 0.), alpha(&mut ring, 12.), alpha(&mut ring, 24.), alpha(&mut ring, 29.));
+    assert!(start > 0.95, "ring should start opaque: {start}");
+    assert!(grown < start && late < grown && end < late && end < 0.1, "ring does not fade: {start} {grown} {late} {end}");
+    // Other common effects keep their authored alpha.
+    let mut burst = libssbm_assets::presentation::Presentation::effect(&dir, 3)?;
+    burst.object_pose(0.);
+    assert!((burst.color(0)[3] - 0.6).abs() < 0.01);
+    let mut screw = libssbm_assets::presentation::Presentation::effect(&dir, 2000)?;
+    screw.object_pose(12.);
+    assert!((screw.color(0)[3] - 0.7).abs() < 0.05);
+    Ok(())
+}
 #[test]
 fn charged_shot_keeps_its_spinning_core_facing_cameras_from_all_sides() -> Result<()> {
     let dir = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../assets");

@@ -464,3 +464,11 @@ Shield size uses fighter initial_shield_size (+0x90) and PlCo x264/x2D4 health s
 
 ### Effect texture animation
 Common HSD effect models now retain TObj image tables and animate image selection plus translation, scale and rotation channels (tobj.c TObjUpdateFunc/MakeTextureMtx). SpecialHi's initial ground burst uses common model 3 via cue 1021 and needs image-frame animation. Borrowed frame UVs and texture versions feed the shared host renderer; static fades remain independent. Disc checks verify moving burst pixels and common effect SRT. Texture palettes retain the first palette; animated palette selection remains unimplemented. In-game visual confirmation remains manual.
+
+Down-B and Screw Attack are drawn from their own whole-body clips (their spin is in joints 2-4,
+below the spine joint a gait layer replaces); they keep any steering. Side-B missiles may be given
+an unlimited lifetime by the host, in which case they keep their cruise speed instead of decaying
+to the post-homing minimum. The Screw Attack's ground dust ring (cue 1030, common model 4) is
+authored with MODULATE alpha and holds full size at full opacity for 18 frames; as a host
+adaptation, not decomp behaviour, common effects of that kind are dimmed by their authored blend
+value and faded out over their last 10 frames (`Presentation::effect_fade`).
