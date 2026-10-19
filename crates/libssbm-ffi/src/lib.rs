@@ -147,7 +147,7 @@ pub struct Handle {
     poisoned: bool,
 }
 struct Rig {
-    grapple: libssbm_assets::grapple::Tuning,
+    grapple: Option<libssbm_assets::grapple::Tuning>,
     charge_flash: Vec<[f32; 4]>,
     model: libssbm_assets::model::Model,
     animations: libssbm_assets::animation::Animations,
@@ -155,6 +155,7 @@ struct Rig {
     effect_bone: usize,
     alternate_bone: usize,
     cycle_bones: Vec<usize>,
+    upper_body_root: Option<usize>,
 }
 impl Rig {
     fn pose_for_sim(&self, sim: &Sim, clip: &str, frame: f32) -> Vec<glam::Mat4> {
@@ -164,55 +165,61 @@ impl Rig {
                 &self.animations,
                 sim,
                 frame,
-                libssbm_assets::fighter::SAMUS.upper_body_root,
+                self.upper_body_root,
             )
         } else {
             self.animations.pose(&self.model, clip, frame, false)
         }
     }
-    fn load(dir: &Path) -> libssbm_assets::Result<Self> {
-        let fighter_bytes = std::fs::read(dir.join("PlSs.dat"))?;
-        let fighter = libssbm_assets::dat::Dat::parse(&fighter_bytes)?;
-        let desc = fighter.required_ptr(fighter.root("ftDataSamus")? + 8)?;
-        let cycle = fighter.ptr(fighter.root("ftDataSamus")? + 0x54)?;
-        let bytes = std::fs::read(dir.join("PlCo.dat"))?;
+    fn load_for(dir: &Path, fighter: &libssbm_assets::fighter::FighterAssets<'_>) -> libssbm_assets::Result<Self> {
+        let fighter_bytes = std::fs::read(dir.join(fighter.data.file))?;
+        let dat = libssbm_assets::dat::Dat::parse(&fighter_bytes)?;
+        let root = dat.root(fighter.data.root)?;
+        let desc = dat.required_ptr(root + 8)?;
+        let cycle = dat.ptr(root + 0x54)?;
+        let bytes = std::fs::read(dir.join(libssbm_assets::fighter::COMMON_DATA.file))?;
         let common = libssbm_assets::dat::Dat::parse(&bytes)?;
-        let table = common.required_ptr(common.root("ftLoadCommonData")? + 0x10)?;
-        // FighterKind::Samus = 13; FighterPartsTable, loaded by Fighter_LoadCommonData.
-        let parts = common.required_ptr(table + 13 * 4)?;
+        let table = common.required_ptr(common.root(libssbm_assets::fighter::COMMON_DATA.root)? + 0x10)?;
+        // FighterPartsTable, loaded by Fighter_LoadCommonData; the profile's kind.
+        let parts = common.required_ptr(table + fighter.common_index * 4)?;
         let mapping = common.required_ptr(parts + 4)?;
         Ok(Self {
-            grapple: libssbm_assets::grapple::tuning(dir)?,
+            // Only fighters with a source grapple beam (Samus) carry this tuning.
+            grapple: libssbm_assets::grapple::tuning(dir).ok(),
             charge_flash: libssbm_assets::params::color_cycle(dir, 53)?,
-            model: libssbm_assets::model::Model::load(dir, 0)?,
-            animations: libssbm_assets::animation::Animations::load(dir)?,
+            model: libssbm_assets::model::Model::load_for(dir, 0, fighter)?,
+            animations: libssbm_assets::animation::Animations::load_for(dir, fighter)?,
             common_bones: common.bytes(mapping, 53)?.to_vec(),
-            effect_bone: fighter.bytes(desc + 0x12, 1)?[0] as usize,
-            alternate_bone: fighter.bytes(desc + 0x10, 1)?[0] as usize,
+            effect_bone: dat.bytes(desc + 0x12, 1)?[0] as usize,
+            alternate_bone: dat.bytes(desc + 0x10, 1)?[0] as usize,
             cycle_bones: if let Some(at) = cycle {
                 (0..5)
-                    .map(|i| fighter.u32(at + i * 4).map(|n| n as usize))
+                    .map(|i| dat.u32(at + i * 4).map(|n| n as usize))
                     .collect::<libssbm_assets::Result<Vec<_>>>()?
             } else {
                 Vec::new()
             },
+            upper_body_root: fighter.upper_body_root,
         })
     }
     fn grapple_points(&self, clip: &str, frame: f32) -> Vec<Vec3> {
+        let Some(grapple) = &self.grapple else {
+            return Vec::new();
+        };
         let pose = self.animations.pose(&self.model, clip, frame, false);
         let anchor = pose[50].w_axis.truncate();
         let air = clip == "AirCatch";
         let start = if air { 8. } else { 17. };
         let end = if air { 28. } else { 41. };
         let age = (frame - start).max(0.);
-        let maximum = self.grapple.length * (self.grapple.links - 1) as f32;
-        let length = (age * self.grapple.speed).min(maximum) * ((end - frame) / 6.).clamp(0., 1.);
-        (0..self.grapple.links)
+        let maximum = grapple.length * (grapple.links - 1) as f32;
+        let length = (age * grapple.speed).min(maximum) * ((end - frame) / 6.).clamp(0., 1.);
+        (0..grapple.links)
             .map(|i| {
-                let u = i as f32 / (self.grapple.links - 1) as f32;
+                let u = i as f32 / (grapple.links - 1) as f32;
                 anchor + Vec3::Z * length * u
                     - Vec3::Y
-                        * (self.grapple.gravity * age * age * 0.5).min(length * 0.15)
+                        * (grapple.gravity * age * age * 0.5).min(length * 0.15)
                         * (u * (1. - u) * 4.)
             })
             .collect()
@@ -403,18 +410,33 @@ pub unsafe extern "C" fn ssbm_extract(disc: *const c_char, dir: *const c_char) -
 /// A valid cache path and finite starting position. Free once with ssbm_sim_free.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn ssbm_sim_new(dir: *const c_char, pos: V3) -> *mut Handle {
+    unsafe { ssbm_sim_new_fighter(dir, pos, 0) }
+}
+/// # Safety
+/// A valid cache path, finite starting position and a supported fighter kind
+/// (0 = Samus). Free once with ssbm_sim_free.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn ssbm_sim_new_fighter(dir: *const c_char, pos: V3, kind: u32) -> *mut Handle {
     guarded(std::ptr::null_mut(), || {
         let result = (|| -> libssbm_assets::Result<(Sim, Rig, libssbm_assets::audio::Mixer)> {
             let dir = unsafe { path(dir) }?;
-            let params = libssbm_assets::params::load_common(dir, &libssbm_assets::fighter::SAMUS)?;
-            let behavior = Box::new(libssbm::samus::Samus::new(
-                libssbm_assets::params::load_samus_specials(dir)?,
-                libssbm_assets::fighter::SAMUS.upper_body_root,
-            ));
+            let (params, behavior): (
+                libssbm::Params,
+                Box<dyn libssbm::behavior::Behavior>,
+            ) = match kind {
+                0 => (
+                    libssbm_assets::params::load_common(dir, &libssbm_assets::fighter::SAMUS)?,
+                    Box::new(libssbm::samus::Samus::new(
+                        libssbm_assets::params::load_samus_specials(dir)?,
+                        libssbm_assets::fighter::SAMUS.upper_body_root,
+                    )),
+                ),
+                other => return Err(format!("unsupported fighter kind {other}").into()),
+            };
             let mut sim = Sim::with_behavior(params, behavior, pos.into());
             sim.defense.params = libssbm_assets::params::defense(dir)?;
             sim.defense.health = sim.defense.params.maximum;
-            let rig = Rig::load(dir)?;
+            let rig = Rig::load_for(dir, &libssbm_assets::fighter::SAMUS)?;
             sim.motion.definitions = rig.animations.motion_definitions();
             sim.action.definitions = libssbm_assets::action::load(dir, &rig.animations)?;
             for (name, action) in &sim.action.definitions {
@@ -1824,7 +1846,7 @@ mod tests {
                 )),
                 Vec3::ZERO,
             ),
-            rig: Rig::load(&dir)?,
+            rig: Rig::load_for(&dir, &libssbm_assets::fighter::SAMUS)?,
             audio: libssbm_assets::audio::Mixer::new(libssbm_assets::audio::Bank::load(&dir)?),
             poisoned: false,
         };
