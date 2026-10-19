@@ -1236,8 +1236,9 @@ fn recovery(m: Move) -> u32 {
     }
 }
 
-/// Source side-B points the muzzle toward local -Y. Correct its 90-degree
-/// pitch, then turn the upper rig from body heading to the live aim vector.
+/// Source side-B's final cannon pose points along local +X, while the fighter's
+/// forward is +Z. Turn that firing pose to camera aim without pitching the spine.
+/// The host mirrors model X, so model yaw opposes the world-space heading delta.
 pub fn side_special_upper_angles(aim: Vec3, facing: Vec3) -> (f32, f32) {
     let horizontal = aim.with_y(0.).normalize_or_zero();
     let body = facing.with_y(0.).normalize_or_zero();
@@ -1246,8 +1247,8 @@ pub fn side_special_upper_angles(aim: Vec3, facing: Vec3) -> (f32, f32) {
     } else {
         0.
     };
-    let pitch = -std::f32::consts::FRAC_PI_2 - aim.y.atan2(aim.with_y(0.).length());
-    (pitch, yaw)
+    let elevation = aim.y.atan2(aim.with_y(0.).length());
+    (elevation, -std::f32::consts::FRAC_PI_2 - yaw)
 }
 
 #[derive(Default)]

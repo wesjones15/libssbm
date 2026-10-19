@@ -287,17 +287,15 @@ pub fn mobile_pose(
         },
         upper_root,
     );
-    if let (Some(root), Some((pitch, yaw))) = (upper_root, sim.side_special_upper_aim()) {
-        aim_upper_body(model, &mut pose, root, pitch, yaw);
+    if let (Some(root), Some((_, yaw))) = (upper_root, sim.side_special_upper_aim()) {
+        aim_upper_body(model, &mut pose, root, yaw);
     }
     pose
 }
-/// Rotate the upper branch about its spine joint without moving the hips/legs.
-/// Used for Samus's side-B cannon pose, which points upward in the disc clip.
-pub fn aim_upper_body(model: &Model, pose: &mut [Mat4], root: usize, pitch: f32, yaw: f32) {
+/// Turn the torso toward camera aim without changing the source cannon motion.
+pub fn aim_upper_body(model: &Model, pose: &mut [Mat4], root: usize, yaw: f32) {
     if root >= model.joints.len()
         || pose.len() != model.joints.len()
-        || !pitch.is_finite()
         || !yaw.is_finite()
     {
         return;
@@ -305,7 +303,6 @@ pub fn aim_upper_body(model: &Model, pose: &mut [Mat4], root: usize, pitch: f32,
     let pivot = pose[root].transform_point3(glam::Vec3::ZERO);
     let turn = Mat4::from_translation(pivot)
         * Mat4::from_rotation_y(yaw)
-        * Mat4::from_rotation_x(pitch)
         * Mat4::from_translation(-pivot);
     let mut branch = vec![false; model.joints.len()];
     for (i, joint) in model.joints.iter().enumerate() {

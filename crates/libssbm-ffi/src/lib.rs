@@ -851,12 +851,11 @@ impl Host for Adapter<'_> {
                 if matches!(e.move_id, 21 | 22)
                     && let Some(root) = libssbm_assets::fighter::SAMUS.upper_body_root
                 {
-                    let (pitch, yaw) = libssbm::side_special_upper_angles(e.direction, e.facing);
+                    let (_, yaw) = libssbm::side_special_upper_angles(e.direction, e.facing);
                     libssbm_assets::presentation::aim_upper_body(
                         &self.1.model,
                         &mut pose,
                         root,
-                        pitch,
                         yaw,
                     );
                 }
