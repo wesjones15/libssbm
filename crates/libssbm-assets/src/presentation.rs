@@ -45,6 +45,42 @@ impl Presentation {
             effect_fade: false,
         })
     }
+    /// The results-screen GAME! burst: `ScInfCnt_scene_models[5]` in the shared
+    /// IfAll.usd archive. if_2F6E.c::ifStatus_802F7134 loads the descriptor and
+    /// if_2F72.c::fn_802F7288 advances its object animation; the burst voice
+    /// fires once its frame passes 8. The model is a DynamicModelDesc (joint +
+    /// NULL-terminated anim/matanim arrays), reusing the object effect readers.
+    pub fn game(dir: &Path) -> Result<Self> {
+        let bytes = std::fs::read(dir.join(crate::fighter::RESULTS_SCENE.file))?;
+        let d = crate::dat::Dat::parse(&bytes)?;
+        let root = d.root(crate::fighter::RESULTS_SCENE.root)?;
+        let desc = d.required_ptr(root + 5 * 4)?;
+        let mut model = Model::from_joint(&d, d.required_ptr(desc)?)?;
+        let first = |array: Option<usize>| -> Result<Option<usize>> {
+            let Some(array) = array else { return Ok(None) };
+            let pointer = d.u32(array)? as usize;
+            Ok((pointer != 0).then_some(pointer))
+        };
+        let animations = Animations::object(&d, first(d.ptr(desc + 4)?)?, &model)?;
+        let material_tracks = Animations::materials(&d, first(d.ptr(desc + 8)?)?, &mut model)?;
+        let duration = animations.clips.get("Object").map(|c| c.frames).unwrap_or(0.);
+        let world = model.bind_world();
+        Ok(Self {
+            model,
+            animations,
+            clip: "Object".into(),
+            frame: 0.,
+            world,
+            ball: false,
+            hidden: false,
+            material_tracks,
+            duration,
+            commands: Vec::new(),
+            object_scale: 1.,
+            upper_body_root: None,
+            effect_fade: false,
+        })
+    }
     pub fn effect(dir: &Path, id: u32) -> Result<Self> {
         let archive = if id >= 2000 {
             crate::fighter::SAMUS.effects

@@ -28,6 +28,15 @@ undone on release, so the whole move stays on screen. The intro only completes
 once the up-B has run and the fighter is back on the lobby floor. Camera framing
 is a host adaptation and still needs a Unity playtest.
 
+The end-of-run GAME! presentation is no longer a placeholder GUI label. The
+player's `IfAll.usd` is now extracted and `Presentation::game` decodes
+`ScInfCnt_scene_models[5]` (if_2F6E.c::ifStatus_802F7134) as a DynamicModelDesc,
+reusing the object joint/animation/material readers. The shared banner steps and
+draws an `IMeleeRoundEffect`; Samus frames the burst model in front of the active
+camera with `ssbm_game_new`, animates it, and keeps the source 0x7C855 voice from
+`nr_name.ssm`. Burst size/placement are host approximations, not a decoder of the
+source results scene; Unity playtest is pending.
+
 ## Earlier checkpoint: 0.2.14, 2026-10-18
 
 Shared hurt reactions now reject repeat hits through DamageN2/DamageFall,

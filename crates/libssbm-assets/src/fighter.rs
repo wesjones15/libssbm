@@ -43,6 +43,12 @@ pub const COMMON_EFFECTS: Archive<'static> = Archive {
     file: "EfCoData.dat",
     root: "effCommonDataTable",
 };
+/// Shared results/interface scene archive. if_2F6E.c::ifStatus_802F7134 loads
+/// its ScInfCnt_scene_models section; index 5 is the on-screen GAME! burst.
+pub const RESULTS_SCENE: Archive<'static> = Archive {
+    file: "IfAll.usd",
+    root: "ScInfCnt_scene_models",
+};
 pub const COSTUMES: [&str; 5] = ["Nr", "Pi", "Bk", "Gr", "La"];
 pub const SAMUS: FighterAssets<'static> = FighterAssets {
     data: Archive {
@@ -108,6 +114,7 @@ impl<'a> FighterAssets<'a> {
         paths.extend_from_slice(self.costumes);
         paths.extend([self.effects.file, COMMON_EFFECTS.file]);
         paths.push(self.portrait.archive.file);
+        paths.push(RESULTS_SCENE.file);
         paths.extend_from_slice(self.samples);
         paths.push(self.sequences);
         if self.costumes.is_empty()

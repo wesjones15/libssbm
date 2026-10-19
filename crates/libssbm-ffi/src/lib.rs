@@ -1295,6 +1295,20 @@ pub unsafe extern "C" fn ssbm_entry_platform_new(dir: *const c_char) -> *mut Vie
     })
 }
 /// # Safety
+/// Valid UTF-8 cache path; the results-screen GAME! burst, freed with ssbm_view_free.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn ssbm_game_new(dir: *const c_char) -> *mut View {
+    guarded(std::ptr::null_mut(), || {
+        match (|| Presentation::game(unsafe { path(dir) }?))() {
+            Ok(a) => Box::into_raw(Box::new(View::new(a))),
+            Err(e) => {
+                error(e);
+                std::ptr::null_mut()
+            }
+        }
+    })
+}
+/// # Safety
 /// Unique live sim and valid UTF-8 cache path. Call after spawn placement.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn ssbm_sim_begin_entry(h: *mut Handle, dir: *const c_char) -> u32 {

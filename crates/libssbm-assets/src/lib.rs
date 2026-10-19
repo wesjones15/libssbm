@@ -18,7 +18,7 @@ pub mod texture;
 pub type Result<T> = std::result::Result<T, Box<dyn std::error::Error + Send + Sync>>;
 
 pub use fighter::COSTUMES;
-pub const REQUIRED: [&str; 15] = [
+pub const REQUIRED: [&str; 16] = [
     "PlSs.dat",
     "PlCo.dat",
     "PlSsAJ.dat",
@@ -30,6 +30,7 @@ pub const REQUIRED: [&str; 15] = [
     "EfSsData.dat",
     "EfCoData.dat",
     "MnSlChr.usd",
+    "IfAll.usd",
     "audio/us/samus.ssm",
     "audio/us/main.ssm",
     "audio/us/nr_name.ssm",

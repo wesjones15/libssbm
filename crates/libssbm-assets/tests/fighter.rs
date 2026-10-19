@@ -67,6 +67,7 @@ fn renamed_profile_loads_without_any_canonical_samus_asset_names() -> Result<()>
         ("PlCo.dat", "PlCo.dat"),
         ("MnSlChr.usd", "MnSlChr.usd"),
         ("EfCoData.dat", "EfCoData.dat"),
+        (libssbm_assets::fighter::RESULTS_SCENE.file, "IfAll.usd"),
     ] {
         let target = dir.join(to);
         std::fs::create_dir_all(target.parent().unwrap())?;
