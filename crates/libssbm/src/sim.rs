@@ -233,7 +233,9 @@ pub struct Sim {
     modifier_age: u32,
     charge_clock: u32,
     pub(crate) short_hop: bool,
-    release_phase: bool,
+    /// Host adaptation: the up special (Screw Attack) keeps the fighter
+    /// invulnerable from launch until landing, or until another attack starts.
+    pub(crate) up_special_invulnerable: bool,
     pub(crate) pad_gravity: Option<Vec3>,
     move_aim: Vec3,
     move_strength: f32,
@@ -278,7 +280,7 @@ impl Sim {
             modifier_age: 100,
             charge_clock: 0,
             short_hop: false,
-            release_phase: false,
+            up_special_invulnerable: false,
             pad_gravity: None,
             move_aim: Vec3::X,
             move_strength: 1.,
@@ -408,6 +410,7 @@ impl Sim {
         self.phase = Phase::Free;
         self.current_move = None;
         self.jumps_used = 1;
+        self.up_special_invulnerable = false;
     }
     pub fn launch(&mut self, velocity: Vec3) {
         self.pad_gravity = None;
@@ -427,12 +430,12 @@ impl Sim {
         self.grabbed = false;
         self.current_move = None;
         self.smash_charge = 0;
-        self.release_phase = false;
+        self.up_special_invulnerable = false;
         self.set_phase(Phase::Free);
     }
     /// Host damage notification, deliberately independent of engine health types.
     pub fn hurt(&mut self) {
-        if self.defense_flags() & (2 | 64) != 0 {
+        if self.defense_flags() & (2 | 64 | 128) != 0 {
             return;
         }
         if self.entry.is_some() || self.rebirth.is_some() {
@@ -539,7 +542,12 @@ impl Sim {
         self.action.reset();
         self.motion.frame = 0.;
         self.move_started_grounded = self.grounded;
-        self.release_phase = m == Move::ScrewAttack;
+        if m == Move::ScrewAttack {
+            self.up_special_invulnerable = true;
+        } else {
+            // Starting any other move midair gives up the up-B i-frames.
+            self.up_special_invulnerable = false;
+        }
         if m == Move::BackAir
             && self.host_facing.is_none()
             && input.aim.with_y(0.).length_squared() > 0.01
@@ -987,11 +995,10 @@ impl Sim {
                 if !self.action.definitions.is_empty() {
                     self.update_disc_action(host, input, pressed);
                 } else if self.phase_frame >= recovery(self.current_move.unwrap()) {
-                    self.set_phase(if self.release_phase && !self.grounded {
-                        Phase::Helpless
-                    } else {
-                        Phase::Free
-                    });
+                    // The up special no longer enters helpless fall: the host lets
+                    // the fighter act airborne, and the i-frames survive until
+                    // landing or another attack.
+                    self.set_phase(Phase::Free);
                     self.current_move = None;
                 }
             }
@@ -1132,6 +1139,8 @@ impl Sim {
         }
         if self.grounded {
             self.pad_gravity = None;
+            // The up special's i-frames end on touchdown.
+            self.up_special_invulnerable = false;
             if !before {
                 if matches!(
                     self.reaction,
@@ -1214,7 +1223,6 @@ impl Sim {
         if !self.action.definitions.is_empty() {
             self.set_phase(Phase::Recovery);
             self.motion.frame = 0.;
-            self.release_phase = m == Move::ScrewAttack;
             return;
         }
         let strength = if m == Move::ChargeShot {
@@ -1225,7 +1233,6 @@ impl Sim {
             self.move_strength
         };
         self.emit(host, EventKind::Hit, m as u32, strength);
-        self.release_phase = m == Move::ScrewAttack;
         self.set_phase(Phase::Recovery);
     }
 }

@@ -145,7 +145,7 @@ fn host_skill_gate_blocks_move_and_extra_jumps_extend_double_jump() {
     assert_eq!(s.jumps_used, 3);
 }
 #[test]
-fn missile_flick_and_screw_helpless_are_distinct() {
+fn missile_flick_and_screw_iframes_are_distinct() {
     let (mut s, mut h, mut p) = scene();
     p.movement = Vec3::X;
     p.buttons = SPECIAL;
@@ -154,10 +154,19 @@ fn missile_flick_and_screw_helpless_are_distinct() {
     let (mut s, mut h, mut p) = scene();
     p.buttons = SPECIAL | UP;
     frames(&mut s, &mut h, p, 40);
-    assert_eq!(s.phase, Phase::Helpless);
+    // The up special no longer traps the fighter in helpless fall; its i-frames
+    // stay active after the move while airborne.
+    assert_eq!(s.phase, Phase::Free);
+    assert_ne!(s.defense_flags() & 128, 0);
+    // The up-B consumes the double jump, so a jump press is still a no-op.
     p.buttons = JUMP;
     frames(&mut s, &mut h, p, 1);
     assert!(!h.events.iter().any(|e| e.kind == EventKind::Jump));
+    // Launching another attack gives up the up-B i-frames midair.
+    p.buttons = ATTACK;
+    frames(&mut s, &mut h, p, 1);
+    assert_eq!(s.current_move, Some(Move::NeutralAir));
+    assert_eq!(s.defense_flags() & 128, 0);
 }
 
 #[test]

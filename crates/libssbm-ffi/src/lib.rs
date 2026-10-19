@@ -1088,7 +1088,8 @@ pub unsafe extern "C" fn ssbm_sim_jump_height(handle: *mut Handle, height: f32) 
 }
 /// # Safety
 /// Live fighter or null. Bits: shield=1, dodge invulnerability=2, broken=4,
-/// air dodge=8, shield pose=16, guard-on=32, knockdown/get-up immunity=64.
+/// air dodge=8, shield pose=16, guard-on=32, knockdown/get-up immunity=64,
+/// up-special (Screw Attack) i-frames=128.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn ssbm_sim_defense_flags(h: *const Handle) -> u32 {
     unsafe { h.as_ref() }

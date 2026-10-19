@@ -1,6 +1,26 @@
 # Samus / Melee behavior specification
 
-## Current checkpoint: 0.2.14, 2026-10-18
+## Current checkpoint: 0.2.18, 2026-10-19
+
+Picking the fighter on the character select screen now queues the original
+announcer name call before the intro move. `gm_1601.c::gm_80168C5C` (invoked
+from `mncharsel.c`) maps `CharacterKind` to the 0x7C83X name bank; `CKind_Samus`
+(0x10) selects 0x7C84E, whose sample lives in the player's `nr_name.ssm`. The
+fighter asset definition owns the id (`FighterAssets.announce_sound`) and the
+host reads it through the additive `ssbm_announce_sound` export.
+
+The up special (Screw Attack) no longer traps the fighter in helpless fall.
+From launch it is invulnerable (defense flag 128) until landing, and the
+airborne phase after the move is now `Free` so the fighter can act. Launching
+any other attack gives up that protection midair; a consumed double jump still
+cannot be reused. `finish_disc_action` and the prototype recovery schedule both
+return to `Free` instead of `Helpless`, and landing clears the flag. The host
+`MeleeInvulnerable` predicate now includes the new bit, so `MeleeDefense`
+rejects damage for the full up-B. This is a requested RoR2 adaptation, not
+Melee's original Screw Attack vulnerability/helpless rules; landing animation
+and hit-reaction timing remain source driven. Unity playtest is pending.
+
+## Earlier checkpoint: 0.2.14, 2026-10-18
 
 Shared hurt reactions now reject repeat hits through DamageN2/DamageFall,
 DownBoundU and DownStandU, followed by 60 native frames of protection after

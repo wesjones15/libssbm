@@ -11,11 +11,10 @@ impl Sim {
         }
         self.action.active.clear();
         self.current_move = None;
-        self.set_phase(if self.release_phase && !self.grounded {
-            Phase::Helpless
-        } else {
-            Phase::Free
-        });
+        // The up special no longer enters helpless fall: the host lets the
+        // fighter act airborne, and its i-frames survive until landing or a
+        // new attack.
+        self.set_phase(Phase::Free);
     }
     pub(super) fn update_disc_action(&mut self, host: &mut impl Host, input: Input, pressed: u32) {
         let m = self.current_move.unwrap();

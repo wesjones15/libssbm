@@ -87,6 +87,11 @@ impl Sim {
             } else {
                 0
             }
+            | if self.up_special_invulnerable {
+                128
+            } else {
+                0
+            }
     }
     pub fn shield_hit(&mut self, damage: f32) -> bool {
         if self.defense_flags() & 1 == 0 || !damage.is_finite() || damage < 0. {
