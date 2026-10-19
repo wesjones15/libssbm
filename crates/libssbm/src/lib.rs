@@ -1,5 +1,6 @@
 //! Game-agnostic fighter simulation. No game data or host engine types.
 pub mod action;
+pub mod behavior;
 pub mod controls;
 pub mod defense;
 pub mod effect;
@@ -10,6 +11,7 @@ pub mod particle;
 pub mod projectile;
 pub mod reaction;
 pub mod rebirth;
+pub mod samus;
 pub use params::Params;
 pub mod sim;
 pub use sim::*;

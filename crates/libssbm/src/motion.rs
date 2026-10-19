@@ -129,47 +129,7 @@ pub fn select(s: &Sim, input: Input) -> (&'static str, f32) {
             Move::SideSmash => "AttackS4S",
             Move::UpSmash => "AttackHi4",
             Move::DownSmash => "AttackLw4",
-            Move::ChargeShot => {
-                if s.phase == Phase::Startup {
-                    if s.move_started_grounded {
-                        "SpecialNStart"
-                    } else {
-                        "SpecialAirNStart"
-                    }
-                } else if s.grounded {
-                    "SpecialN"
-                } else {
-                    "SpecialAirN"
-                }
-            }
-            Move::Missile => {
-                if s.grounded {
-                    "SpecialS"
-                } else {
-                    "SpecialAirS"
-                }
-            }
-            Move::SuperMissile => {
-                if s.grounded {
-                    "Special"
-                } else {
-                    "SpecialAir"
-                }
-            }
-            Move::ScrewAttack => {
-                if s.move_started_grounded {
-                    "SpecialHi"
-                } else {
-                    "SpecialAirHi"
-                }
-            }
-            Move::Bomb => {
-                if s.grounded {
-                    "SpecialLw"
-                } else {
-                    "SpecialAirLw"
-                }
-            }
+            m => s.behavior.clip(s, m),
         };
         return (
             clip,

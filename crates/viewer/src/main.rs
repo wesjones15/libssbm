@@ -123,8 +123,15 @@ async fn run() -> libssbm_assets::Result<()> {
     } else {
         Presentation::load(std::path::Path::new(&path), 0)?
     };
-    let mut sim = Sim::new(
-        libssbm_assets::params::load(std::path::Path::new(&path))?,
+    let mut sim = Sim::with_behavior(
+        libssbm_assets::params::load_common(
+            std::path::Path::new(&path),
+            &libssbm_assets::fighter::SAMUS,
+        )?,
+        Box::new(libssbm::samus::Samus::new(
+            libssbm_assets::params::load_samus_specials(std::path::Path::new(&path))?,
+            libssbm_assets::fighter::SAMUS.upper_body_root,
+        )),
         ::glam::Vec3::ZERO,
     );
     let mut host = FlatHost::default();
@@ -175,7 +182,6 @@ async fn run() -> libssbm_assets::Result<()> {
         println!("Side-B preview tick {pose_frame}: {:?}", sim.motion.clip);
     }
     if mobile_preview {
-        sim.options.mobile_moves = 1 << libssbm::Move::ChargeShot as u32;
         sim.advance(&mut host, Input::idle(), 1. / 60.);
         for _ in 0..(pose_frame as usize).max(20) {
             sim.advance(
@@ -578,7 +584,7 @@ async fn run() -> libssbm_assets::Result<()> {
             format!(
                 "Charge {}/{}  jumps {}/{}  {}",
                 sim.shot_charge,
-                sim.params.charge_steps,
+                sim.behavior.charge_steps(),
                 sim.jumps_used,
                 sim.params.jumps,
                 last_hit

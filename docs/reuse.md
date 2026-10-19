@@ -48,19 +48,15 @@ decoder for callers needing that asset. MnSlChr.usd is a
 required extraction dependency, so older caches migrate. Common Portrait's texture
 queue installs the decoded artwork without rendering the preview model.
 
-Next, split `Params` into common fighter attributes and Samus special attributes,
-then move Samus's action selection/transitions behind a fighter behavior module.
-Normal attack clips and script-driven hit windows can share the executor; each
-fighter must still implement its source-specific combo/interrupt rules. Projectiles
-should share lifetime, collision and presentation infrastructure while using
-character-specific source physics. Do not turn Samus's current prototype projectile
-constants into generic Melee defaults.
-
-The RoR2 adapter can eventually consume that fighter interface for stepping,
-posed hitboxes, effect cues, PCM and views. Keep Unity types and HP/proc conversion
-out of libssbm. Keep general engine services in ror2-common and Melee-specific
-behavior in libssbm. Current ABI 4 and the exported simulation constructor still
-select Samus; they do not yet expose arbitrary character selection.
+`Params` is now common fighter tuning only, and Samus's special tuning lives in
+`samus::Specials`. The shared `Sim` owns locomotion, jump, shield, reactions,
+the A-attack/smash selection and the disc command executor; a per-fighter
+`Behavior` (trait) supplies specials, their clips, phase logic, physics, the
+mobile upper/lower split seam (`upper_body_root` + `mobile_moves`) and the
+up-special recovery move. `Samus` is the first `Behavior` implementation.
+Next: parameterize `Rig` and the FFI constructor by fighter kind, make
+ror2-common controls per-fighter, and extract a shared plugin skeleton from the
+Samus adapter. Keep Unity types and HP/proc conversion out of libssbm.
 
 Selection now plays up-B once and continues idle. Shared MeleeArrival handles
 automatic native figurine arrival; EnemyCapture owns RoR2 enemy capture/AI

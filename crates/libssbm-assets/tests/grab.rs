@@ -108,7 +108,7 @@ fn full_charge_storage_is_silent_until_a_real_shot_and_has_source_flash() -> Res
             "firing voice played while storing"
         );
     }
-    assert_eq!(sim.shot_charge, sim.params.charge_steps);
+    assert_eq!(sim.shot_charge, sim.behavior.charge_steps());
     assert!(!host.events.iter().any(|e| e.kind == EventKind::Hit));
     let cycle = libssbm_assets::params::color_cycle(&dir, 53)?;
     assert!(cycle.iter().any(|c| c[3] > 0.) && cycle.iter().any(|c| c[3] == 0.));

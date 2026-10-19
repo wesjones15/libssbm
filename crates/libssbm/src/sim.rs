@@ -2,7 +2,7 @@
 //! ftCo_AttackS4}.c and ftSamus/ftsamusspecial{n,s,hi,lw1}.c.
 //! Move startup/active/recovery schedules here are prototype options, pending the
 //! animation command reader. They are deliberately separate from disc parameters.
-use crate::Params;
+use crate::{behavior::Behavior, Params};
 use glam::Vec3;
 mod actions;
 
@@ -96,24 +96,6 @@ pub enum Move {
     GrabHold = 33,
 }
 impl Move {
-    /// Grounded specials that may steer while the legs retain a separate gait.
-    /// Character-specific A attacks, grabs and authored dash attacks stay whole.
-    pub const fn mobile_specials_mask() -> u64 {
-        (1u64 << Self::ChargeShot as u32)
-            | (1u64 << Self::Missile as u32)
-            | (1u64 << Self::SuperMissile as u32)
-            | (1u64 << Self::ScrewAttack as u32)
-            | (1u64 << Self::Bomb as u32)
-    }
-    pub fn slot(self) -> u32 {
-        match self {
-            Self::ChargeShot => 0,
-            Self::Missile | Self::SuperMissile => 2,
-            Self::ScrewAttack => 3,
-            Self::Bomb => 4,
-            _ => 1,
-        }
-    }
     pub fn is_smash(self) -> bool {
         matches!(self, Self::SideSmash | Self::UpSmash | Self::DownSmash)
     }
@@ -177,9 +159,6 @@ pub struct Options {
     pub hold_charge: bool,
     /// Prototype max charge; true move command values will replace this schedule.
     pub smash_max_frames: u32,
-    /// Host adaptation: bit per Move whose grounded action can steer at walking speed.
-    /// The animation presenter may overlay its upper body on a separate gait.
-    pub mobile_moves: u64,
 }
 impl Default for Options {
     fn default() -> Self {
@@ -189,7 +168,6 @@ impl Default for Options {
             extra_jumps: 0,
             hold_charge: false,
             smash_max_frames: 60,
-            mobile_moves: Move::mobile_specials_mask(),
         }
     }
 }
@@ -208,6 +186,8 @@ pub struct Sim {
     pub move_started_grounded: bool,
     pub params: Params,
     pub options: Options,
+    /// Per-fighter special-move behavior (specials, clips, physics).
+    pub behavior: Box<dyn Behavior>,
     pub position: Vec3,
     pub velocity: Vec3,
     pub grounded: bool,
@@ -229,19 +209,27 @@ pub struct Sim {
     buffered_attack: u32,
     pub(crate) knockdown_grace: u32,
     previous: Input,
-    flick_age: u32,
+    pub(crate) flick_age: u32,
     modifier_age: u32,
-    charge_clock: u32,
+    pub(crate) charge_clock: u32,
     pub(crate) short_hop: bool,
     /// Host adaptation: the up special (Screw Attack) keeps the fighter
     /// invulnerable from launch until landing, or until another attack starts.
     pub(crate) up_special_invulnerable: bool,
     pub(crate) pad_gravity: Option<Vec3>,
-    move_aim: Vec3,
-    move_strength: f32,
+    pub(crate) move_aim: Vec3,
+    pub(crate) move_strength: f32,
 }
 impl Sim {
+    /// Synthetic Samus for headless tests. Runtime hosts use [`Sim::with_behavior`].
     pub fn new(params: Params, position: Vec3) -> Self {
+        Self::with_behavior(
+            params,
+            Box::new(crate::samus::Samus::fixture()),
+            position,
+        )
+    }
+    pub fn with_behavior(params: Params, behavior: Box<dyn Behavior>, position: Vec3) -> Self {
         Self {
             grabbed: false,
             defense: Default::default(),
@@ -255,6 +243,7 @@ impl Sim {
             move_started_grounded: false,
             params,
             options: Options::default(),
+            behavior,
             position,
             velocity: Vec3::ZERO,
             grounded: false,
@@ -286,6 +275,18 @@ impl Sim {
             move_strength: 1.,
         }
     }
+    /// Split-borrow bridge: temporarily moves the behavior out so `f` can mutate
+    /// the sim while holding `&dyn Behavior`, then restores it. The behavior
+    /// callbacks never unwind; the FFI catches panics and poisons the handle.
+    fn using_behavior<T>(&mut self, f: impl FnOnce(&dyn Behavior, &mut Sim) -> T) -> T {
+        let behavior = std::mem::replace(
+            &mut self.behavior,
+            Box::new(crate::samus::Samus::fixture()),
+        );
+        let result = f(&*behavior, self);
+        self.behavior = behavior;
+        result
+    }
     pub fn alpha(&self) -> f32 {
         (self.accumulator * TICK_HZ) as f32
     }
@@ -296,7 +297,7 @@ impl Sim {
             && self.rebirth.is_none()
             && self
                 .current_move
-                .is_some_and(|m| self.options.mobile_moves & (1u64 << m as u32) != 0)
+                .is_some_and(|m| self.behavior.mobile_moves() & (1u64 << m as u32) != 0)
     }
     /// Side-B (and its Super Missile) is always drawn as an upper-body layer over the
     /// gait/idle legs, grounded or airborne, moving or still. The disc clips fire toward
@@ -306,13 +307,13 @@ impl Sim {
         self.reaction.is_none()
             && self.entry.is_none()
             && self.rebirth.is_none()
-            && matches!(self.current_move, Some(Move::Missile | Move::SuperMissile))
+            && self.current_move.is_some_and(|m| self.behavior.side_special_layered(m))
     }
     /// Down-B and Screw Attack spin the whole body: the disc clips flip the joints below the
     /// spine (joints 2-4, 180 degrees at a time), which a gait layer would replace, leaving only
     /// the upper body bobbing and restarting. They keep any steering but draw the raw clip.
     pub fn spins_whole_body(&self) -> bool {
-        matches!(self.current_move, Some(Move::Bomb | Move::ScrewAttack))
+        self.current_move.is_some_and(|m| self.behavior.spins_whole_body(m))
     }
     /// How much of the gait/idle pose replaces the action's own legs: all of it for side-B,
     /// the walking blend for other mobile moves, none otherwise.
@@ -328,8 +329,7 @@ impl Sim {
     /// Melee's side-B cannon fires toward local +X in the extracted pose. Turn only its
     /// upper rig toward the live camera ray; locomotion and body yaw stay put.
     pub fn side_special_upper_aim(&self) -> Option<(f32, f32)> {
-        matches!(self.current_move, Some(Move::Missile | Move::SuperMissile))
-            .then(|| side_special_upper_angles(self.move_aim, self.facing))
+        self.behavior.side_special_upper_aim(self)
     }
     pub fn advance(&mut self, host: &mut impl Host, mut input: Input, dt: f64) -> u32 {
         // Explicit neutral-B keeps the existing charge hold/fire protocol while
@@ -374,8 +374,6 @@ impl Sim {
                 Some(
                     Move::DashAttack
                         | Move::BackAir
-                        | Move::ScrewAttack
-                        | Move::Bomb
                         | Move::Grab
                         | Move::DashGrab
                         | Move::AirGrab
@@ -387,6 +385,7 @@ impl Sim {
                         | Move::GrabHold
                 )
             )
+            || self.current_move.is_some_and(|m| self.behavior.facing_locked(m))
     }
     pub fn teleport(&mut self, position: Vec3) {
         self.defense.mode = None;
@@ -459,30 +458,12 @@ impl Sim {
             self.knockdown_grace = 60;
         }
     }
-    fn emit(&self, host: &mut impl Host, kind: EventKind, move_id: u32, strength: f32) {
-        let attachment = if kind == EventKind::Hit {
-            match move_id {
-                20 => Some(51),
-                21 | 22 => Some(56),
-                24 => Some(0),
-                _ => None,
-            }
+    pub(crate) fn emit(&self, host: &mut dyn Host, kind: EventKind, move_id: u32, strength: f32) {
+        let (attachment, attachment_offset) = if kind == EventKind::Hit {
+            self.behavior
+                .hit_attachment(self, self.current_move.unwrap_or(Move::Jab))
         } else {
-            None
-        };
-        let attachment_offset = if kind == EventKind::Hit {
-            match move_id {
-                21 | 22 => self.facing * self.params.missile_spawn_offset,
-                24 => {
-                    self.facing * self.params.bomb_spawn_offset[0]
-                        + Vec3::Y * self.params.bomb_spawn_offset[1]
-                        + Vec3::new(-self.facing.z, 0., self.facing.x)
-                            * self.params.bomb_spawn_offset[2]
-                }
-                _ => Vec3::ZERO,
-            }
-        } else {
-            Vec3::ZERO
+            (None, Vec3::ZERO)
         };
         host.event(Event {
             kind,
@@ -501,39 +482,23 @@ impl Sim {
         });
     }
     pub(crate) fn set_phase(&mut self, phase: Phase) {
-        if self.phase == Phase::ChargeShot && phase != Phase::ChargeShot {
-            self.action.sounds.push(crate::action::SoundCue {
-                sound: 0,
-                volume: 127,
-                pan: 64,
-                channel: 6,
-                stop: true,
-            });
+        if let Some(stop) = self.behavior.phase_stop(self.phase) {
+            if self.phase != phase {
+                self.action.sounds.push(stop);
+            }
         }
         self.phase = phase;
         self.phase_frame = 0;
-        if phase == Phase::ChargeShot {
-            self.action.effects.push(crate::action::GfxCue {
-                id: 1151,
-                bone: 50,
-                common: false,
-                cycle: 0,
-                destroy_on_change: true,
-                offset: Vec3::new(0., 0., 4.),
-                param: 0.,
-                clip: "SpecialNHold",
-                frame: 0.,
-                origin: self.position,
-                facing: self.facing,
-            });
+        if let Some(effect) = self.behavior.phase_effect(self, phase) {
+            self.action.effects.push(effect);
         }
     }
     fn start(&mut self, host: &mut impl Host, m: Move, input: Input) {
-        if input.allowed & (1 << m.slot()) == 0 {
+        if input.allowed & (1 << self.behavior.slot(m)) == 0 {
             return;
         }
         self.current_move = Some(m);
-        if matches!(m, Move::ChargeShot | Move::Missile | Move::SuperMissile)
+        if self.behavior.aimable(m)
             && self.host_facing.is_none()
             && input.aim.with_y(0.).length_squared() > 0.001
         {
@@ -542,12 +507,7 @@ impl Sim {
         self.action.reset();
         self.motion.frame = 0.;
         self.move_started_grounded = self.grounded;
-        if m == Move::ScrewAttack {
-            self.up_special_invulnerable = true;
-        } else {
-            // Starting any other move midair gives up the up-B i-frames.
-            self.up_special_invulnerable = false;
-        }
+        self.up_special_invulnerable = self.behavior.is_up_special(m);
         if m == Move::BackAir
             && self.host_facing.is_none()
             && input.aim.with_y(0.).length_squared() > 0.01
@@ -563,32 +523,7 @@ impl Sim {
         };
         self.emit(host, EventKind::Started, m as u32, 1.);
         self.set_phase(Phase::Startup);
-        if m == Move::ScrewAttack {
-            self.action.effects.push(crate::action::GfxCue {
-                id: 1154,
-                bone: 3,
-                common: false,
-                cycle: 0,
-                destroy_on_change: true,
-                offset: Vec3::ZERO,
-                param: 0.,
-                clip: if self.move_started_grounded {
-                    "SpecialHi"
-                } else {
-                    "SpecialAirHi"
-                },
-                frame: 0.,
-                origin: self.position,
-                facing: self.facing,
-            });
-            self.pad_gravity = None;
-            self.grounded = false;
-            self.velocity.y = self.params.screw_velocity * self.options.jump_scale;
-            self.jumps_used = self.params.jumps + self.options.extra_jumps;
-        } else if m == Move::Bomb && !self.grounded {
-            self.pad_gravity = None;
-            self.velocity.y = self.params.bomb_velocity;
-        }
+        self.using_behavior(|b, s| b.enter_special(s, host, m, input));
     }
     /// The host owns enemy identity/collision; fighter capture/throw transitions
     /// and disc animation command timing remain engine-independent.
@@ -825,10 +760,10 @@ impl Sim {
                 self.facing = movement.normalize();
             }
         }
-        if matches!(
-            self.current_move,
-            Some(Move::ChargeShot | Move::Missile | Move::SuperMissile)
-        ) && input.aim.length_squared() > 0.001
+        if self
+            .current_move
+            .is_some_and(|m| self.behavior.aimable(m))
+            && input.aim.length_squared() > 0.001
         {
             self.move_aim = input.aim.normalize();
             if input.aim.with_y(0.).length_squared() > 0.001 {
@@ -842,21 +777,9 @@ impl Sim {
         // gesture while walking is allowed. The source charge amount survives.
         // ftSamus_SpecialNHold_IASA is the reference for storing charge; sprint
         // is a host control decision, not a claim about Melee's original input.
-        if self.current_move == Some(Move::ChargeShot)
-            && matches!(self.phase, Phase::Startup | Phase::ChargeShot)
-            && self.options.mobile_moves & (1u64 << Move::ChargeShot as u32) != 0
-            && pressed & SPRINT != 0
-        {
-            self.emit(
-                host,
-                EventKind::ChargeStored,
-                Move::ChargeShot as u32,
-                self.shot_charge as f32,
-            );
-            self.action.reset();
-            self.current_move = None;
-            self.set_phase(Phase::Free);
-        }
+        self.using_behavior(|b, s| {
+            b.store_special(s, host, pressed);
+        });
         match self.phase {
             Phase::Free => {
                 if self.reaction.is_some()
@@ -880,32 +803,9 @@ impl Sim {
                     };
                     self.start(host, m, input);
                 } else if pressed & (SPECIAL | NEUTRAL_B | SIDE_B | UP_B | DOWN_B) != 0 {
-                    let m = if input.buttons & NEUTRAL_B != 0 {
-                        Move::ChargeShot
-                    } else if input.buttons & UP_B != 0 {
-                        Move::ScrewAttack
-                    } else if input.buttons & DOWN_B != 0 {
-                        Move::Bomb
-                    } else if input.buttons & SIDE_B != 0 {
-                        if self.flick_age < self.params.missile_smash_window {
-                            Move::SuperMissile
-                        } else {
-                            Move::Missile
-                        }
-                    } else if input.attack_vertical() > 0 {
-                        Move::ScrewAttack
-                    } else if input.attack_vertical() < 0 {
-                        Move::Bomb
-                    } else if movement.length() > 0.3 {
-                        if self.flick_age < self.params.missile_smash_window {
-                            Move::SuperMissile
-                        } else {
-                            Move::Missile
-                        }
-                    } else {
-                        Move::ChargeShot
-                    };
-                    self.start(host, m, input);
+                    if let Some(m) = self.behavior.select_special(self, input, movement) {
+                        self.start(host, m, input);
+                    }
                 } else if pressed & ATTACK != 0 {
                     self.start(host, self.choose_attack(input), input);
                 }
@@ -922,16 +822,11 @@ impl Sim {
                 let m = self.current_move.unwrap();
                 if !self.action.definitions.is_empty() {
                     self.update_disc_action(host, input, pressed);
-                } else if self.phase_frame >= startup(m) {
+                } else if self.phase_frame >= self.behavior.startup(m).unwrap_or_else(|| startup(m)) {
                     if m.is_smash() && input.buttons & ATTACK != 0 {
                         self.set_phase(Phase::SmashCharge);
-                    } else if m == Move::ChargeShot
-                        && self.grounded
-                        && self.shot_charge < self.params.charge_steps
-                        && !(self.options.hold_charge && input.buttons & SPECIAL == 0)
-                    {
-                        self.charge_clock = 0;
-                        self.set_phase(Phase::ChargeShot);
+                    } else if self.using_behavior(|b, s| b.resolve_startup(s, input)) {
+                        // The special entered its hold phase.
                     } else {
                         self.fire(host);
                     }
@@ -958,43 +853,13 @@ impl Sim {
                     }
                 }
             }
-            Phase::ChargeShot => {
-                self.charge_clock += 1;
-                if self.charge_clock >= self.params.charge_interval {
-                    self.charge_clock = 0;
-                    self.shot_charge = (self.shot_charge + 1).min(self.params.charge_steps);
-                }
-                if pressed & (CANCEL | GRAB | JUMP) != 0
-                    || self.shot_charge >= self.params.charge_steps
-                {
-                    // SpecialNHold_Anim starts colour animation 53 at maximum,
-                    // not the firing voice. The stored-charge presenter owns it.
-                    self.emit(
-                        host,
-                        EventKind::ChargeStored,
-                        Move::ChargeShot as u32,
-                        self.shot_charge as f32,
-                    );
-                    self.set_phase(if self.action.definitions.is_empty() {
-                        Phase::Free
-                    } else {
-                        Phase::ChargeCancel
-                    });
-                    self.current_move = None;
-                    if pressed & JUMP != 0 && self.grounded {
-                        self.short_hop = false;
-                        self.set_phase(Phase::JumpSquat);
-                    }
-                } else if (self.options.hold_charge && input.buttons & SPECIAL == 0)
-                    || (!self.options.hold_charge && pressed & SPECIAL != 0)
-                {
-                    self.fire(host);
-                }
-            }
+            Phase::ChargeShot => self.using_behavior(|b, s| b.tick_charge(s, host, input, pressed)),
             Phase::Recovery => {
                 if !self.action.definitions.is_empty() {
                     self.update_disc_action(host, input, pressed);
-                } else if self.phase_frame >= recovery(self.current_move.unwrap()) {
+                } else if self.phase_frame
+                    >= self.behavior.recovery(self.current_move.unwrap()).unwrap_or_else(|| recovery(self.current_move.unwrap()))
+                {
                     // The up special no longer enters helpless fall: the host lets
                     // the fighter act airborne, and the i-frames survive until
                     // landing or another attack.
@@ -1008,10 +873,7 @@ impl Sim {
                 }
             }
             Phase::ChargeCancel => {
-                if self.motion.finished() {
-                    self.set_phase(Phase::Free);
-                    self.current_move = None;
-                }
+                self.using_behavior(|b, s| b.tick_charge_cancel(s));
             }
         }
         let movable = self.reaction.is_none()
@@ -1155,8 +1017,8 @@ impl Sim {
                         Some(Move::BackAir) => "LandingAirB",
                         Some(Move::UpAir) => "LandingAirHi",
                         Some(Move::DownAir) => "LandingAirLw",
-                        Some(Move::ScrewAttack) => "LandingFallSpecial",
-                        _ => {
+                        Some(m) => self.behavior.landing(self, m),
+                        None => {
                             if self.phase == Phase::Helpless {
                                 "LandingFallSpecial"
                             } else {
@@ -1218,20 +1080,14 @@ impl Sim {
         }
         self.previous = input;
     }
-    fn fire(&mut self, host: &mut impl Host) {
+    pub(crate) fn fire(&mut self, host: &mut dyn Host) {
         let m = self.current_move.unwrap();
         if !self.action.definitions.is_empty() {
             self.set_phase(Phase::Recovery);
             self.motion.frame = 0.;
             return;
         }
-        let strength = if m == Move::ChargeShot {
-            let ratio = self.shot_charge as f32 / self.params.charge_steps as f32;
-            self.shot_charge = 0;
-            ratio
-        } else {
-            self.move_strength
-        };
+        let strength = self.using_behavior(|b, s| b.fire_strength(s, m));
         self.emit(host, EventKind::Hit, m as u32, strength);
         self.set_phase(Phase::Recovery);
     }
@@ -1241,27 +1097,20 @@ fn sign_deceleration(velocity: f32, friction: f32) -> f32 {
     velocity.signum() * velocity.abs().min(friction)
 }
 
-// Prototype schedules, NOT purported frame-perfect Melee command data.
+// Prototype schedules, NOT purported frame-perfect Melee command data. The
+// special moves override these through the fighter's `Behavior`.
 fn startup(m: Move) -> u32 {
     match m {
         Move::Jab => 3,
         Move::SideSmash => 10,
         Move::UpSmash => 10,
         Move::DownSmash => 6,
-        Move::ChargeShot => 12,
-        Move::Missile | Move::SuperMissile => 12,
-        Move::Bomb => 10,
-        Move::ScrewAttack => 3,
         _ => 6,
     }
 }
 fn recovery(m: Move) -> u32 {
     match m {
         Move::Jab => 15,
-        Move::ChargeShot => 24,
-        Move::Missile | Move::SuperMissile => 24,
-        Move::Bomb => 25,
-        Move::ScrewAttack => 36,
         _ => 24,
     }
 }

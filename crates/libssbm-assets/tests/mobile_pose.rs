@@ -57,7 +57,6 @@ fn samus_walk_legs_keep_the_action_torso_and_cannon() -> Result<()> {
         let mut sim = Sim::new(Params::fixture(), glam::Vec3::ZERO);
         sim.grounded = true;
         sim.current_move = Some(Move::ChargeShot);
-        sim.options.mobile_moves = 1 << Move::ChargeShot as u32;
         sim.motion.definitions = animations.motion_definitions();
         sim.locomotion.definitions = sim.motion.definitions.clone();
         sim.motion.select("SpecialNHold", 1.);

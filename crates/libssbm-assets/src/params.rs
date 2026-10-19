@@ -195,19 +195,15 @@ pub fn defense_for(
 }
 
 pub fn load(dir: &Path) -> Result<Params> {
-    load_for(dir, &crate::fighter::SAMUS)
+    load_common(dir, &crate::fighter::SAMUS)
 }
-pub fn load_for(dir: &Path, profile: &crate::fighter::FighterAssets<'_>) -> Result<Params> {
+pub fn load_common(dir: &Path, profile: &crate::fighter::FighterAssets<'_>) -> Result<Params> {
     profile.required()?;
     let fighter_bytes = std::fs::read(dir.join(profile.data.file))?;
     let fighter = Dat::parse(&fighter_bytes)?;
     let root = fighter.root(profile.data.root)?;
     let co = fighter.required_ptr(root)?;
-    let ss = fighter.required_ptr(root + 4)?;
     let sounds = fighter.required_ptr(root + 0x4c)?;
-    let articles = fighter.required_ptr(root + 0x48)?;
-    let charge = fighter.required_ptr(articles + 4)?;
-    let charge_attrs = fighter.required_ptr(charge + 4)?;
     let common_bytes = std::fs::read(dir.join("PlCo.dat"))?;
     let common = Dat::parse(&common_bytes)?;
     let common_root = common.root("ftLoadCommonData")?;
@@ -251,6 +247,26 @@ pub fn load_for(dir: &Path, profile: &crate::fighter::FighterAssets<'_>) -> Resu
         fall_blend_response: common.f32(global + 0x448)?,
         air_friction: fighter.f32(co + 0x70)?,
         fast_fall: fighter.f32(co + 0x74)?,
+        smash_threshold: common.f32(global + 0x3c)?,
+        smash_window: common.u32(global + 0x40)?,
+    };
+    p.validate()?;
+    Ok(p)
+}
+
+/// Samus's `ext_attr` special tuning (ftSs_DatAttrs and charge-shot article
+/// attributes). Other fighters supply their own behavior parameters.
+pub fn load_samus_specials(dir: &Path) -> Result<libssbm::samus::Specials> {
+    let profile = &crate::fighter::SAMUS;
+    profile.required()?;
+    let bytes = std::fs::read(dir.join(profile.data.file))?;
+    let fighter = Dat::parse(&bytes)?;
+    let root = fighter.root(profile.data.root)?;
+    let ss = fighter.required_ptr(root + 4)?;
+    let articles = fighter.required_ptr(root + 0x48)?;
+    let charge = fighter.required_ptr(articles + 4)?;
+    let charge_attrs = fighter.required_ptr(charge + 4)?;
+    let p = libssbm::samus::Specials {
         charge_steps: fighter.f32(ss + 0x18)?.round() as u32,
         charge_visual_min: fighter.f32(charge_attrs + 0x18)?,
         charge_visual_max: fighter.f32(charge_attrs + 0x1c)?,
@@ -264,9 +280,6 @@ pub fn load_for(dir: &Path, profile: &crate::fighter::FighterAssets<'_>) -> Resu
         ],
         screw_velocity: fighter.f32(ss + 0x44)?,
         bomb_velocity: fighter.f32(ss + 0x58)?,
-        smash_threshold: common.f32(global + 0x3c)?,
-        smash_window: common.u32(global + 0x40)?,
     };
-    p.validate()?;
     Ok(p)
 }

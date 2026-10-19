@@ -51,13 +51,7 @@ impl Sim {
             return;
         }
         if m == Move::ChargeShot && self.phase == Phase::Startup {
-            if self.grounded
-                && self.shot_charge < self.params.charge_steps
-                && !(self.options.hold_charge && input.buttons & SPECIAL == 0)
-            {
-                self.charge_clock = 0;
-                self.set_phase(Phase::ChargeShot);
-            } else {
+            if !self.using_behavior(|b, s| b.resolve_startup(s, input)) {
                 self.fire(host);
             }
         } else {
@@ -72,19 +66,11 @@ impl Sim {
         let Some(m) = self.current_move else {
             return;
         };
-        if !matches!(
-            m,
-            Move::ChargeShot | Move::Missile | Move::SuperMissile | Move::Bomb
-        ) {
+        if !self.behavior.projectile_move(m) {
             return;
         }
         self.action.projectile_fired = true;
-        let cue = match m {
-            Move::ChargeShot => Some((1158, 51, false)),
-            Move::Missile | Move::SuperMissile => Some((1155, 56, false)),
-            _ => None,
-        };
-        if let Some((id, bone, common)) = cue {
+        if let Some((id, bone, common)) = self.behavior.projectile_cue(m) {
             self.action.effects.push(crate::action::GfxCue {
                 id,
                 bone,
@@ -99,13 +85,7 @@ impl Sim {
                 facing: self.facing,
             });
         }
-        let strength = if m == Move::ChargeShot {
-            let charge = self.shot_charge as f32 / self.params.charge_steps as f32;
-            self.shot_charge = 0;
-            charge
-        } else {
-            1.
-        };
+        let strength = self.using_behavior(|b, s| b.fire_strength(s, m));
         self.emit(host, EventKind::Hit, m as u32, strength);
     }
 
@@ -165,7 +145,7 @@ impl Sim {
                     // SpecialNHold_Anim selects one of five source charge voices
                     // when cmd_var2 requests it; replace the tracked charge slot.
                     if index == 2 && value == 1 && self.phase == Phase::ChargeShot {
-                        let band = (self.shot_charge * 5 / self.params.charge_steps.max(1)).min(4);
+                        let band = self.behavior.charge_voice_band(self);
                         self.action.sounds.push(SoundCue {
                             sound: 260006 + band * 3,
                             volume: 127,
@@ -176,7 +156,7 @@ impl Sim {
                     }
                     if value == 1
                         && index == 1
-                        && self.current_move == Some(Move::ChargeShot)
+                        && self.current_move.is_some_and(|m| self.behavior.is_charge_move(m))
                         && self.phase != Phase::ChargeShot
                     {
                         self.disc_projectile(host);
@@ -213,10 +193,10 @@ impl Sim {
                         }
                         self.grabbed = false;
                     }
-                    if matches!(
-                        self.current_move,
-                        Some(Move::Missile | Move::SuperMissile | Move::Bomb)
-                    ) {
+                    if self
+                        .current_move
+                        .is_some_and(|m| self.behavior.projectile_move(m))
+                    {
                         self.disc_projectile(host);
                     }
                 }

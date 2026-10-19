@@ -406,7 +406,12 @@ pub unsafe extern "C" fn ssbm_sim_new(dir: *const c_char, pos: V3) -> *mut Handl
     guarded(std::ptr::null_mut(), || {
         let result = (|| -> libssbm_assets::Result<(Sim, Rig, libssbm_assets::audio::Mixer)> {
             let dir = unsafe { path(dir) }?;
-            let mut sim = Sim::new(libssbm_assets::params::load(dir)?, pos.into());
+            let params = libssbm_assets::params::load_common(dir, &libssbm_assets::fighter::SAMUS)?;
+            let behavior = Box::new(libssbm::samus::Samus::new(
+                libssbm_assets::params::load_samus_specials(dir)?,
+                libssbm_assets::fighter::SAMUS.upper_body_root,
+            ));
+            let mut sim = Sim::with_behavior(params, behavior, pos.into());
             sim.defense.params = libssbm_assets::params::defense(dir)?;
             sim.defense.health = sim.defense.params.maximum;
             let rig = Rig::load(dir)?;
@@ -740,9 +745,10 @@ pub unsafe extern "C" fn ssbm_sim_charge_visual(h: *const Handle, out: *mut f32)
         if ssbm_sim_bone(h, 50, matrix.as_mut_ptr()) != 1 {
             return 0;
         }
-        let p = &h.sim.params;
-        let amount = h.sim.shot_charge as f32 / p.charge_steps.max(1) as f32;
-        let scale = p.charge_visual_min + (p.charge_visual_max - p.charge_visual_min) * amount;
+        let steps = h.sim.behavior.charge_steps();
+        let (visual_min, visual_max) = h.sim.behavior.charge_visual();
+        let amount = h.sim.shot_charge as f32 / steps.max(1) as f32;
+        let scale = visual_min + (visual_max - visual_min) * amount;
         let posed = glam::Mat4::from_cols_array(&matrix)
             * glam::Mat4::from_translation(Vec3::new(0., 0., 4.))
             * glam::Mat4::from_scale(Vec3::splat(scale));
@@ -759,7 +765,7 @@ pub unsafe extern "C" fn ssbm_sim_charge_fraction(h: *const Handle) -> f32 {
     } else {
         unsafe {
             let h = &*h;
-            h.sim.shot_charge as f32 / h.sim.params.charge_steps.max(1) as f32
+            h.sim.shot_charge as f32 / h.sim.behavior.charge_steps().max(1) as f32
         }
     }
 }
@@ -1028,21 +1034,13 @@ pub unsafe extern "C" fn ssbm_sim_tuning(handle: *mut Handle, t: Tuning) -> u32 
         extra_jumps: t.extra_jumps,
         hold_charge: t.hold_charge != 0,
         smash_max_frames: t.smash_max_frames,
-        mobile_moves: h.sim.options.mobile_moves,
     };
     1
 }
-/// Host-defined mobile actions; bit N corresponds to Move discriminant N.
-/// The core owns the movement and independent gait clock. No ABI layout changes.
+/// Deprecated host mobile-move override: the fighter's `Behavior` now owns which
+/// moves steer with the upper/lower split. Kept for ABI compatibility; ignored.
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn ssbm_sim_mobile_moves(handle: *mut Handle, mask: u64) -> u32 {
-    let Some(h) = (unsafe { handle.as_mut() }) else {
-        return 0;
-    };
-    if h.poisoned {
-        return 0;
-    }
-    h.sim.options.mobile_moves = mask;
+pub unsafe extern "C" fn ssbm_sim_mobile_moves(_handle: *mut Handle, _mask: u64) -> u32 {
     1
 }
 /// # Safety
@@ -1466,7 +1464,7 @@ pub unsafe extern "C" fn ssbm_sim_overlay(h: *const Handle, rgba: *mut f32) -> u
             return (color[3] > 0.) as u32;
         }
         let Some(entry) = h.sim.entry else {
-            if h.sim.shot_charge >= h.sim.params.charge_steps {
+            if h.sim.shot_charge >= h.sim.behavior.charge_steps() {
                 let color = h.rig.charge_flash[h.sim.frame as usize % h.rig.charge_flash.len()];
                 std::ptr::copy_nonoverlapping(color.as_ptr(), rgba, 4);
                 return (color[3] > 0.) as u32;
@@ -1818,7 +1816,14 @@ mod tests {
             return Ok(());
         }
         let mut h = Handle {
-            sim: Sim::new(libssbm_assets::params::load(&dir)?, Vec3::ZERO),
+            sim: Sim::with_behavior(
+                libssbm_assets::params::load_common(&dir, &libssbm_assets::fighter::SAMUS)?,
+                Box::new(libssbm::samus::Samus::new(
+                    libssbm_assets::params::load_samus_specials(&dir)?,
+                    libssbm_assets::fighter::SAMUS.upper_body_root,
+                )),
+                Vec3::ZERO,
+            ),
             rig: Rig::load(&dir)?,
             audio: libssbm_assets::audio::Mixer::new(libssbm_assets::audio::Bank::load(&dir)?),
             poisoned: false,

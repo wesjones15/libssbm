@@ -93,7 +93,7 @@ fn real_disc_special_scripts_fire_one_projectile() -> Result<()> {
                 Vec3::Y * if airborne { 1000. } else { 0. },
             );
             sim.grounded = !airborne;
-            sim.shot_charge = sim.params.charge_steps;
+            sim.shot_charge = sim.behavior.charge_steps();
             sim.motion.definitions = animations.motion_definitions();
             sim.action.definitions = libssbm_assets::action::load(&dir, &animations)?;
             let mut host = FlatHost::default();

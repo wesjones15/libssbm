@@ -96,7 +96,6 @@ fn jump_pose_continues_after_apex_and_gaits_keep_cycle_phase() {
 fn mobile_neutral_b_walks_on_an_independent_gait_and_sprint_stores_charge() {
     for fps in [30, 60, 144] {
         let mut already_sprinting = fighter();
-        already_sprinting.options.mobile_moves = 1 << Move::ChargeShot as u32;
         let mut sprint_host = FlatHost::default();
         already_sprinting.advance(&mut sprint_host, Input::idle(), 1. / 60.);
         for _ in 0..fps / 4 {
@@ -122,7 +121,6 @@ fn mobile_neutral_b_walks_on_an_independent_gait_and_sprint_stores_charge() {
         assert_eq!(already_sprinting.current_move, Some(Move::ChargeShot));
 
         let mut sim = fighter();
-        sim.options.mobile_moves = 1 << Move::ChargeShot as u32;
         let mut host = FlatHost::default();
         sim.advance(&mut host, Input::idle(), 1. / 60.);
         let start = sim.position.x;
@@ -163,10 +161,12 @@ fn mobile_neutral_b_walks_on_an_independent_gait_and_sprint_stores_charge() {
 
 #[test]
 fn grounded_specials_are_mobile_by_default_but_contextual_a_is_not() {
-    assert_eq!(
-        Sim::new(Params::fixture(), Vec3::ZERO).options.mobile_moves,
-        Move::mobile_specials_mask()
-    );
+    let samus = libssbm::samus::Samus::fixture();
+    let mask = libssbm::behavior::Behavior::mobile_moves(&samus);
+    for m in [Move::ChargeShot, Move::Missile, Move::SuperMissile, Move::ScrewAttack, Move::Bomb] {
+        assert_ne!(mask & (1u64 << m as u32), 0, "{m:?} should be mobile");
+    }
+    assert_eq!(mask & (1u64 << Move::Jab as u32), 0, "contextual A should stay whole-body");
     for move_id in [
         Move::ChargeShot,
         Move::Missile,
@@ -217,7 +217,7 @@ fn spin_moves_are_not_gait_layered_but_side_b_always_is() {
         (Move::SuperMissile, 1.),
     ] {
         sim.current_move = Some(m);
-        assert!(sim.options.mobile_moves & (1u64 << m as u32) != 0, "{m:?} should still steer");
+        assert!(sim.behavior.mobile_moves() & (1u64 << m as u32) != 0, "{m:?} should still steer");
         assert_eq!(sim.gait_layer_weight(), expect, "{m:?}");
     }
     sim.current_move = Some(Move::Missile);

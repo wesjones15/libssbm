@@ -1,3 +1,6 @@
+/// Common fighter tuning shared by every character: locomotion, jump, air
+/// drift, gravity and smash timing. Special-move tuning lives in each fighter's
+/// behavior module (see `crate::samus::Specials`), not here.
 #[derive(Clone, Debug)]
 pub struct Params {
     pub walk_accel: f32,
@@ -32,15 +35,6 @@ pub struct Params {
     pub fall_blend_response: f32,
     pub air_friction: f32,
     pub fast_fall: f32,
-    pub charge_steps: u32,
-    pub charge_visual_min: f32,
-    pub charge_visual_max: f32,
-    pub charge_interval: u32,
-    pub missile_smash_window: u32,
-    pub missile_spawn_offset: f32,
-    pub bomb_spawn_offset: [f32; 3],
-    pub screw_velocity: f32,
-    pub bomb_velocity: f32,
     pub smash_threshold: f32,
     pub smash_window: u32,
 }
@@ -69,8 +63,6 @@ impl Params {
             .any(|v| !v.is_finite() || *v <= 0. || *v > 100.)
             || !(1..=10).contains(&self.jumps)
             || self.jump_squat > 60
-            || !(1..=1000).contains(&self.charge_steps)
-            || !(1..=1000).contains(&self.charge_interval)
             || self.smash_window > 60
             || self.smash_threshold > 1.
             || !self.fall_pose_threshold.is_finite()
@@ -115,15 +107,6 @@ impl Params {
             fall_blend_response: 0.1,
             air_friction: 0.01,
             fast_fall: 3.,
-            charge_steps: 10,
-            charge_visual_min: 0.5,
-            charge_visual_max: 2.,
-            charge_interval: 3,
-            missile_smash_window: 3,
-            missile_spawn_offset: 0.,
-            bomb_spawn_offset: [0.; 3],
-            screw_velocity: 3.,
-            bomb_velocity: 0.5,
             smash_threshold: 0.8,
             smash_window: 4,
         }
