@@ -113,12 +113,14 @@ pub const SAMUS: FighterAssets<'static> = FighterAssets {
 pub enum FighterKind {
     Samus = 0,
     Fox = 1,
+    Pikachu = 2,
 }
 impl FighterKind {
     pub fn from_u32(kind: u32) -> Option<Self> {
         match kind {
             0 => Some(Self::Samus),
             1 => Some(Self::Fox),
+            2 => Some(Self::Pikachu),
             _ => None,
         }
     }
@@ -126,14 +128,17 @@ impl FighterKind {
         match self {
             Self::Samus => "Samus",
             Self::Fox => "Fox",
+            Self::Pikachu => "Pikachu",
         }
     }
-    /// The fighter's asset profile, once defined. `Fox` is reserved for the
-    /// second fighter and returns `None` until its `FighterAssets` is filled in.
+    /// The fighter's asset profile, once defined. `Fox` and `Pikachu` are
+    /// reserved for the second/third fighters and return `None` until their
+    /// `FighterAssets` are filled in.
     pub fn assets(self) -> Option<&'static FighterAssets<'static>> {
         match self {
             Self::Samus => Some(&SAMUS),
             Self::Fox => None,
+            Self::Pikachu => None,
         }
     }
 }
