@@ -2043,6 +2043,43 @@ mod tests {
         Ok(())
     }
     #[test]
+    fn arrival_leaves_every_fighter_full_size_and_visible() -> libssbm_assets::Result<()> {
+        let dir = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../assets");
+        for kind in [0u32, 1u32, 2u32] {
+            let fighter = libssbm_assets::fighter::FighterKind::from_u32(kind).unwrap();
+            if !fighter.assets().unwrap().complete(&dir) {
+                eprintln!("SKIP: kind {kind} disc cache absent");
+                continue;
+            }
+            let cdir = std::ffi::CString::new(dir.to_str().unwrap()).unwrap();
+            let sim = unsafe { ssbm_sim_new_fighter(cdir.as_ptr(), V3::default(), kind) };
+            assert!(!sim.is_null(), "kind {kind} sim failed: {}", ERROR.with(|e| e.borrow().to_string_lossy().into_owned()));
+            assert_eq!(unsafe { ssbm_sim_begin_arrival(sim, cdir.as_ptr()) }, 1, "kind {kind} arrival: {}", ERROR.with(|e| e.borrow().to_string_lossy().into_owned()));
+            let mut host = HostTable { collide: None, event: None, user: std::ptr::null_mut() };
+            let pad = Pad { movement: V3::default(), aim: V3 { x: 0., y: 0., z: 1. }, buttons: 0, allowed: 0 };
+            for _ in 0..600 {
+                assert_ne!(unsafe { ssbm_sim_step(sim, &mut host, &pad, 1. / 60.) }, 0);
+            }
+            let flags = unsafe { ssbm_sim_rebirth_flags(sim) };
+            eprintln!("kind {kind}: rebirth_flags after 600 frames = {flags}");
+            assert_eq!(flags, 0, "kind {kind} arrival did not complete (flags={flags})");
+            let view = unsafe { ssbm_view_new(cdir.as_ptr(), kind, 0) };
+            assert!(!view.is_null(), "kind {kind} view failed");
+            assert_eq!(unsafe { ssbm_view_update(view, sim, 1. / 60.) }, 1, "kind {kind} view update: {}", ERROR.with(|e| e.borrow().to_string_lossy().into_owned()));
+            let mut count = 0u32;
+            let positions = unsafe { ssbm_view_positions(view, &mut count) };
+            assert!(count > 0, "kind {kind} view has no vertices");
+            let slice = unsafe { std::slice::from_raw_parts(positions, count as usize) };
+            let max_abs = slice.iter().map(|v| Vec3::from(*v).length()).fold(0f32, f32::max);
+            let max_y = slice.iter().map(|v| v.y.abs()).fold(0f32, f32::max);
+            eprintln!("kind {kind}: {count} vertices, max|pos| = {max_abs}, max|y| = {max_y}");
+            assert!(max_abs > 0.5, "kind {kind} model is flat/invisible after arrival (max|pos|={max_abs})");
+            unsafe { ssbm_view_free(view) };
+            unsafe { ssbm_sim_free(sim) };
+        }
+        Ok(())
+    }
+    #[test]
     fn every_disc_gfx_cue_resolves_a_real_posed_attachment() -> libssbm_assets::Result<()> {
         let dir = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../assets");
         if !libssbm_assets::complete(&dir) {
