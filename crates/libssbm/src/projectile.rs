@@ -117,7 +117,9 @@ impl Projectile {
                 continue;
             }
             if self.frame as f32 > self.params.life {
-                if self.params.kind == 1 {
+                if self.params.kind == 1 || self.params.max_bounces != 0 {
+                    // Missiles and bouncing fireballs simply expire (a despawn
+                    // puff), rather than detonating like a bomb.
                     self.finished = true;
                 } else {
                     self.impact();
