@@ -3,7 +3,7 @@
 use crate::{Result, animation::Animations, dat::Dat};
 use glam::Vec3;
 use libssbm::action::{ActionDef, Command, Hitbox, TimedCommand};
-use std::{collections::BTreeMap, path::Path};
+use std::{collections::{BTreeMap, HashSet}, path::Path};
 
 pub fn load(dir: &Path, animations: &Animations) -> Result<BTreeMap<String, ActionDef>> {
     load_for(dir, animations, &crate::fighter::SAMUS)
@@ -55,7 +55,8 @@ pub fn parse_for(
             continue;
         };
         let commands = match dat.ptr(at + 12)? {
-            Some(script) => script_commands(dat, script, clip.frames)?,
+            Some(script) => script_commands(dat, script, clip.frames)
+                .map_err(|e| format!("{name}: {e}"))?,
             None => Vec::new(),
         };
         result.insert(
@@ -100,8 +101,17 @@ fn decode_script(dat: &Dat, start: usize, horizon: f32, item: bool) -> Result<Ve
     let mut loops: Vec<(usize, u32)> = Vec::new();
     let mut calls = Vec::new();
     let mut result = Vec::new();
+    let mut seen = HashSet::new();
     for _ in 0..65536 {
         if frame > horizon + 1. {
+            return Ok(result);
+        }
+        // Looping actions (Run, Wait, ...) cycle via an AsynchronousTimer that
+        // wraps back to an earlier animation frame; their script is a `goto`
+        // loop with no SetTimerAnimation terminator. Once the interpreter
+        // returns to a (pc, frame) it has already visited, one full cycle has
+        // been flattened and the remaining commands are duplicates.
+        if !seen.insert((pc, frame as u32)) {
             return Ok(result);
         }
         let word = dat.u32(pc)?;
@@ -258,7 +268,10 @@ fn decode_script(dat: &Dat, start: usize, horizon: f32, item: bool) -> Result<Ve
         result.push(TimedCommand { frame, command });
         pc += count * 4;
     }
-    Err("fighter command execution budget exceeded".into())
+    Err(format!(
+        "fighter command execution budget exceeded at {start:#x}"
+    )
+    .into())
 }
 
 #[cfg(test)]
@@ -312,13 +325,16 @@ mod tests {
     }
     #[test]
     fn corrupt_control_flow_is_bounded() {
+        // A `goto` to itself never advances frame; the cycle detector truncates
+        // it rather than hanging or exhausting the interpreter budget.
         let data = bytes(&[7 << 26, 0]);
         let dat = Dat {
             data: &data,
             symbols: BTreeMap::new(),
             relocations: HashSet::from([4]),
         };
-        assert!(script_commands(&dat, 0, 30.).is_err());
+        assert!(script_commands(&dat, 0, 30.).is_ok());
+        // An undersized hitbox record runs off the end of the DAT.
         let data = bytes(&[11 << 26]);
         let dat = Dat {
             data: &data,

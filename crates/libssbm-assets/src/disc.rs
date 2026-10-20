@@ -140,7 +140,11 @@ impl Disc {
         Ok(out)
     }
     pub fn file(&mut self, name: &str) -> Result<Vec<u8>> {
-        let (offset, count) = self.files.get(name).copied().ok_or("disc file missing")?;
+        let (offset, count) = self
+            .files
+            .get(name)
+            .copied()
+            .ok_or_else(|| format!("disc file missing: {name}"))?;
         self.read(offset, count)
     }
 }

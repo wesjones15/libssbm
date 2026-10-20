@@ -114,12 +114,12 @@ pub const FOX: FighterAssets<'static> = FighterAssets {
         root: "ftDataFox",
     },
     animations: "PlFxAJ.dat",
+    // ftfox.c::ftFx_Init_CostumeStrings (ftFx_CostumeList order): Nr, Or, La, Gr.
     costumes: &[
         "PlFxNr.dat",
-        "PlFxPi.dat",
-        "PlFxBk.dat",
-        "PlFxGr.dat",
+        "PlFxOr.dat",
         "PlFxLa.dat",
+        "PlFxGr.dat",
     ],
     effects: Archive {
         file: "EfFxData.dat",

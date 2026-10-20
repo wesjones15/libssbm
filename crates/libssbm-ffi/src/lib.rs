@@ -1896,6 +1896,43 @@ mod tests {
         Ok(())
     }
     #[test]
+    fn fox_assets_load_and_sim_steps() -> libssbm_assets::Result<()> {
+        let dir = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../assets");
+        let fox = &libssbm_assets::fighter::FOX;
+        if !fox.complete(&dir) {
+            eprintln!("SKIP: Fox disc cache absent");
+            return Ok(());
+        }
+        // The exact load path ssbm_sim_new_fighter takes for FighterKind::Fox.
+        let params = libssbm_assets::params::load_common(&dir, fox)?;
+        let behavior: Box<dyn libssbm::behavior::Behavior> = Box::new(libssbm::fox::Fox::new(
+            libssbm_assets::params::load_fox_specials(&dir)?,
+        ));
+        let mut sim = Sim::with_behavior(params, behavior, Vec3::ZERO);
+        sim.defense.params = libssbm_assets::params::defense_for(&dir, fox)?;
+        sim.defense.health = sim.defense.params.maximum;
+        let rig = Rig::load_for(&dir, fox)?;
+        sim.motion.definitions = rig.animations.motion_definitions();
+        sim.action.definitions = libssbm_assets::action::load_for(&dir, &rig.animations, fox)?;
+        for (name, action) in &sim.action.definitions {
+            if let Some(motion) = sim.motion.definitions.get_mut(name) {
+                motion.looping |= action.looping;
+            }
+        }
+        let _audio =
+            libssbm_assets::audio::Mixer::new(libssbm_assets::audio::Bank::load_for(&dir, fox)?);
+        // Fire Fox's Blaster and step through startup + recovery.
+        let mut host = libssbm::sim::FlatHost { events: Vec::new() };
+        let mut input = Input::idle();
+        input.buttons = libssbm::sim::NEUTRAL_B;
+        for _ in 0..120 {
+            sim.advance(&mut host, input, 1. / 60.);
+        }
+        assert!(sim.position.is_finite());
+        assert!(!sim.motion.clip.is_empty());
+        Ok(())
+    }
+    #[test]
     fn every_disc_gfx_cue_resolves_a_real_posed_attachment() -> libssbm_assets::Result<()> {
         let dir = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../assets");
         if !libssbm_assets::complete(&dir) {
