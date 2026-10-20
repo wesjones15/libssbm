@@ -336,3 +336,40 @@ fn shared_attack_emitters_execute_their_source_dependencies() -> Result<()> {
     }
     Ok(())
 }
+#[test]
+fn fox_luigi_action_gfx_ids_resolve() -> Result<()> {
+    let dir = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../assets");
+    for (label, fighter) in [
+        ("fox", &libssbm_assets::fighter::FOX),
+        ("luigi", &libssbm_assets::fighter::LUIGI),
+    ] {
+        if !fighter.complete(&dir) {
+            eprintln!("{label}: SKIP cache absent");
+            continue;
+        }
+        let animations = libssbm_assets::animation::Animations::load_for(&dir, fighter)?;
+        let actions = libssbm_assets::action::load_for(&dir, &animations, fighter)?;
+        let mut ids = std::collections::BTreeSet::new();
+        for action in actions.values() {
+            for event in &action.commands {
+                if let libssbm::action::Command::Raw { opcode: 10, words } = &event.command {
+                    ids.insert(words[1] >> 16);
+                }
+            }
+        }
+        let mut unresolved = Vec::new();
+        for &id in &ids {
+            if matches!(
+                libssbm::effect::resolve(id),
+                libssbm::effect::Target::Unknown
+            ) {
+                unresolved.push(id);
+            }
+        }
+        assert!(
+            unresolved.is_empty(),
+            "{label}: unresolved gfx ids {unresolved:?}"
+        );
+    }
+    Ok(())
+}

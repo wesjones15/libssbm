@@ -29,8 +29,18 @@ impl Bank {
             textures: vec![],
             mapping: vec![],
         };
-        for samus in [false, true] {
-            let archive = Effects::load(dir, samus)?;
+        // Every fighter's own effect bank, not just Samus's: a melee character's
+        // ground/move VFX lives in its EfXxData.dat alongside the common EfCoData
+        // bank. Emitter ids are bank-relative (common 0..591, Samus 2000..,
+        // Fox 3000.., Luigi 18000..), so the four banks merge without collisions.
+        let archives = [
+            libssbm_assets::fighter::COMMON_EFFECTS,
+            libssbm_assets::fighter::SAMUS.effects,
+            libssbm_assets::fighter::FOX.effects,
+            libssbm_assets::fighter::LUIGI.effects,
+        ];
+        for archive in archives {
+            let archive = Effects::load_archive(dir, archive)?;
             let base = bank.mapping.len() as u16;
             for group in archive.textures {
                 let mut palettes = Vec::new();

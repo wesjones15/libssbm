@@ -16,12 +16,23 @@ pub fn resolve(id: u32) -> Target {
         1001 => Particle(12),
         1002 => Particle(20),
         1004 => Model(8),
+        1007 => Particle(66), // efasync.c 0x3EF/0x3F0: ground dust
+        1008 => Particle(66),
         1011 => Particle(11),
+        1012 => Particle(72), // efasync.c 0x3F4: ground dust
+        1013 => Model(16),
+        1014 => Model(17),
         1015 => Model(18),
         1016 => Model(19),
+        1017 => Model(20),
+        1018 => Model(21),
+        1019 => Model(22),
+        1020 => Model(23),
         1021 => Model(3),
         1022 => Particle(263),
         1023 => Model(5),
+        1024 => Particle(90), // efasync.c 0x400/0x401: ground dust
+        1025 => Particle(90),
         1026 => Particle(89),
         1027 => Particle(94),
         1028 => Model(24),
@@ -30,9 +41,14 @@ pub fn resolve(id: u32) -> Target {
         1036 => Particle(25),
         1038 => Particle(67),
         1041 => Particle(75),
+        1043 => Particle(55),
+        1058 => Particle(91),
+        1059 => Model(1),
         1060 => Model(2),
+        1065 => Particle(206),
         1067 => Model(25), // efasync.c 0x42B: standard blast-zone KO
         1068 => Model(26), // alternate KO presentation
+        1080 => Model(34),
         1086 => Model(36),
         1151 => Particle(2004),
         1152 => Particle(2002),
@@ -45,6 +61,7 @@ pub fn resolve(id: u32) -> Target {
         1159 => Model(2002),
         // ftCo_8009F834 routes this to Camera_RequestQuake, before efsync.
         1299 => CameraShake(2),
+        1300 => Particle(3), // iteffect.c 0x514: item effect 3
         1301 => Particle(4),
         _ => Unknown,
     }
