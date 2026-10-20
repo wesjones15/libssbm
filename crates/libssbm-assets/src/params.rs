@@ -300,3 +300,20 @@ pub fn load_fox_specials(dir: &Path) -> Result<libssbm::fox::Specials> {
         reflector_frames: fighter.f32(fx + 0x98)?.round() as u32,
     })
 }
+
+/// Luigi's `ext_attr` special tuning (ftLuigiAttributes; the pointer is
+/// `ftDataLuigi + 4`, same layout as the other special attributes). Fireball
+/// speed lives in the item's own special attributes (itLuigiFireballAttributes).
+pub fn load_luigi_specials(dir: &Path) -> Result<libssbm::luigi::Specials> {
+    let profile = &crate::fighter::LUIGI;
+    profile.required()?;
+    let bytes = std::fs::read(dir.join(profile.data.file))?;
+    let fighter = Dat::parse(&bytes)?;
+    let root = fighter.root(profile.data.root)?;
+    let lg = fighter.required_ptr(root + 4)?;
+    Ok(libssbm::luigi::Specials {
+        missile_velocity: fighter.f32(lg + 0x24)?,
+        super_jump_velocity: fighter.f32(lg + 0x6c)?,
+        cyclone_momentum: fighter.f32(lg + 0x74)?,
+    })
+}

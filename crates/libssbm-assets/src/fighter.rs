@@ -34,6 +34,12 @@ pub struct FighterAssets<'a> {
     /// select screen. gm_1601.c::gm_80168C5C maps CharacterKind -> sound; the
     /// CKind_Samus (= 0x10) case selects 0x7C84E in the nr_name.ssm bank.
     pub announce_sound: u32,
+    /// Canonical clip-name aliases (canonical -> actual). The sim's generic
+    /// clip names (Wait, KneeBend, AttackS4S, ...) resolve to the fighter's
+    /// actual animation clip names, which differ per fighter (e.g. Fox's idle
+    /// is "Wait1", his side smash "AttackS4", and his Blaster is split into
+    /// SpecialNStart/Loop/End).
+    pub clip_aliases: &'a [(&'a str, &'a str)],
 }
 pub const COMMON_DATA: Archive<'static> = Archive {
     file: "PlCo.dat",
@@ -105,6 +111,7 @@ pub const SAMUS: FighterAssets<'static> = FighterAssets {
         grid_joint: 27,
     },
     announce_sound: 0x7C84E,
+    clip_aliases: &[],
 };
 /// Fox's asset profile. Blaster/Illusion/Fire Fox/Reflector article layouts and
 /// the CSS portrait indices are TODO until Fox's disc assets are exercised.
@@ -151,6 +158,64 @@ pub const FOX: FighterAssets<'static> = FighterAssets {
         grid_joint: 23, // ICONJOINT_FOX (mn/types.h)
     },
     announce_sound: 0x7C835,
+    clip_aliases: &[
+        ("Wait", "Wait1"),
+        ("AttackS4S", "AttackS4"),
+        ("SpecialN", "SpecialNStart"),
+        ("SpecialAirN", "SpecialAirNStart"),
+        ("SpecialLw", "SpecialLwStart"),
+        ("SpecialAirLw", "SpecialAirLwStart"),
+    ],
+};
+/// Luigi's asset profile. Fireball is a single-state article; Green Missile /
+/// Super Jump Punch / Luigi Cyclone use the fighter's ext_attr tuning.
+pub const LUIGI: FighterAssets<'static> = FighterAssets {
+    data: Archive {
+        file: "PlLg.dat",
+        root: "ftDataLuigi",
+    },
+    animations: "PlLgAJ.dat",
+    // ftluigi.c::ftLg_Init_CostumeStrings (ftLg_CostumeList order): Nr, Wh, Aq, Pi.
+    costumes: &[
+        "PlLgNr.dat",
+        "PlLgWh.dat",
+        "PlLgAq.dat",
+        "PlLgPi.dat",
+    ],
+    effects: Archive {
+        file: "EfLgData.dat",
+        root: "effLuigiDataTable",
+    },
+    samples: &[
+        "audio/us/luigi.ssm",
+        "audio/us/main.ssm",
+        "audio/us/nr_name.ssm",
+    ],
+    sequences: "audio/us/smash2.sem",
+    // Luigi's one article: the Fireball (It_Kind_Luigi_Fire). itluigifireball.c
+    // has a single ItemStateTable entry; itLuigiFireballAttributes has 4 words.
+    articles: &[ArticleLayout {
+        states: 1,
+        special_words: 4,
+    }],
+    common_index: 17, // Ft_Kind_Luigi (ft/forward.h)
+    morph_visibility: None,
+    upper_body_root: None,
+    portrait: crate::portrait::Portrait {
+        archive: Archive {
+            file: "MnSlChr.usd",
+            root: "MnSelectChrDataTable",
+        },
+        joint: 51,  // shared selected-photo material joint
+        frame: 7,   // ICONHUD_LUIGI (mn/forward.h)
+        grid_joint: 17, // ICONJOINT_LUIGI (mn/types.h)
+    },
+    announce_sound: 0x7C844, // CKind_Luigi -> gm_1601.c::gm_80168C5C case 7
+    clip_aliases: &[
+        ("Wait", "Wait1"),
+        ("AttackHi4", "AttackS4Hi"),
+        ("AttackLw4", "AttackS4Lw"),
+    ],
 };
 /// The FFI's fighter selector. Adding a fighter means adding a variant here, a
 /// `FighterAssets` definition, and returning it from [`FighterKind::assets`].
@@ -159,14 +224,14 @@ pub const FOX: FighterAssets<'static> = FighterAssets {
 pub enum FighterKind {
     Samus = 0,
     Fox = 1,
-    Pikachu = 2,
+    Luigi = 2,
 }
 impl FighterKind {
     pub fn from_u32(kind: u32) -> Option<Self> {
         match kind {
             0 => Some(Self::Samus),
             1 => Some(Self::Fox),
-            2 => Some(Self::Pikachu),
+            2 => Some(Self::Luigi),
             _ => None,
         }
     }
@@ -174,21 +239,32 @@ impl FighterKind {
         match self {
             Self::Samus => "Samus",
             Self::Fox => "Fox",
-            Self::Pikachu => "Pikachu",
+            Self::Luigi => "Luigi",
         }
     }
-    /// The fighter's asset profile, once defined. `Fox` and `Pikachu` are
-    /// reserved for the second/third fighters and return `None` until their
-    /// `FighterAssets` are filled in.
+    /// The fighter's asset profile. Every variant now resolves to a defined
+    /// `FighterAssets`.
     pub fn assets(self) -> Option<&'static FighterAssets<'static>> {
         match self {
             Self::Samus => Some(&SAMUS),
             Self::Fox => Some(&FOX),
-            Self::Pikachu => None,
+            Self::Luigi => Some(&LUIGI),
         }
     }
 }
 impl<'a> FighterAssets<'a> {
+    /// Maps a disc clip name to the canonical name the sim uses, if this
+    /// fighter aliases it (e.g. "Wait1" -> "Wait"). Unaliased names pass through.
+    pub fn canonical_clip<'n>(&self, actual: &'n str) -> &'n str
+    where
+        'a: 'n,
+    {
+        self.clip_aliases
+            .iter()
+            .find(|(_, name)| *name == actual)
+            .map(|(canonical, _)| *canonical)
+            .unwrap_or(actual)
+    }
     /// Exact dependencies for first-run extraction and old-cache migration.
     /// Validate before using this definition as either a read or a write path.
     pub fn required(&self) -> Result<Vec<&'a str>> {

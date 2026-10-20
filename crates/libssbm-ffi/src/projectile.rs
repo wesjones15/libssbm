@@ -131,6 +131,12 @@ pub unsafe extern "C" fn ssbm_projectile_new(
                     p.life = a[0];
                     p.speed = libssbm_assets::params::load_fox_specials(dir)?.blaster_speed;
                 }
+                // Luigi's Fireball: speed and life from the item's special
+                // attributes (itLuigiFireballAttributes x0/x4).
+                2 => {
+                    p.speed = a[0];
+                    p.life = a[1];
+                }
                 _ => (),
             }
             // Expiration is encoded by the source item's var2 command, rather

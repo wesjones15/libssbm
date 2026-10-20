@@ -470,9 +470,12 @@ pub unsafe extern "C" fn ssbm_sim_new_fighter(dir: *const c_char, pos: V3, kind:
                         libssbm_assets::params::load_fox_specials(dir)?,
                     )),
                 ),
-                libssbm_assets::fighter::FighterKind::Pikachu => {
-                    return Err(format!("fighter kind {kind} (Pikachu) behavior not implemented").into());
-                }
+                libssbm_assets::fighter::FighterKind::Luigi => (
+                    libssbm_assets::params::load_common(dir, fighter)?,
+                    Box::new(libssbm::luigi::Luigi::new(
+                        libssbm_assets::params::load_luigi_specials(dir)?,
+                    )),
+                ),
             };
             let mut sim = Sim::with_behavior(params, behavior, pos.into());
             sim.defense.params = libssbm_assets::params::defense_for(dir, fighter)?;
@@ -1930,6 +1933,57 @@ mod tests {
         }
         assert!(sim.position.is_finite());
         assert!(!sim.motion.clip.is_empty());
+        Ok(())
+    }
+    #[test]
+    fn luigi_assets_load_and_sim_steps() -> libssbm_assets::Result<()> {
+        let dir = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../assets");
+        let luigi = &libssbm_assets::fighter::LUIGI;
+        if !luigi.complete(&dir) {
+            eprintln!("SKIP: Luigi disc cache absent");
+            return Ok(());
+        }
+        let params = libssbm_assets::params::load_common(&dir, luigi)?;
+        let behavior: Box<dyn libssbm::behavior::Behavior> = Box::new(libssbm::luigi::Luigi::new(
+            libssbm_assets::params::load_luigi_specials(&dir)?,
+        ));
+        let mut sim = Sim::with_behavior(params, behavior, Vec3::ZERO);
+        sim.defense.params = libssbm_assets::params::defense_for(&dir, luigi)?;
+        sim.defense.health = sim.defense.params.maximum;
+        let rig = Rig::load_for(&dir, luigi)?;
+        sim.motion.definitions = rig.animations.motion_definitions();
+        sim.action.definitions = libssbm_assets::action::load_for(&dir, &rig.animations, luigi)?;
+        for (name, action) in &sim.action.definitions {
+            if let Some(motion) = sim.motion.definitions.get_mut(name) {
+                motion.looping |= action.looping;
+            }
+        }
+        let _audio =
+            libssbm_assets::audio::Mixer::new(libssbm_assets::audio::Bank::load_for(&dir, luigi)?);
+        let mut host = libssbm::sim::FlatHost { events: Vec::new() };
+        let mut input = Input::idle();
+        input.buttons = libssbm::sim::NEUTRAL_B;
+        for _ in 0..120 {
+            sim.advance(&mut host, input, 1. / 60.);
+        }
+        assert!(sim.position.is_finite());
+        assert!(!sim.motion.clip.is_empty());
+        Ok(())
+    }
+    #[test]
+    fn non_samus_views_have_expected_clips_and_visibility() -> libssbm_assets::Result<()> {
+        let dir = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../assets");
+        for fighter in [&libssbm_assets::fighter::FOX, &libssbm_assets::fighter::LUIGI] {
+            if !fighter.complete(&dir) {
+                eprintln!("SKIP: {} disc cache absent", fighter.data.root);
+                continue;
+            }
+            let p = libssbm_assets::presentation::Presentation::load_for(&dir, 0, fighter)?;
+            assert!(p.animations.clips.contains_key("Wait"), "{} has no canonical Wait clip", fighter.data.root);
+            assert!(p.model.batches.len() > 0, "no model batches");
+            let visible = (0..p.model.batches.len()).any(|i| p.visible(i));
+            assert!(visible, "no visible batches for {}", fighter.data.root);
+        }
         Ok(())
     }
     #[test]

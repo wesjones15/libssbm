@@ -153,6 +153,17 @@ impl Track {
         })
     }
 }
+/// Maps a disc clip name to the canonical name the sim uses via the fighter's
+/// alias list (e.g. "Wait1" -> "Wait"). Unaliased names pass through unchanged.
+pub(crate) fn canonical<'n>(
+    aliases: &[(&str, &str)],
+    name: &'n str,
+) -> std::borrow::Cow<'n, str> {
+    match aliases.iter().find(|(_, actual)| *actual == name) {
+        Some((canonical, _)) => std::borrow::Cow::Owned((*canonical).to_owned()),
+        None => std::borrow::Cow::Borrowed(name),
+    }
+}
 impl Animations {
     /// MatAnimJoint -> per-DObj material AObj tracks. Material channel definitions
     /// and application are specified by mobj.h/HSD_MObjUpdateFunc.
@@ -389,7 +400,7 @@ impl Animations {
     }
     pub fn load_for(dir: &Path, fighter: &crate::fighter::FighterAssets<'_>) -> Result<Self> {
         fighter.required()?;
-        let mut animations = Self::parse(&std::fs::read(dir.join(fighter.animations))?)?;
+        let mut animations = Self::parse(&std::fs::read(dir.join(fighter.animations))?, fighter.clip_aliases)?;
         // Fighter_ChangeMotionState / ftAnim_8006E9B4 select TransN from the
         // common bone map and extract it only for flagged motion descriptors.
         let bytes = std::fs::read(dir.join(fighter.data.file))?;
@@ -424,14 +435,16 @@ impl Animations {
                 .split("_ACTION_")
                 .nth(1)
                 .and_then(|s| s.strip_suffix("_figatree"))
-                && let Some(clip) = animations.clips.get_mut(name)
+                && let Some(clip) = animations
+                    .clips
+                    .get_mut(canonical(fighter.clip_aliases, name).as_ref())
             {
                 clip.motion_joint = Some(joint);
             }
         }
         Ok(animations)
     }
-    pub fn parse(bytes: &[u8]) -> Result<Self> {
+    pub fn parse(bytes: &[u8], aliases: &[(&str, &str)]) -> Result<Self> {
         let mut at = 0;
         let mut clips = BTreeMap::new();
         while at + 32 <= bytes.len() {
@@ -455,6 +468,7 @@ impl Animations {
                 else {
                     continue;
                 };
+                let name = canonical(aliases, name);
                 let frames = d.f32(root + 8)?;
                 if !(0. ..=100000.).contains(&frames) {
                     return Err("bad clip length".into());
@@ -485,7 +499,7 @@ impl Animations {
                     }
                 }
                 clips.insert(
-                    name.to_owned(),
+                    name.into_owned(),
                     Clip {
                         motion_joint: None,
                         frames,
@@ -497,7 +511,7 @@ impl Animations {
             at = (at + size + 31) & !31;
         }
         if clips.is_empty() {
-            return Err("no Samus animation clips".into());
+            return Err("no fighter animation clips".into());
         }
         Ok(Self { clips })
     }

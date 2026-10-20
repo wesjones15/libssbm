@@ -15,16 +15,17 @@ pub fn load_for(
 ) -> Result<BTreeMap<String, ActionDef>> {
     fighter.required()?;
     let bytes = std::fs::read(dir.join(fighter.data.file))?;
-    parse_for(&Dat::parse(&bytes)?, animations, fighter.data.root)
+    parse_for(&Dat::parse(&bytes)?, animations, fighter.data.root, fighter.clip_aliases)
 }
 
 pub fn parse(dat: &Dat, animations: &Animations) -> Result<BTreeMap<String, ActionDef>> {
-    parse_for(dat, animations, crate::fighter::SAMUS.data.root)
+    parse_for(dat, animations, crate::fighter::SAMUS.data.root, &[])
 }
 pub fn parse_for(
     dat: &Dat,
     animations: &Animations,
     root: &str,
+    aliases: &[(&str, &str)],
 ) -> Result<BTreeMap<String, ActionDef>> {
     let root = dat.root(root)?;
     let start = dat.required_ptr(root + 0xc)?;
@@ -51,7 +52,8 @@ pub fn parse_for(
         else {
             continue;
         };
-        let Some(clip) = animations.clips.get(name) else {
+        let name = crate::animation::canonical(aliases, name);
+        let Some(clip) = animations.clips.get(name.as_ref()) else {
             continue;
         };
         let commands = match dat.ptr(at + 12)? {
@@ -60,7 +62,7 @@ pub fn parse_for(
             None => Vec::new(),
         };
         result.insert(
-            name.into(),
+            name.into_owned(),
             ActionDef {
                 frames: clip.frames,
                 looping: dat.u32(at + 16)? & 0x40000000 != 0,

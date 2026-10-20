@@ -6,6 +6,7 @@ pub mod defense;
 pub mod effect;
 pub mod entry;
 pub mod fox;
+pub mod luigi;
 pub mod motion;
 pub mod params;
 pub mod particle;
