@@ -34,7 +34,17 @@ impl Article {
         let table = d.required_ptr(d.root(fighter.data.root)? + 0x48)?;
         let article = d.required_ptr(table + kind as usize * 4)?;
         let desc = d.required_ptr(article + 16)?;
-        let mut model = Model::from_joint(&d, d.required_ptr(desc)?)?;
+        // Effect-only articles (Pikachu's travelling Thunder Jolt) have a null
+        // model joint: their visual is a particle effect spawned by the script.
+        let mut model = match d.ptr(desc)? {
+            Some(joint) => Model::from_joint(&d, joint)?,
+            None => Model {
+                joints: Vec::new(),
+                batches: Vec::new(),
+                normal_visible: Vec::new(),
+                ball_visible: Vec::new(),
+            },
+        };
         let animation = if let Some(array) = d.ptr(article + 12)? {
             d.ptr(array + state as usize * 16)?
         } else {

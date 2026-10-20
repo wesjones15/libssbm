@@ -2,7 +2,7 @@ fn main() -> libssbm_assets::Result<()> {
     let mut args = std::env::args_os().skip(1);
     let disc = args
         .next()
-        .ok_or("usage: ssbm-extract <disc.ciso> <assets-folder> [samus|fox|luigi]")?;
+        .ok_or("usage: ssbm-extract <disc.ciso> <assets-folder> [samus|fox|luigi|pikachu]")?;
     let out = args.next().ok_or("missing assets-folder")?;
     let kind = args
         .next()
@@ -12,6 +12,7 @@ fn main() -> libssbm_assets::Result<()> {
         "samus" | "Samus" => &libssbm_assets::fighter::SAMUS,
         "fox" | "Fox" => &libssbm_assets::fighter::FOX,
         "luigi" | "Luigi" => &libssbm_assets::fighter::LUIGI,
+        "pikachu" | "Pikachu" => &libssbm_assets::fighter::PIKACHU,
         other => return Err(format!("unknown fighter {other}").into()),
     };
     libssbm_assets::disc::extract_for(

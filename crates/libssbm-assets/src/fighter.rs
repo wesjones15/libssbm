@@ -217,6 +217,51 @@ pub const LUIGI: FighterAssets<'static> = FighterAssets {
         ("AttackLw4", "AttackS4Lw"),
     ],
 };
+/// Pikachu's asset profile. Articles follow ftDataPikachu.x48_items order
+/// (ft/types.h item table): Thunder, Thunder Jolt (travelling orb) and the
+/// ground-crawling Thunder Jolt. ftpikachu.c::ftPk_Init_CostumeStrings order:
+/// Nr, Re, Bu, Gr.
+pub const PIKACHU: FighterAssets<'static> = FighterAssets {
+    data: Archive {
+        file: "PlPk.dat",
+        root: "ftDataPikachu",
+    },
+    animations: "PlPkAJ.dat",
+    costumes: &["PlPkNr.dat", "PlPkRe.dat", "PlPkBu.dat", "PlPkGr.dat"],
+    effects: Archive {
+        file: "EfPkData.dat",
+        root: "effPikachuDataTable",
+    },
+    samples: &[
+        "audio/us/pikachu.ssm",
+        "audio/us/main.ssm",
+        "audio/us/nr_name.ssm",
+    ],
+    sequences: "audio/us/smash2.sem",
+    // Descriptor-array lengths verified against the disc (the state arrays
+    // abut the next article header): Thunder 1 state (itPikachuthunderAttributes,
+    // 3 words), Thunder Jolt 2 (itPikachutJoltGroundAttributes, 4 words), the
+    // ground-crawling Jolt 1 (no special attributes).
+    articles: &[
+        ArticleLayout { states: 1, special_words: 3 },
+        ArticleLayout { states: 2, special_words: 4 },
+        ArticleLayout { states: 1, special_words: 0 },
+    ],
+    common_index: 12, // Ft_Kind_Pikachu (ft/forward.h)
+    morph_visibility: None,
+    upper_body_root: None,
+    portrait: crate::portrait::Portrait {
+        archive: Archive {
+            file: "MnSlChr.usd",
+            root: "MnSelectChrDataTable",
+        },
+        joint: 51,
+        frame: 13,       // ICONHUD_PIKACHU (mn/forward.h)
+        grid_joint: 30,  // ICONJOINT_PIKACHU (mn/types.h)
+    },
+    announce_sound: 0x7C84D, // CKind_Pikachu -> gm_1601.c::gm_80168C5C case 13
+    clip_aliases: &[],
+};
 /// The FFI's fighter selector. Adding a fighter means adding a variant here, a
 /// `FighterAssets` definition, and returning it from [`FighterKind::assets`].
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -225,6 +270,7 @@ pub enum FighterKind {
     Samus = 0,
     Fox = 1,
     Luigi = 2,
+    Pikachu = 3,
 }
 impl FighterKind {
     pub fn from_u32(kind: u32) -> Option<Self> {
@@ -232,6 +278,7 @@ impl FighterKind {
             0 => Some(Self::Samus),
             1 => Some(Self::Fox),
             2 => Some(Self::Luigi),
+            3 => Some(Self::Pikachu),
             _ => None,
         }
     }
@@ -240,6 +287,7 @@ impl FighterKind {
             Self::Samus => "Samus",
             Self::Fox => "Fox",
             Self::Luigi => "Luigi",
+            Self::Pikachu => "Pikachu",
         }
     }
     /// The fighter's asset profile. Every variant now resolves to a defined
@@ -249,6 +297,7 @@ impl FighterKind {
             Self::Samus => Some(&SAMUS),
             Self::Fox => Some(&FOX),
             Self::Luigi => Some(&LUIGI),
+            Self::Pikachu => Some(&PIKACHU),
         }
     }
 }
