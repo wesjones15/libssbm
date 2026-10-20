@@ -15,6 +15,8 @@ fn main() -> libssbm_assets::Result<()> {
         "pikachu" | "Pikachu" => &libssbm_assets::fighter::PIKACHU,
         "captain" | "Captain" => &libssbm_assets::fighter::CAPTAIN,
         "link" | "Link" => &libssbm_assets::fighter::LINK,
+        "yoshi" | "Yoshi" => &libssbm_assets::fighter::YOSHI,
+        "donkey" | "Donkey" | "dk" => &libssbm_assets::fighter::DONKEY,
         other => return Err(format!("unknown fighter {other}").into()),
     };
     libssbm_assets::disc::extract_for(

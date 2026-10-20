@@ -363,6 +363,111 @@ pub const LINK: FighterAssets<'static> = FighterAssets {
         ("SpecialAirS", "SpecialAirS1"),
     ],
 };
+/// Yoshi's asset profile. Egg Throw spawns the thrown egg article; Egg Lay and
+/// Yoshi Bomb are body moves (their articles are spawned by the disc action
+/// script, not `ssbm_article_new`). ftyoshi.c::ftYs_Init_CostumeStrings order:
+/// Nr, Re, Bu, Ye, Pi, Aq.
+pub const YOSHI: FighterAssets<'static> = FighterAssets {
+    data: Archive {
+        file: "PlYs.dat",
+        root: "ftDataYoshi",
+    },
+    animations: "PlYsAJ.dat",
+    costumes: &[
+        "PlYsNr.dat",
+        "PlYsRe.dat",
+        "PlYsBu.dat",
+        "PlYsYe.dat",
+        "PlYsPi.dat",
+        "PlYsAq.dat",
+    ],
+    effects: Archive {
+        file: "EfYsData.dat",
+        root: "effYoshiDataTable",
+    },
+    samples: &[
+        "audio/us/yoshi.ssm",
+        "audio/us/main.ssm",
+        "audio/us/nr_name.ssm",
+    ],
+    sequences: "audio/us/smash2.sem",
+    // Item table (ftDataYoshi.x48_items): Egg Throw, Star, Egg Lay. Special-word
+    // counts follow itCommonItems.h (itYoshiEggThrowAttributes 2 words;
+    // itYoshiEggLay_DatAttrs 12 words; the star carries none).
+    articles: &[
+        ArticleLayout { states: 1, special_words: 2 },
+        ArticleLayout { states: 1, special_words: 0 },
+        ArticleLayout { states: 1, special_words: 12 },
+    ],
+    common_index: 14, // Ft_Kind_Yoshi (ft/forward.h)
+    morph_visibility: None,
+    upper_body_root: None,
+    portrait: crate::portrait::Portrait {
+        archive: Archive {
+            file: "MnSlChr.usd",
+            root: "MnSelectChrDataTable",
+        },
+        joint: 51,
+        frame: 17,       // ICONHUD_YOSHI (mn/forward.h)
+        grid_joint: 20,  // ICONJOINT_YOSHI (mn/types.h)
+    },
+    announce_sound: 0x7C84F, // CKind_Yoshi -> gm_1601.c::gm_80168C5C case 17
+    // Egg Lay and Egg Roll use the first of their multi-stage clips.
+    clip_aliases: &[
+        ("SpecialN", "SpecialN1"),
+        ("SpecialAirN", "SpecialAirN1"),
+        ("SpecialS", "SpecialSStart"),
+        ("SpecialAirS", "SpecialAirSStart"),
+    ],
+};
+/// Donkey Kong's asset profile. Every special is a body move, so `articles` is
+/// empty. ftdonkey.c::ftDk_Init_CostumeStrings order: Nr, Bk, Re, Bu, Gr.
+pub const DONKEY: FighterAssets<'static> = FighterAssets {
+    data: Archive {
+        file: "PlDk.dat",
+        root: "ftDataDonkey",
+    },
+    animations: "PlDkAJ.dat",
+    costumes: &[
+        "PlDkNr.dat",
+        "PlDkBk.dat",
+        "PlDkRe.dat",
+        "PlDkBu.dat",
+        "PlDkGr.dat",
+    ],
+    effects: Archive {
+        file: "EfDkData.dat",
+        root: "effDonkeyDataTable",
+    },
+    samples: &[
+        "audio/us/dk.ssm",
+        "audio/us/main.ssm",
+        "audio/us/nr_name.ssm",
+    ],
+    sequences: "audio/us/smash2.sem",
+    articles: &[],
+    common_index: 3, // Ft_Kind_Donkey (ft/forward.h)
+    morph_visibility: None,
+    upper_body_root: None,
+    portrait: crate::portrait::Portrait {
+        archive: Archive {
+            file: "MnSlChr.usd",
+            root: "MnSelectChrDataTable",
+        },
+        joint: 51,
+        frame: 1,        // ICONHUD_DONKEY (mn/forward.h)
+        grid_joint: 21,  // ICONJOINT_DONKEY (mn/types.h)
+    },
+    announce_sound: 0x7C831, // CKind_Donkey -> gm_1601.c::gm_80168C5C case 1
+    // DK's idle/walk are the "heavy" variants; Hand Slap is Start/Loop/End.
+    clip_aliases: &[
+        ("Wait", "HeavyWait"),
+        ("WalkSlow", "HeavyWalkSlow"),
+        ("WalkMiddle", "HeavyWalkMiddle"),
+        ("WalkFast", "HeavyWalkFast"),
+        ("SpecialLw", "SpecialLwStart"),
+    ],
+};
 /// The FFI's fighter selector. Adding a fighter means adding a variant here, a
 /// `FighterAssets` definition, and returning it from [`FighterKind::assets`].
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -374,6 +479,8 @@ pub enum FighterKind {
     Pikachu = 3,
     Captain = 4,
     Link = 5,
+    Yoshi = 6,
+    Donkey = 7,
 }
 impl FighterKind {
     pub fn from_u32(kind: u32) -> Option<Self> {
@@ -384,6 +491,8 @@ impl FighterKind {
             3 => Some(Self::Pikachu),
             4 => Some(Self::Captain),
             5 => Some(Self::Link),
+            6 => Some(Self::Yoshi),
+            7 => Some(Self::Donkey),
             _ => None,
         }
     }
@@ -395,6 +504,8 @@ impl FighterKind {
             Self::Pikachu => "Pikachu",
             Self::Captain => "Captain",
             Self::Link => "Link",
+            Self::Yoshi => "Yoshi",
+            Self::Donkey => "Donkey",
         }
     }
     /// The fighter's asset profile. Every variant now resolves to a defined
@@ -407,6 +518,8 @@ impl FighterKind {
             Self::Pikachu => Some(&PIKACHU),
             Self::Captain => Some(&CAPTAIN),
             Self::Link => Some(&LINK),
+            Self::Yoshi => Some(&YOSHI),
+            Self::Donkey => Some(&DONKEY),
         }
     }
 }

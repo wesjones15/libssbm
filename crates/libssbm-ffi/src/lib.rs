@@ -494,6 +494,18 @@ pub unsafe extern "C" fn ssbm_sim_new_fighter(dir: *const c_char, pos: V3, kind:
                         libssbm_assets::params::load_link_specials(dir)?,
                     )),
                 ),
+                libssbm_assets::fighter::FighterKind::Yoshi => (
+                    libssbm_assets::params::load_common(dir, fighter)?,
+                    Box::new(libssbm::yoshi::Yoshi::new(
+                        libssbm_assets::params::load_yoshi_specials(dir)?,
+                    )),
+                ),
+                libssbm_assets::fighter::FighterKind::Donkey => (
+                    libssbm_assets::params::load_common(dir, fighter)?,
+                    Box::new(libssbm::donkey::Donkey::new(
+                        libssbm_assets::params::load_donkey_specials(dir)?,
+                    )),
+                ),
             };
             let mut sim = Sim::with_behavior(params, behavior, pos.into());
             sim.defense.params = libssbm_assets::params::defense_for(dir, fighter)?;
@@ -2043,6 +2055,33 @@ mod tests {
             for _ in 0..120 {
                 assert_ne!(unsafe { ssbm_sim_step(sim, &mut host, &pad, 1. / 60.) }, 0, "kind {kind}: {}", ERROR.with(|e| e.borrow().to_string_lossy().into_owned()));
             }
+            let view = unsafe { ssbm_view_new(cdir.as_ptr(), kind, 0) };
+            assert!(!view.is_null(), "kind {kind} view failed: {}", ERROR.with(|e| e.borrow().to_string_lossy().into_owned()));
+            assert_eq!(unsafe { ssbm_view_update(view, sim, 1. / 60.) }, 1, "kind {kind} view update: {}", ERROR.with(|e| e.borrow().to_string_lossy().into_owned()));
+            unsafe { ssbm_view_free(view) };
+            unsafe { ssbm_sim_free(sim) };
+        }
+        Ok(())
+    }
+    #[test]
+    fn yoshi_and_donkey_assets_load_and_sim_steps() -> libssbm_assets::Result<()> {
+        let dir = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../assets");
+        for kind in [6u32, 7u32] {
+            let fighter = libssbm_assets::fighter::FighterKind::from_u32(kind).unwrap();
+            let profile = fighter.assets().unwrap();
+            if !profile.complete(&dir) {
+                eprintln!("SKIP: {kind} disc cache absent");
+                continue;
+            }
+            let cdir = std::ffi::CString::new(dir.to_str().unwrap()).unwrap();
+            let sim = unsafe { ssbm_sim_new_fighter(cdir.as_ptr(), V3::default(), kind) };
+            assert!(!sim.is_null(), "kind {kind} sim failed: {}", ERROR.with(|e| e.borrow().to_string_lossy().into_owned()));
+            let mut host = HostTable { collide: None, event: None, user: std::ptr::null_mut() };
+            let pad = Pad { movement: V3::default(), aim: V3 { x: 0., y: 0., z: 1. }, buttons: 0, allowed: 0x1f };
+            for _ in 0..120 {
+                assert_ne!(unsafe { ssbm_sim_step(sim, &mut host, &pad, 1. / 60.) }, 0, "kind {kind}: {}", ERROR.with(|e| e.borrow().to_string_lossy().into_owned()));
+            }
+            assert_eq!(unsafe { ssbm_sim_begin_arrival(sim, cdir.as_ptr()) }, 1, "kind {kind} arrival: {}", ERROR.with(|e| e.borrow().to_string_lossy().into_owned()));
             let view = unsafe { ssbm_view_new(cdir.as_ptr(), kind, 0) };
             assert!(!view.is_null(), "kind {kind} view failed: {}", ERROR.with(|e| e.borrow().to_string_lossy().into_owned()));
             assert_eq!(unsafe { ssbm_view_update(view, sim, 1. / 60.) }, 1, "kind {kind} view update: {}", ERROR.with(|e| e.borrow().to_string_lossy().into_owned()));

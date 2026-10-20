@@ -68,6 +68,7 @@ pub unsafe extern "C" fn ssbm_projectile_new(
             let (damage, radius, element) = match hit {
                 Some(h) => (h.damage, h.radius, h.element),
                 None if fighter_kind == 5 => (8., 2.5, 0),
+                None if fighter_kind == 6 => (8., 2.5, 0),
                 None => return Err("article has no source hitbox".into()),
             };
             let a = &article.special;
@@ -187,6 +188,18 @@ pub unsafe extern "C" fn ssbm_projectile_new(
                     p.max_fall = 2.;
                     p.max_bounces = 10;
                     p.bounce_factor = 1.0;
+                }
+                // Yoshi's Egg Throw (article 0, the thrown egg): a ballistic
+                // lob that arcs down and bounces. Speed from ftYs_DatAttrs.xFC;
+                // the disc item carries no gravity, so it falls with a gentle
+                // arc like Luigi's fireball.
+                6 if kind == 0 => {
+                    p.speed = libssbm_assets::params::load_yoshi_specials(dir)?.egg_throw_speed;
+                    p.life = a[0];
+                    p.gravity = 0.08;
+                    p.max_fall = 4.;
+                    p.max_bounces = 4;
+                    p.bounce_factor = 0.9;
                 }
                 _ => (),
             }

@@ -395,3 +395,39 @@ pub fn load_link_specials(dir: &Path) -> Result<libssbm::link::Specials> {
         spin_rise_velocity: fighter.f32(lk + 0x40)?,
     })
 }
+
+/// Yoshi's `ext_attr` special tuning (ftYoshiAttributes / ftYs_DatAttrs; the
+/// pointer is `ftDataYoshi + 4`). Egg Roll reads the ground/air speed at x54/x58
+/// and gravity at x6C; Egg Throw reads base speed at xFC; Yoshi Bomb reads its
+/// downward terminal speed at x114.
+pub fn load_yoshi_specials(dir: &Path) -> Result<libssbm::yoshi::Specials> {
+    let profile = &crate::fighter::YOSHI;
+    profile.required()?;
+    let bytes = std::fs::read(dir.join(profile.data.file))?;
+    let fighter = Dat::parse(&bytes)?;
+    let root = fighter.root(profile.data.root)?;
+    let ys = fighter.required_ptr(root + 4)?;
+    Ok(libssbm::yoshi::Specials {
+        egg_roll_speed: fighter.f32(ys + 0x54)?,
+        egg_throw_speed: fighter.f32(ys + 0xfc)?,
+        bomb_fall_speed: fighter.f32(ys + 0x114)?,
+    })
+}
+
+/// Donkey Kong's `ext_attr` special tuning (ftDonkeyAttributes; the pointer is
+/// `ftDataDonkey + 4`). Giant Punch momentum is x34; Headbutt uses x3C; Spinning
+/// Kong rise is x4C with horizontal speed at x54 (grounded).
+pub fn load_donkey_specials(dir: &Path) -> Result<libssbm::donkey::Specials> {
+    let profile = &crate::fighter::DONKEY;
+    profile.required()?;
+    let bytes = std::fs::read(dir.join(profile.data.file))?;
+    let fighter = Dat::parse(&bytes)?;
+    let root = fighter.root(profile.data.root)?;
+    let dk = fighter.required_ptr(root + 4)?;
+    Ok(libssbm::donkey::Specials {
+        punch_velocity: fighter.f32(dk + 0x34)?,
+        headbutt_velocity: fighter.f32(dk + 0x3c)?,
+        spin_rise_velocity: fighter.f32(dk + 0x4c)?,
+        spin_horizontal: fighter.f32(dk + 0x54)?,
+    })
+}
