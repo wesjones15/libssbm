@@ -85,6 +85,8 @@ pub unsafe extern "C" fn ssbm_projectile_new(
                 radius: hit.radius,
                 explosion_radius: hit.radius,
                 explosion_frames: 0.,
+                max_bounces: 0,
+                bounce_factor: 0.5,
             };
             match fighter_kind {
                 0 => match kind {
@@ -132,10 +134,13 @@ pub unsafe extern "C" fn ssbm_projectile_new(
                     p.speed = libssbm_assets::params::load_fox_specials(dir)?.blaster_speed;
                 }
                 // Luigi's Fireball: speed and life from the item's special
-                // attributes (itLuigiFireballAttributes x0/x4).
+                // attributes (itLuigiFireballAttributes x0/x4). It bounces off
+                // the ground (RoR2's open stages) and dies on walls/ceilings.
                 2 => {
                     p.speed = a[0];
                     p.life = a[1];
+                    p.max_bounces = 10;
+                    p.bounce_factor = 0.5;
                 }
                 _ => (),
             }
@@ -251,6 +256,19 @@ pub unsafe extern "C" fn ssbm_projectile_place(h: *mut Handle, position: V3, gro
             }
         });
     }
+}
+/// Reflect a projectile off the ground. Returns 1 while it keeps flying and 0
+/// once its bounce budget is exhausted (the projectile has terminated). The host
+/// calls this on a downward ground contact and re-places the projectile on the
+/// bounce point.
+/// # Safety
+/// Unique live projectile or null.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn ssbm_projectile_bounce(h: *mut Handle) -> u32 {
+    if h.is_null() {
+        return 0;
+    }
+    guarded(0, || unsafe { (&mut *h).sim.bounce() as u32 })
 }
 /// # Safety
 /// Unique live projectile and optional unique fighter audio handle. Returns

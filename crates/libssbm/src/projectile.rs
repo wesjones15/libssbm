@@ -24,6 +24,10 @@ pub struct Params {
     pub radius: f32,
     pub explosion_radius: f32,
     pub explosion_frames: f32,
+    /// Ground bounces before the projectile terminates (0 = never bounces).
+    pub max_bounces: u32,
+    /// Vertical velocity retained on each ground bounce.
+    pub bounce_factor: f32,
 }
 pub struct Projectile {
     pub params: Params,
@@ -35,6 +39,7 @@ pub struct Projectile {
     pub impacted: bool,
     pub finished: bool,
     pub grounded: bool,
+    bounces: u32,
     launch_direction: Vec3,
     clock: f64,
 }
@@ -52,6 +57,7 @@ impl Projectile {
             impacted: false,
             finished: false,
             grounded: false,
+            bounces: 0,
             launch_direction: direction,
             clock: 0.,
         }
@@ -66,6 +72,20 @@ impl Projectile {
         if self.params.kind == 1 {
             self.finished = true;
         }
+    }
+    /// Reflect off the ground. Returns true while the projectile keeps flying;
+    /// false when the bounce budget is exhausted (the projectile terminates).
+    pub fn bounce(&mut self) -> bool {
+        if self.impacted || self.finished || self.params.max_bounces == 0 {
+            return false;
+        }
+        if self.bounces >= self.params.max_bounces {
+            self.impact();
+            return false;
+        }
+        self.bounces += 1;
+        self.velocity.y = (self.velocity.y.abs() * self.params.bounce_factor).max(0.01);
+        true
     }
     pub fn state(&self) -> u32 {
         if !self.impacted {
