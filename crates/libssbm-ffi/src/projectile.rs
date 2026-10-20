@@ -55,14 +55,21 @@ pub unsafe extern "C" fn ssbm_projectile_new(
             }
             let fighter = super::fighter_assets(fighter_kind)?;
             let article = Article::load_for(dir, kind, state, fighter)?;
+            // Link's arrow and bomb author their hitbox dynamically
+            // (itlinkarrow.c/itlinkbomb.c), not in the item script; a prototype
+            // fixture stands in when the script has none.
             let hit = article
                 .commands
                 .iter()
                 .find_map(|c| match &c.command {
                     Command::Hitbox(h) => Some(h),
                     _ => None,
-                })
-                .ok_or("article has no source hitbox")?;
+                });
+            let (damage, radius, element) = match hit {
+                Some(h) => (h.damage, h.radius, h.element),
+                None if fighter_kind == 5 => (8., 2.5, 0),
+                None => return Err("article has no source hitbox".into()),
+            };
             let a = &article.special;
             let mut p = Params {
                 kind,
@@ -81,9 +88,9 @@ pub unsafe extern "C" fn ssbm_projectile_new(
                 gravity: article.common[4],
                 max_fall: article.common[5],
                 initial_y: 0.,
-                damage: hit.damage,
-                radius: hit.radius,
-                explosion_radius: hit.radius,
+                damage,
+                radius,
+                explosion_radius: radius,
                 explosion_frames: 0.,
                 max_bounces: 0,
                 bounce_factor: 0.5,
@@ -147,6 +154,40 @@ pub unsafe extern "C" fn ssbm_projectile_new(
                     p.max_bounces = u32::MAX;
                     p.bounce_factor = 1.0;
                 }
+                // Link's projectiles: Hero's Bow arrow (0), Boomerang (1) and
+                // Bomb (2). Speeds are prototype fixtures; the arrow scales with
+                // the bow's charge, and the bomb lobs down to detonate.
+                5 => match kind {
+                    0 => {
+                        p.speed = 8. + 12. * charge.clamp(0., 1.);
+                        p.life = 40.;
+                    }
+                    1 => {
+                        p.speed = 6.;
+                        p.life = 30.;
+                    }
+                    2 => {
+                        p.speed = 4.;
+                        p.life = 60.;
+                        p.gravity = 0.12;
+                        p.initial_y = 0.4;
+                        p.explosion_frames = 30.;
+                    }
+                    _ => (),
+                },
+                // Pikachu's Thunder Shock (article 1, the travelling orb): shot
+                // along the crosshair, then bouncing off surfaces like Luigi's
+                // fireball until its bounce budget is spent. Speed from
+                // itPikachutJoltGroundAttributes.x8; the disc item has no
+                // gravity, so the shot arcs with the same gentle fall.
+                3 if kind == 1 => {
+                    p.speed = a[2] * 1.6;
+                    p.life = a[0];
+                    p.gravity = 0.06;
+                    p.max_fall = 2.;
+                    p.max_bounces = 10;
+                    p.bounce_factor = 1.0;
+                }
                 _ => (),
             }
             // Expiration is encoded by the source item's var2 command, rather
@@ -158,9 +199,23 @@ pub unsafe extern "C" fn ssbm_projectile_new(
                 p.explosion_frames = end.frame;
                 explosion_commands = explosion.commands;
             }
+            let mut sim = Projectile::new(p, direction.into());
+            if fighter_kind == 3 && kind == 1 {
+                sim.arc = true;
+                // The orb hits harder in flight than the ground jolt it becomes.
+                let ground = Article::load_for(dir, kind, 1, fighter)?;
+                sim.bounce_damage = ground
+                    .commands
+                    .iter()
+                    .find_map(|c| match &c.command {
+                        Command::Hitbox(h) => Some(h.damage),
+                        _ => None,
+                    })
+                    .unwrap_or(0.);
+            }
             Ok(Handle {
-                sim: Projectile::new(p, direction.into()),
-                element: hit.element,
+                sim,
+                element,
                 notified: false,
                 explosion: explosion_commands,
             })
@@ -207,7 +262,11 @@ pub unsafe extern "C" fn ssbm_projectile_state(h: *const Handle, out: *mut State
     guarded(0, || unsafe {
         let h = &*h;
         let s = &h.sim;
-        let mut damage = s.params.damage;
+        let mut damage = if s.bounce_damage > 0. && s.bounced() > 0 {
+            s.bounce_damage
+        } else {
+            s.params.damage
+        };
         let mut radius = if s.impacted {
             s.params.explosion_radius
         } else {
@@ -274,6 +333,15 @@ pub unsafe extern "C" fn ssbm_projectile_bounce(h: *mut Handle) -> u32 {
         return 0;
     }
     guarded(0, || unsafe { (&mut *h).sim.bounce() as u32 })
+}
+/// Reflect a ballistic shot off a wall or ceiling (surface normal `n`).
+/// # Safety
+/// Unique live projectile or null.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn ssbm_projectile_reflect(h: *mut Handle, n: V3) {
+    if !h.is_null() {
+        guarded((), || unsafe { (&mut *h).sim.reflect(n.into()) });
+    }
 }
 /// # Safety
 /// Unique live projectile and optional unique fighter audio handle. Returns

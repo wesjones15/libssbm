@@ -72,6 +72,37 @@ pub trait Behavior: Send {
     fn phase_effect(&self, sim: &Sim, phase: Phase) -> Option<GfxCue>;
     fn phase_stop(&self, phase: Phase) -> Option<SoundCue>;
 
+    // --- Multi-stage specials (all optional; defaults leave a move single-clip)
+    /// Runs every sim tick before the phase logic. A behavior with staged
+    /// specials drives velocity, gravity ownership and stage changes here.
+    fn tick_special(&self, _sim: &mut Sim, _host: &mut dyn Host, _input: Input, _pressed: u32) {}
+    /// A special's disc clip finished. Return true after moving to the next
+    /// stage (the behavior's `clip` now names the next clip); false ends the move.
+    fn next_stage(&self, _sim: &mut Sim, _host: &mut dyn Host, _m: Move, _input: Input) -> bool {
+        false
+    }
+    /// The disc cmd-var index whose rising edge (value 1) fires the move's
+    /// projectile, for fighters whose article spawns from a variable rather than
+    /// the throw flag (Pikachu's Thunder Jolt uses variable 0).
+    fn projectile_variable(&self) -> Option<u32> {
+        None
+    }
+    /// A mid-move stage that stops following the camera aim (a launched bash).
+    fn aim_frozen(&self, _sim: &Sim) -> bool {
+        false
+    }
+    /// A stage whose clip script must not apply hitboxes, effects or sounds.
+    fn script_muted(&self, _sim: &Sim) -> bool {
+        false
+    }
+    /// Facing lock that may depend on the move's current stage (Skull Bash
+    /// follows the camera while charging, then commits to its heading).
+    fn facing_locked_now(&self, _sim: &Sim, m: Move) -> bool {
+        self.facing_locked(m)
+    }
+    /// The host reports that the current move's hitbox connected.
+    fn on_connect(&self, _sim: &mut Sim) {}
+
     // --- Prototype timing (not purported frame-perfect source data) ----------
     /// Special-only override for the shared prototype startup; `None` uses the
     /// common move schedule.

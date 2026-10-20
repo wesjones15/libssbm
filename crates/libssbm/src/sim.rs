@@ -221,6 +221,22 @@ pub struct Sim {
     pub(crate) pad_gravity: Option<Vec3>,
     pub(crate) move_aim: Vec3,
     pub(crate) move_strength: f32,
+    /// Per-fighter special-move scratch; its meaning belongs to the `Behavior`
+    /// (Pikachu's multi-stage Skull Bash / Quick Attack / Thunder). Reset on
+    /// every move start.
+    pub(crate) stage: u32,
+    pub(crate) stage_frame: u32,
+    pub(crate) stage_len: u32,
+    pub(crate) stage_vec: Vec3,
+    pub(crate) stage_dir: Vec3,
+    pub(crate) stage_value: f32,
+    /// Host lock-on: world position of the enemy the player is locked onto or
+    /// aiming nearest, refreshed every tick. Staged specials (Quick Attack)
+    /// steer to it; `None` falls back to stick and camera aim.
+    pub lock_target: Option<Vec3>,
+    /// A behavior holds `pad_gravity` for a scripted move; cleared when the
+    /// move ends so a special can never leave the fighter floating.
+    pub(crate) owns_gravity: bool,
 }
 impl Sim {
     /// Synthetic Samus for headless tests. Runtime hosts use [`Sim::with_behavior`].
@@ -275,6 +291,14 @@ impl Sim {
             pad_gravity: None,
             move_aim: Vec3::X,
             move_strength: 1.,
+            stage: 0,
+            stage_frame: 0,
+            stage_len: 0,
+            stage_vec: Vec3::ZERO,
+            stage_dir: Vec3::ZERO,
+            stage_value: 0.,
+            lock_target: None,
+            owns_gravity: false,
         }
     }
     /// Split-borrow bridge: temporarily moves the behavior out so `f` can mutate
@@ -399,7 +423,14 @@ impl Sim {
                         | Move::GrabHold
                 )
             )
-            || self.current_move.is_some_and(|m| self.behavior.facing_locked(m))
+            || self
+                .current_move
+                .is_some_and(|m| self.behavior.facing_locked_now(self, m))
+    }
+    /// The host reports that the current move's hitbox connected (a staged
+    /// special may react, like Skull Bash stopping on its victim).
+    pub fn attack_connected(&mut self) {
+        self.using_behavior(|b, s| b.on_connect(s));
     }
     pub fn teleport(&mut self, position: Vec3) {
         self.defense.mode = None;
@@ -512,6 +543,12 @@ impl Sim {
             return;
         }
         self.current_move = Some(m);
+        self.stage = 0;
+        self.stage_frame = 0;
+        self.stage_len = 0;
+        self.stage_vec = Vec3::ZERO;
+        self.stage_dir = Vec3::ZERO;
+        self.stage_value = 0.;
         if self.behavior.aimable(m)
             && self.host_facing.is_none()
             && input.aim.with_y(0.).length_squared() > 0.001
@@ -776,7 +813,7 @@ impl Sim {
         }
         if self
             .current_move
-            .is_some_and(|m| self.behavior.aimable(m))
+            .is_some_and(|m| self.behavior.aimable(m) && !self.behavior.aim_frozen(self))
             && input.aim.length_squared() > 0.001
         {
             self.move_aim = input.aim.normalize();
@@ -793,6 +830,7 @@ impl Sim {
         // is a host control decision, not a claim about Melee's original input.
         self.using_behavior(|b, s| {
             b.store_special(s, host, pressed);
+            b.tick_special(s, host, input, pressed);
         });
         match self.phase {
             Phase::Free => {
@@ -985,7 +1023,10 @@ impl Sim {
         // ftCo_AttackDash_Phys -> ft_80085030 uses the flagged TransN delta as
         // ground velocity. It replaces friction velocity; never add a second
         // visual dash or teleport at clip completion. Collision owns the result.
-        if self.grounded && self.current_move == Some(Move::DashAttack) {
+        // Any grounded move whose clip carries flagged TransN travel commits it
+        // to the sim position (dash attack, dash grab): the model never adds a
+        // second copy, so the fighter keeps the ground it covered at clip end.
+        if self.grounded && matches!(self.current_move, Some(Move::DashAttack | Move::DashGrab)) {
             let (clip, rate) = crate::motion::select(self, input);
             let frame = if clip == self.motion.clip {
                 self.motion.frame

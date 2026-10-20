@@ -32,14 +32,24 @@ impl Bank {
         // Every fighter's own effect bank, not just Samus's: a melee character's
         // ground/move VFX lives in its EfXxData.dat alongside the common EfCoData
         // bank. Emitter ids are bank-relative (common 0..591, Samus 2000..,
-        // Fox 3000.., Luigi 18000..), so the four banks merge without collisions.
+        // Fox 3000.., Luigi 18000..), so the banks merge without collisions.
         let archives = [
             libssbm_assets::fighter::COMMON_EFFECTS,
             libssbm_assets::fighter::SAMUS.effects,
             libssbm_assets::fighter::FOX.effects,
             libssbm_assets::fighter::LUIGI.effects,
         ];
-        for archive in archives {
+        for archive in archives
+            .into_iter()
+            .chain(std::iter::once(libssbm_assets::fighter::PIKACHU.effects))
+        {
+            // Pikachu (7000..) is an optional bank: caches extracted before he
+            // existed keep working for the other fighters.
+            if archive.file == libssbm_assets::fighter::PIKACHU.effects.file
+                && !dir.join(archive.file).exists()
+            {
+                continue;
+            }
             let archive = Effects::load_archive(dir, archive)?;
             let base = bank.mapping.len() as u16;
             for group in archive.textures {

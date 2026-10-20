@@ -542,3 +542,98 @@ to the post-homing minimum. The Screw Attack's ground dust ring (cue 1030, commo
 authored with MODULATE alpha and holds full size at full opacity for 18 frames; as a host
 adaptation, not decomp behaviour, common effects of that kind are dimmed by their authored blend
 value and faded out over their last 10 frames (`Presentation::effect_fade`).
+
+## Pikachu (FighterKind 3)
+
+Sources: `ftPikachu/ftpikachu{,specialn,specials,specialhi,speciallw}.c`,
+`it/kinds/itpikachuthunder.c`, `itpikachutjolt{ground,air}.c`, `ef/efsync.c`
+(0x4BD..0x4C5), `gm_1601.c` (announcer), `mn/types.h` (CSS icons). Tuning is
+read from `ftDataPikachu` (`ftPikachuAttributes`, `PlPk.dat`) and the item
+articles; nothing below is a prototype timing unless marked.
+
+**Assets** (extracted from the player's disc, never committed): `PlPk.dat`,
+`PlPkAJ.dat`, costumes `Nr/Re/Bu/Gr`, `EfPkData.dat` (emitters 7000-7009),
+`pikachu.ssm`, shared `main.ssm`/`nr_name.ssm`/`smash2.sem`, CSS grid tile
+(icon 13, joint 30) and announcer call 0x7C84D. `ssbm-extract <disc> assets
+pikachu` extracts the same set the C# plugin extracts on first run. Articles:
+0 Thunder (a 20x40 bolt quad, one state), 1 Thunder Jolt orb (no model, two
+hitbox states), 2 the ground jolt (the orb's model). The article loader now
+accepts model-less articles; the Pikachu particle bank is optional so caches
+extracted before him keep working.
+
+**RoR2 control shuffle** (host layout, `ror2-samus/Samus/Pikachu`): RT Thunder
+Shock, LT contextual A, **RB Thunder**, LB Quick Attack, B Skull Bash (Shield /
+Air Feint is the fifth-slot alternate). The sim's `Behavior::slot` and the
+plugin's `slotForMove` agree; the pad bits are remapped by `MeleeControlLayout`.
+
+### Thunder Shock (neutral special)
+Disc clip `SpecialN`/`SpecialAirN`; cmd var 0 at frame 18 spawns the orb
+(`ftPk_SpecialN_Anim`), sound 240076. The orb is a shared `MeleeBouncingShot`:
+it flies along the crosshair ray, **bounces off the ground** with the sim's
+ground-bounce budget (`Projectile::bounce`, ten bounces, then it ends),
+**reflects off walls and ceilings** (`Projectile::reflect`, free), hits the first
+enemy, and drops from 10% in flight to the ground jolt's 6% after its first
+bounce. This is the Luigi-fireball arc, not the source's terrain-hugging crawl
+(`itpikachutjoltground.c`), by request. Speed `x8 * 1.6` and the gentle gravity
+are host adaptations shared with Luigi's fireball; spawn is chest height, not
+foot height.
+
+### Skull Bash (side special, B slot)
+Stages Start -> Hold -> Lunge -> End (`ftpikachuspecials.c`). Holding B charges
+up to `x24` (90) frames. Release plays `SpecialS`; its frame-4 script (cmd var
+0) launches: horizontal speed `x40*frames + x3C`, climb `0.5*x44 + x44*0.5*frames/x24`,
+damage `x28 + x2C*frames` via the hitbox strength, gravity `x48` until the
+hitbox clears at frame 30, then `x58` and `x54` deceleration. The lunge ends on
+landing or a wall (speed divided by `x50`) and **stops on connect**
+(`ftPk_SpecialS_ZeroVelocity`, `ssbm_sim_connect`). Host travel scale 1.5.
+
+### Quick Attack (up special, LB)
+Start (hover) -> zip (`x60` = 5 ticks at `x90*mag + x94`, 10% kept as
+`xA4`) -> End, whose frame-9 decision zips again when the new direction differs
+by `xA8` (38 degrees) or, as a host adaptation, LB is pressed again. Second zip
+speed is scaled by `x98` (0.9). The double jump is spent on the first zip.
+**Lock-on:** the host passes the locked enemy (`ssbm_sim_lock_target`, chosen
+with ror2-common `EnemyLock`, the nearest to the crosshair preferring enemies in
+front, as Olimar and Mario). Zips steer to it and **arrive within the source's two
+zips**: each covers its usual reach or an even share of the remaining distance,
+the last all of it, stopping `ZIP_STANDOFF` (12 units) short; a far enemy
+stretches the zips over more ticks (step <= 15 units) rather than falling short.
+Without a lock the heading is the camera-relative stick and the camera pitch
+(the source reads a 2D stick angle), or the camera aim with no stick. A level zip
+slides on the floor; only a rising zip leaves it. Zips carry velocity through the
+host's collision sweep and the sim position is never rewritten, so there is no
+rubber-banding. Host travel scale 1.6. Up-special invulnerability until landing
+is the shared recovery adaptation.
+
+### Thunder (down special, RB)
+Start -> Loop (wait) -> Loop (struck) -> End. At the end of Start the sim emits a
+Hit event (strength 1; `direction` = cloud height, ticks to strike, fall speed in
+Melee units) and the cloud poof (efSync 1219 at `xD0 + xCC`). The four 40-unit
+bolt segments (`xD4`/`xD8`) fall so the tip reaches Pikachu after
+`ceil((xD0 - tip - (|xBC| + xC8)) / |xC0|)` = 19 ticks, when the sim emits
+strength 2, restarts the loop clip unmuted (its 17% electric hitbox, effects
+and sounds), hops him `xB4` in the air under `xB8` gravity, and plays the
+crackle (1216). While waiting the clip's script is muted (`script_muted`), so
+the hitbox and effects of the struck state do not fire early. Enemies in the
+bolt's column are hit once for the bolt's 10%.
+
+### Shared mechanisms added for staged specials
+`Sim::{stage, stage_frame, stage_len, stage_vec, stage_dir, stage_value,
+owns_gravity, lock_target}` scratch; `Behavior::{tick_special, next_stage,
+projectile_variable, aim_frozen, script_muted, facing_locked_now, on_connect}`
+(all defaulted, so existing fighters are unchanged). A held gravity override is
+released whenever the move ends or is interrupted. Flagged TransN travel now
+commits for **DashGrab** as well as Dash Attack. New exports:
+`ssbm_sim_lock_target`, `ssbm_sim_connect`, `ssbm_projectile_reflect`.
+
+### Verification and limits
+Headless (`libssbm-assets/tests/pikachu.rs`, `pikachu_presentation.rs`, ffi
+tests, `NativeCheck`): lock-on arrival at near/mid/far distances without
+snap-back, Skull Bash reach/damage scaling, Thunder event timeline and muted
+hitbox, gravity release, committed dash travel, ten-bounce shot, every costume
+loads with the clips his specials use, every script cue/sound resolves. **Not
+verified in game.** Missing or partial: Quick Attack's body tilt along the zip
+(`XRotN` rotation and scale), Skull Bash wall rebound (`SpecialAirSEnd`
+bounce-back), the Thunder cloud model (only the poof and bolts are drawn), the
+tail-of-bolt scaling when it reaches the ground (`UnkMotion2`), Pichu/Kirby variants, and the effect puff choices for the shot's
+bounce/impact (particles 7001-7003 are best guesses pending a visual check).

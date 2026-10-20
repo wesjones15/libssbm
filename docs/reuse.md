@@ -81,3 +81,13 @@ reaction stage buffers a short A press; ror2-common buffers it during host
 stun. Shared `MeleeDeathSequence` plays a fighter-supplied fall pose before
 its source KO effect/sound, and `MeleeGameBanner` displays GAME! with a
 fighter-supplied round-end cue. Samus is the first consumer.
+
+Pikachu is the first fighter with staged specials (several clips chained under one
+move) and the first to share a host component with another fighter's projectile:
+`ror2-common/MeleeBouncingShot` is the bouncing, reflecting shot (Luigi's fireball
+arc), and `MeleeHitTracker` the shared hitbox-to-damage sweep. Staged specials use
+the defaulted `Behavior` hooks (`tick_special`, `next_stage`, `script_muted`, ...) and
+the `Sim::stage*` scratch, so no other fighter changes. The Luigi and Fox drivers
+still carry private copies of the hit tracker and fireball and can adopt the shared
+ones. A host lock-on reaches the sim through `ssbm_sim_lock_target`; the shared
+`EnemyLock` (Olimar/Mario) picks the target.

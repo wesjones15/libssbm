@@ -39,6 +39,13 @@ pub struct Projectile {
     pub impacted: bool,
     pub finished: bool,
     pub grounded: bool,
+    /// Ballistic shot: gravity applies whatever the article kind, the shot
+    /// vanishes on impact instead of exploding, and it reflects off surfaces
+    /// (Pikachu's Thunder Shock; the same bounce budget Luigi's fireball uses).
+    pub arc: bool,
+    /// Damage once the shot has bounced (0 keeps the launch damage): the source
+    /// Thunder Jolt hits harder in flight than after it lands.
+    pub bounce_damage: f32,
     bounces: u32,
     launch_direction: Vec3,
     clock: f64,
@@ -57,6 +64,8 @@ impl Projectile {
             impacted: false,
             finished: false,
             grounded: false,
+            arc: false,
+            bounce_damage: 0.,
             bounces: 0,
             launch_direction: direction,
             clock: 0.,
@@ -69,7 +78,7 @@ impl Projectile {
         self.impacted = true;
         self.animation_frame = 0;
         self.velocity = Vec3::ZERO;
-        if self.params.kind == 1 {
+        if self.params.kind == 1 || self.arc {
             self.finished = true;
         }
     }
@@ -87,8 +96,27 @@ impl Projectile {
         self.velocity.y = (self.velocity.y.abs() * self.params.bounce_factor).max(0.01);
         true
     }
+    /// Reflect off a wall or ceiling with surface `normal`; the ground uses
+    /// [`Projectile::bounce`], which owns the bounce budget. Speed is kept.
+    pub fn reflect(&mut self, normal: Vec3) {
+        if self.impacted || self.finished {
+            return;
+        }
+        if let Some(n) = normal.try_normalize() {
+            let into = self.velocity.dot(n);
+            if into < 0. {
+                self.velocity -= 2. * into * n;
+            }
+        }
+    }
+    /// Ground bounces taken so far.
+    pub fn bounced(&self) -> u32 {
+        self.bounces
+    }
     pub fn state(&self) -> u32 {
-        if !self.impacted {
+        if self.arc {
+            self.params.state
+        } else if !self.impacted {
             self.params.state
         } else if self.params.kind == 0 {
             1
@@ -127,6 +155,12 @@ impl Projectile {
                 continue;
             }
             match self.params.kind {
+                _ if self.arc => {
+                    if !self.grounded {
+                        self.velocity.y =
+                            (self.velocity.y - self.params.gravity).max(-self.params.max_fall);
+                    }
+                }
                 0 => {
                     if !self.grounded {
                         self.velocity.y =

@@ -360,6 +360,10 @@ fn visibility(
             if n > 64 {
                 return Err("invalid visibility alternatives".into());
             }
+            // A group with no alternatives (Pikachu has some) carries no row table.
+            if n == 0 {
+                continue;
+            }
             let rows = d.required_ptr(lookup + group * 8 + 4)?;
             for alt in 0..n {
                 let n = d.u32(rows + alt * 8)? as usize;

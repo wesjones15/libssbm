@@ -60,15 +60,43 @@ pub fn resolve(id: u32) -> Target {
         1157 => Particle(2014),
         1158 => Model(2001),
         1159 => Model(2002),
-        // Fox's own article effects (efalt.c 0x48B..0x48D): Fire Fox charge
-        // flame, Fire Fox launch flame and the Illusion blue streak.
+        // Fox's own effects (efalt.c 0x488..0x48D): the Reflector shine
+        // (loop/start/reflect bubble), Fire Fox charge flame, Fire Fox launch
+        // flame and the Illusion blue streak.
+        1160 => Model(2000),
+        1161 => Model(2001),
+        1162 => Model(2002),
         1163 => Model(2003),
         1164 => Model(2004),
         1165 => Particle(3008),
+        // Captain Falcon's own effects (efalt.c 0x48F..0x493): Falcon Punch
+        // wind, Falcon Kick flame and the Raptor Boost streaks.
+        1167 => Model(2000),
+        1168 => Model(2002),
+        1169 => Model(2004),
+        1170 => Model(2003),
+        1171 => Model(2005),
+        // Link's own effects (efsync.c 0x4BB/0x4BC): grounded and aerial
+        // Spin Attack slashes.
+        1211 => Model(2000),
+        1212 => Model(2001),
         // Luigi's own effects (efsync.c 0x509/0x50A): the Cyclone spin and the
         // Green Missile launch flash.
         1289 => Model(2001),
         1290 => Particle(95),
+        // Pikachu's own effects (efsync.c 0x4BD..0x4C5; EfPkData emitters
+        // 7000..7009 = generator ids 0x1B58..) plus the common spark
+        // (efasync.c 0x412 -> common generator 0x13) its move scripts emit.
+        1042 => Particle(19),
+        1213 => Particle(7000), // Thunder Jolt orb trail
+        1214 => Particle(7004), // Skull Bash charge
+        1215 => Particle(7005), // Skull Bash release
+        1216 => Particle(7000), // Thunder strike on Pikachu
+        1217 => Particle(7001),
+        1218 => Particle(7002),
+        1219 => Particle(588),  // efsync.c 0x4C3: Thunder cloud poof (common 0x24C)
+        1220 => Particle(7003),
+        1221 => Particle(7004),
         // ftCo_8009F834 routes this to Camera_RequestQuake, before efsync.
         1299 => CameraShake(2),
         1300 => Particle(3), // iteffect.c 0x514: item effect 3

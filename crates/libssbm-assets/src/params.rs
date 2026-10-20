@@ -301,6 +301,53 @@ pub fn load_fox_specials(dir: &Path) -> Result<libssbm::fox::Specials> {
     })
 }
 
+/// Pikachu's `ext_attr` special tuning (ftPikachuAttributes; the pointer is
+/// `ftDataPikachu + 4`). The Thunder strike delay is derived from the cloud
+/// height (xD0), the bolt's fall speed (xC0), the item's tip offset
+/// (itPikachuthunderAttributes.x8) and the strike window of
+/// ftPk_SpecialLw_8012765C (|y + |xBC| - tip| < xC8).
+pub fn load_pikachu_specials(dir: &Path) -> Result<libssbm::pikachu::Specials> {
+    let profile = &crate::fighter::PIKACHU;
+    profile.required()?;
+    let bytes = std::fs::read(dir.join(profile.data.file))?;
+    let d = Dat::parse(&bytes)?;
+    let root = d.root(profile.data.root)?;
+    let pk = d.required_ptr(root + 4)?;
+    let items = d.required_ptr(root + 0x48)?;
+    let thunder = d.required_ptr(d.required_ptr(items)? + 4)?;
+    let tip_offset = d.f32(thunder + 8)?;
+    let height = d.f32(pk + 0xd0)?;
+    let speed = d.f32(pk + 0xc0)?.abs().max(0.01);
+    let window_top = d.f32(pk + 0xbc)?.abs() + d.f32(pk + 0xc8)?;
+    let strike = ((height - tip_offset - window_top) / speed).ceil().max(1.) as u32;
+    Ok(libssbm::pikachu::Specials {
+        bash_max_charge: d.f32(pk + 0x24)?.round() as u32,
+        bash_base_damage: d.f32(pk + 0x28)?,
+        bash_damage_per_frame: d.f32(pk + 0x2c)?,
+        bash_speed_base: d.f32(pk + 0x3c)?,
+        bash_speed_per_frame: d.f32(pk + 0x40)?,
+        bash_launch_y: d.f32(pk + 0x44)?,
+        bash_gravity: d.f32(pk + 0x48)?,
+        bash_terminal: d.f32(pk + 0x4c)?,
+        bash_end_divisor: d.f32(pk + 0x50)?,
+        bash_late_decel: d.f32(pk + 0x54)?,
+        bash_late_gravity: d.f32(pk + 0x58)?,
+        zip_frames: d.u32(pk + 0x60)?,
+        zip_stick_min: d.f32(pk + 0x8c)?,
+        zip_speed_slope: d.f32(pk + 0x90)?,
+        zip_speed_base: d.f32(pk + 0x94)?,
+        zip_second_decay: d.f32(pk + 0x98)?,
+        zip_residual: d.f32(pk + 0xa4)?,
+        zip_min_angle: d.u32(pk + 0xa8)? as f32,
+        thunder_hop: d.f32(pk + 0xb4)?,
+        thunder_gravity: d.f32(pk + 0xb8)?,
+        thunder_height: height,
+        thunder_cloud_offset: d.f32(pk + 0xcc)?,
+        thunder_speed: speed,
+        thunder_strike_frames: strike,
+    })
+}
+
 /// Luigi's `ext_attr` special tuning (ftLuigiAttributes; the pointer is
 /// `ftDataLuigi + 4`, same layout as the other special attributes). Fireball
 /// speed lives in the item's own special attributes (itLuigiFireballAttributes).
@@ -315,5 +362,36 @@ pub fn load_luigi_specials(dir: &Path) -> Result<libssbm::luigi::Specials> {
         missile_velocity: fighter.f32(lg + 0x24)?,
         super_jump_velocity: fighter.f32(lg + 0x6c)?,
         cyclone_momentum: fighter.f32(lg + 0x74)?,
+    })
+}
+
+/// Captain Falcon's `ext_attr` special tuning (ftCaptain_DatAttrs; the pointer
+/// is `ftDataCaptain + 4`, same layout as the other special attributes).
+pub fn load_captain_specials(dir: &Path) -> Result<libssbm::captain::Specials> {
+    let profile = &crate::fighter::CAPTAIN;
+    profile.required()?;
+    let bytes = std::fs::read(dir.join(profile.data.file))?;
+    let fighter = Dat::parse(&bytes)?;
+    let root = fighter.root(profile.data.root)?;
+    let ca = fighter.required_ptr(root + 4)?;
+    Ok(libssbm::captain::Specials {
+        punch_momentum: fighter.f32(ca + 0xc)?,
+        raptor_velocity: fighter.f32(ca + 0x14)?,
+        dive_velocity: fighter.f32(ca + 0x44)?,
+    })
+}
+
+/// Link's `ext_attr` special tuning (ftLk_DatAttrs; the pointer is
+/// `ftDataLink + 4`, same layout as the other special attributes).
+pub fn load_link_specials(dir: &Path) -> Result<libssbm::link::Specials> {
+    let profile = &crate::fighter::LINK;
+    profile.required()?;
+    let bytes = std::fs::read(dir.join(profile.data.file))?;
+    let fighter = Dat::parse(&bytes)?;
+    let root = fighter.root(profile.data.root)?;
+    let lk = fighter.required_ptr(root + 4)?;
+    Ok(libssbm::link::Specials {
+        bow_charge_steps: fighter.f32(lk)?.round() as u32,
+        spin_rise_velocity: fighter.f32(lk + 0x40)?,
     })
 }

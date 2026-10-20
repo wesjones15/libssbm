@@ -470,10 +470,28 @@ pub unsafe extern "C" fn ssbm_sim_new_fighter(dir: *const c_char, pos: V3, kind:
                         libssbm_assets::params::load_fox_specials(dir)?,
                     )),
                 ),
+                libssbm_assets::fighter::FighterKind::Pikachu => (
+                    libssbm_assets::params::load_common(dir, fighter)?,
+                    Box::new(libssbm::pikachu::Pikachu::new(
+                        libssbm_assets::params::load_pikachu_specials(dir)?,
+                    )),
+                ),
                 libssbm_assets::fighter::FighterKind::Luigi => (
                     libssbm_assets::params::load_common(dir, fighter)?,
                     Box::new(libssbm::luigi::Luigi::new(
                         libssbm_assets::params::load_luigi_specials(dir)?,
+                    )),
+                ),
+                libssbm_assets::fighter::FighterKind::Captain => (
+                    libssbm_assets::params::load_common(dir, fighter)?,
+                    Box::new(libssbm::captain::Captain::new(
+                        libssbm_assets::params::load_captain_specials(dir)?,
+                    )),
+                ),
+                libssbm_assets::fighter::FighterKind::Link => (
+                    libssbm_assets::params::load_common(dir, fighter)?,
+                    Box::new(libssbm::link::Link::new(
+                        libssbm_assets::params::load_link_specials(dir)?,
                     )),
                 ),
             };
@@ -872,7 +890,7 @@ pub extern "C" fn ssbm_effect_target(id: u32) -> i32 {
 pub extern "C" fn ssbm_effect_flags(id: u32) -> u32 {
     // Attachment policy from ftCo_8009F834 and efAlt_Spawn.
     match id {
-        1026 | 1027 | 1060 | 1086 | 1151 | 1154 | 1159 | 1301 => 1,
+        1026 | 1027 | 1060 | 1086 | 1151 | 1154 | 1159 | 1214 | 1215 | 1216 | 1301 => 1,
         _ => 0,
     }
 }
@@ -1849,6 +1867,27 @@ pub unsafe extern "C" fn ssbm_sim_interrupt(handle: *mut Handle) {
         }
     }
 }
+/// Host lock-on: the world position (sim units) of the enemy the player is
+/// locked onto or aiming nearest; `valid` 0 clears it. Staged specials (Pikachu's
+/// Quick Attack) steer to it. Refresh every tick while a move is active.
+/// # Safety
+/// Unique live sim or null.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn ssbm_sim_lock_target(handle: *mut Handle, target: V3, valid: u32) {
+    if let Some(h) = unsafe { handle.as_mut() } {
+        let t: Vec3 = target.into();
+        h.sim.lock_target = if valid != 0 && t.is_finite() { Some(t) } else { None };
+    }
+}
+/// The current move's hitbox connected with an enemy (Skull Bash stops on it).
+/// # Safety
+/// Unique live sim or null. Call outside a native host callback.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn ssbm_sim_connect(handle: *mut Handle) {
+    if !handle.is_null() {
+        guarded((), || unsafe { (&mut *handle).sim.attack_connected() });
+    }
+}
 /// # Safety
 /// Unique live sim or null. Call outside a native host callback.
 #[unsafe(no_mangle)]
@@ -1987,9 +2026,92 @@ mod tests {
         Ok(())
     }
     #[test]
+    fn captain_and_link_assets_load_and_sim_steps() -> libssbm_assets::Result<()> {
+        let dir = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../assets");
+        for kind in [4u32, 5u32] {
+            let fighter = libssbm_assets::fighter::FighterKind::from_u32(kind).unwrap();
+            let profile = fighter.assets().unwrap();
+            if !profile.complete(&dir) {
+                eprintln!("SKIP: {kind} disc cache absent");
+                continue;
+            }
+            let cdir = std::ffi::CString::new(dir.to_str().unwrap()).unwrap();
+            let sim = unsafe { ssbm_sim_new_fighter(cdir.as_ptr(), V3::default(), kind) };
+            assert!(!sim.is_null(), "kind {kind} sim failed: {}", ERROR.with(|e| e.borrow().to_string_lossy().into_owned()));
+            let mut host = HostTable { collide: None, event: None, user: std::ptr::null_mut() };
+            let pad = Pad { movement: V3::default(), aim: V3 { x: 0., y: 0., z: 1. }, buttons: 0, allowed: 0x1f };
+            for _ in 0..120 {
+                assert_ne!(unsafe { ssbm_sim_step(sim, &mut host, &pad, 1. / 60.) }, 0, "kind {kind}: {}", ERROR.with(|e| e.borrow().to_string_lossy().into_owned()));
+            }
+            let view = unsafe { ssbm_view_new(cdir.as_ptr(), kind, 0) };
+            assert!(!view.is_null(), "kind {kind} view failed: {}", ERROR.with(|e| e.borrow().to_string_lossy().into_owned()));
+            assert_eq!(unsafe { ssbm_view_update(view, sim, 1. / 60.) }, 1, "kind {kind} view update: {}", ERROR.with(|e| e.borrow().to_string_lossy().into_owned()));
+            unsafe { ssbm_view_free(view) };
+            unsafe { ssbm_sim_free(sim) };
+        }
+        Ok(())
+    }
+    #[test]
+    fn link_articles_load() -> libssbm_assets::Result<()> {
+        let dir = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../assets");
+        let link = &libssbm_assets::fighter::LINK;
+        if !link.complete(&dir) {
+            eprintln!("SKIP: Link disc cache absent");
+            return Ok(());
+        }
+        // Hero's Bow arrow (0), Boomerang (1) and Bomb (2) resolve their
+        // state/special-word layouts from itCharItems.h.
+        for (kind, state) in [(0u32, 0u32), (1, 0), (2, 0)] {
+            let article = libssbm_assets::article::Article::load_for(&dir, kind, state, link)
+                .map_err(|e| format!("Link article {kind}/{state}: {e}"))?;
+            eprintln!("Link article {kind}: {} special words, {} commands", article.special.len(), article.commands.len());
+        }
+        Ok(())
+    }
+    #[test]
+    fn pikachu_assets_load_through_the_constructor_and_sim_steps() -> libssbm_assets::Result<()> {
+        let dir = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../assets");
+        let pikachu = &libssbm_assets::fighter::PIKACHU;
+        if !pikachu.complete(&dir) {
+            eprintln!("SKIP: Pikachu disc cache absent");
+            return Ok(());
+        }
+        let c = std::ffi::CString::new(dir.to_str().unwrap())?;
+        let handle = unsafe { ssbm_sim_new_fighter(c.as_ptr(), V3::default(), 3) };
+        assert!(!handle.is_null(), "ssbm_sim_new_fighter(Pikachu) failed");
+        let h = unsafe { &mut *handle };
+        // The same hand-off Quick Attack takes from the host.
+        unsafe { ssbm_sim_lock_target(handle, V3 { x: 40., y: 0., z: 0. }, 1) };
+        assert!(h.sim.lock_target.is_some());
+        unsafe { ssbm_sim_lock_target(handle, V3::default(), 0) };
+        assert!(h.sim.lock_target.is_none());
+        let mut host = libssbm::sim::FlatHost { events: Vec::new() };
+        let mut input = Input::idle();
+        for _ in 0..30 {
+            h.sim.advance(&mut host, input, 1. / 60.);
+        }
+        input.buttons = libssbm::sim::NEUTRAL_B;
+        h.sim.advance(&mut host, input, 1. / 60.);
+        input.buttons = 0;
+        for _ in 0..90 {
+            h.sim.advance(&mut host, input, 1. / 60.);
+        }
+        assert!(h.sim.position.is_finite());
+        assert!(
+            host.events.iter().any(|e| e.kind == libssbm::sim::EventKind::Hit && e.move_id == 20),
+            "Thunder Shock never fired its projectile event"
+        );
+        unsafe { ssbm_sim_free(handle) };
+        Ok(())
+    }
+    #[test]
     fn non_samus_views_have_expected_clips_and_visibility() -> libssbm_assets::Result<()> {
         let dir = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../assets");
-        for fighter in [&libssbm_assets::fighter::FOX, &libssbm_assets::fighter::LUIGI] {
+        for fighter in [
+            &libssbm_assets::fighter::FOX,
+            &libssbm_assets::fighter::LUIGI,
+            &libssbm_assets::fighter::PIKACHU,
+        ] {
             if !fighter.complete(&dir) {
                 eprintln!("SKIP: {} disc cache absent", fighter.data.root);
                 continue;
@@ -2011,7 +2133,7 @@ mod tests {
     #[test]
     fn non_samus_arrival_hitboxes_and_view_do_not_fail() -> libssbm_assets::Result<()> {
         let dir = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../assets");
-        for kind in [1u32, 2u32] {
+        for kind in [1u32, 2u32, 4u32, 5u32] {
             let fighter = libssbm_assets::fighter::FighterKind::from_u32(kind).unwrap();
             if !fighter.assets().unwrap().complete(&dir) {
                 eprintln!("SKIP: kind {kind} disc cache absent");
@@ -2045,7 +2167,7 @@ mod tests {
     #[test]
     fn arrival_leaves_every_fighter_full_size_and_visible() -> libssbm_assets::Result<()> {
         let dir = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../assets");
-        for kind in [0u32, 1u32, 2u32] {
+        for kind in [0u32, 1u32, 2u32, 4u32, 5u32] {
             let fighter = libssbm_assets::fighter::FighterKind::from_u32(kind).unwrap();
             if !fighter.assets().unwrap().complete(&dir) {
                 eprintln!("SKIP: kind {kind} disc cache absent");

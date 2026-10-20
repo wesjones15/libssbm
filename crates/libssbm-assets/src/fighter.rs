@@ -262,6 +262,107 @@ pub const PIKACHU: FighterAssets<'static> = FighterAssets {
     announce_sound: 0x7C84D, // CKind_Pikachu -> gm_1601.c::gm_80168C5C case 13
     clip_aliases: &[],
 };
+/// Captain Falcon's asset profile. Every special (Falcon Punch, Raptor Boost,
+/// Falcon Dive, Falcon Kick) is a body move, so `articles` is empty.
+/// ftcaptain.c::ftCa_Init_CostumeStrings order: Nr, Gy, Re, Wh, Gr, Bu.
+pub const CAPTAIN: FighterAssets<'static> = FighterAssets {
+    data: Archive {
+        file: "PlCa.dat",
+        root: "ftDataCaptain",
+    },
+    animations: "PlCaAJ.dat",
+    costumes: &[
+        "PlCaNr.dat",
+        "PlCaGy.dat",
+        "PlCaRe.dat",
+        "PlCaWh.dat",
+        "PlCaGr.dat",
+        "PlCaBu.dat",
+    ],
+    effects: Archive {
+        file: "EfCaData.dat",
+        root: "effCaptainDataTable",
+    },
+    samples: &[
+        "audio/us/captain.ssm",
+        "audio/us/main.ssm",
+        "audio/us/nr_name.ssm",
+    ],
+    sequences: "audio/us/smash2.sem",
+    articles: &[],
+    common_index: 2, // Ft_Kind_Captain (ft/forward.h)
+    morph_visibility: None,
+    upper_body_root: None,
+    portrait: crate::portrait::Portrait {
+        archive: Archive {
+            file: "MnSlChr.usd",
+            root: "MnSelectChrDataTable",
+        },
+        joint: 51,
+        frame: 0,        // ICONHUD_CAPTAIN (mn/forward.h)
+        grid_joint: 22,  // ICONJOINT_CAPTAIN (mn/types.h)
+    },
+    announce_sound: 0x7C830, // CKind_Captain -> gm_1601.c::gm_80168C5C case 0
+    // Captain's idle is "Wait1"; the special clips (SpecialN/SpecialS/SpecialHi/
+    // SpecialLw and their Air forms) already match the generic names.
+    clip_aliases: &[("Wait", "Wait1")],
+};
+/// Link's asset profile. His three spawned articles are the Hero's Bow arrow,
+/// the Boomerang and the Bomb (the bow itself is a held item, not an article).
+/// ftlink.c::ftLk_Init_CostumeStrings order: Nr, Re, Bu, Bk, Wh.
+pub const LINK: FighterAssets<'static> = FighterAssets {
+    data: Archive {
+        file: "PlLk.dat",
+        root: "ftDataLink",
+    },
+    animations: "PlLkAJ.dat",
+    costumes: &[
+        "PlLkNr.dat",
+        "PlLkRe.dat",
+        "PlLkBu.dat",
+        "PlLkBk.dat",
+        "PlLkWh.dat",
+    ],
+    effects: Archive {
+        file: "EfLkData.dat",
+        root: "effLinkDataTable",
+    },
+    samples: &[
+        "audio/us/link.ssm",
+        "audio/us/main.ssm",
+        "audio/us/nr_name.ssm",
+    ],
+    sequences: "audio/us/smash2.sem",
+    // Item table (ftDataLink.x48_items): Link Arrow, Link Boomerang, Link Bomb.
+    // State and special-word counts follow itCharItems.h (itLinkArrowAttributes
+    // 12 words; itLinkBoomerangAttributes 25 words; itLinkBombAttributes 16).
+    articles: &[
+        ArticleLayout { states: 1, special_words: 12 },
+        ArticleLayout { states: 2, special_words: 25 },
+        ArticleLayout { states: 1, special_words: 16 },
+    ],
+    common_index: 6, // Ft_Kind_Link (ft/forward.h)
+    morph_visibility: None,
+    upper_body_root: None,
+    portrait: crate::portrait::Portrait {
+        archive: Archive {
+            file: "MnSlChr.usd",
+            root: "MnSelectChrDataTable",
+        },
+        joint: 51,
+        frame: 6,        // ICONHUD_LINK (mn/forward.h)
+        grid_joint: 29,  // ICONJOINT_LINK (mn/types.h)
+    },
+    announce_sound: 0x7C842, // CKind_Link -> gm_1601.c::gm_80168C5C case 6
+    // Link splits his bow and boomerang into Start/Loop/End (or S1/S2) clips;
+    // the generic names resolve to the entry clip of each state machine.
+    clip_aliases: &[
+        ("SpecialN", "SpecialNStart"),
+        ("SpecialAirN", "SpecialAirNStart"),
+        ("SpecialS", "SpecialS1"),
+        ("SpecialAirS", "SpecialAirS1"),
+    ],
+};
 /// The FFI's fighter selector. Adding a fighter means adding a variant here, a
 /// `FighterAssets` definition, and returning it from [`FighterKind::assets`].
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -271,6 +372,8 @@ pub enum FighterKind {
     Fox = 1,
     Luigi = 2,
     Pikachu = 3,
+    Captain = 4,
+    Link = 5,
 }
 impl FighterKind {
     pub fn from_u32(kind: u32) -> Option<Self> {
@@ -279,6 +382,8 @@ impl FighterKind {
             1 => Some(Self::Fox),
             2 => Some(Self::Luigi),
             3 => Some(Self::Pikachu),
+            4 => Some(Self::Captain),
+            5 => Some(Self::Link),
             _ => None,
         }
     }
@@ -288,6 +393,8 @@ impl FighterKind {
             Self::Fox => "Fox",
             Self::Luigi => "Luigi",
             Self::Pikachu => "Pikachu",
+            Self::Captain => "Captain",
+            Self::Link => "Link",
         }
     }
     /// The fighter's asset profile. Every variant now resolves to a defined
@@ -298,6 +405,8 @@ impl FighterKind {
             Self::Fox => Some(&FOX),
             Self::Luigi => Some(&LUIGI),
             Self::Pikachu => Some(&PIKACHU),
+            Self::Captain => Some(&CAPTAIN),
+            Self::Link => Some(&LINK),
         }
     }
 }

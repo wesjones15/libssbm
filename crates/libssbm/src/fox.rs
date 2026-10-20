@@ -129,7 +129,23 @@ impl Behavior for Fox {
                 facing: sim.facing,
             });
         } else if m == Move::SpecialLw {
+            // Reflector: a frame-1 shine that holds Fox in place. The source
+            // spawns the hexagon at the hip (ftfoxspeciallw.c::ftFx_SpecialLw_CreateStartGFX);
+            // here it rides the root so it always centers on Fox, never the aim.
             sim.velocity = Vec3::ZERO;
+            sim.action.effects.push(GfxCue {
+                id: 1161,
+                bone: 0,
+                common: false,
+                cycle: 0,
+                destroy_on_change: false,
+                offset: Vec3::Y * 1.0,
+                param: 0.,
+                clip: "SpecialLw",
+                frame: 0.,
+                origin: sim.position,
+                facing: sim.facing,
+            });
         } else if m == Move::SpecialN {
             // Blaster fire sound (ftfoxspecialn.c::foxSFX[0], facing-forward id).
             sim.action.sounds.push(crate::action::SoundCue {

@@ -50,6 +50,11 @@ impl Sim {
         if !self.motion.finished() {
             return;
         }
+        // A multi-stage special (Pikachu's Skull Bash, Quick Attack, Thunder)
+        // continues into its next clip instead of ending with this one.
+        if self.using_behavior(|b, s| b.next_stage(s, host, m, input)) {
+            return;
+        }
         if m == Move::SpecialN && self.phase == Phase::Startup {
             if !self.using_behavior(|b, s| b.resolve_startup(s, input)) {
                 self.fire(host);
@@ -97,6 +102,9 @@ impl Sim {
             self.action.script_clip = clip;
         }
         self.action.script_frame = frame;
+        // A waiting stage (Thunder's cloud) replays a clip whose hitboxes, effects
+        // and sounds belong to a later stage; consume them without acting.
+        let muted = self.behavior.script_muted(self);
         while let Some(event) = self
             .action
             .definitions
@@ -108,6 +116,18 @@ impl Sim {
                 break;
             }
             self.action.cursor += 1;
+            if muted
+                && matches!(
+                    event.command,
+                    Command::Hitbox(_)
+                        | Command::Raw {
+                            opcode: 10 | 17 | 54 | 55,
+                            ..
+                        }
+                )
+            {
+                continue;
+            }
             match event.command {
                 Command::Hitbox(hitbox) => {
                     let generation = if let Some(old) = self
@@ -144,6 +164,12 @@ impl Sim {
                     self.action.variables[index as usize] = value;
                     // SpecialNHold_Anim selects one of five source charge voices
                     // when cmd_var2 requests it; replace the tracked charge slot.
+                    if value == 1
+                        && self.behavior.projectile_variable() == Some(index)
+                        && self.current_move.is_some_and(|m| self.behavior.projectile_move(m))
+                    {
+                        self.disc_projectile(host);
+                    }
                     if index == 2 && value == 1 && self.phase == Phase::ChargeShot {
                         let band = self.behavior.charge_voice_band(self);
                         self.action.sounds.push(SoundCue {
@@ -296,6 +322,9 @@ impl Sim {
                     }
                 }
             }
+        }
+        if muted {
+            self.action.active.clear();
         }
         if self.current_move.is_some() {
             for active in self.action.active.values() {

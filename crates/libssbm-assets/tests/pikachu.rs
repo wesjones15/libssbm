@@ -1,0 +1,249 @@
+//! Pikachu's staged specials against his real disc clips (skipped without the
+//! player's extracted cache): lock-on arrival, no snap-back, Thunder timeline,
+//! gravity release, and committed dash travel.
+use glam::Vec3;
+use libssbm::{
+    pikachu::Pikachu,
+    sim::{EventKind, FlatHost, DOWN_B, SIDE_B, UP_B},
+    Input, Move, Sim,
+};
+use libssbm_assets::{Result, animation::Animations, fighter::PIKACHU};
+
+fn dir() -> std::path::PathBuf {
+    std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../assets")
+}
+
+fn pikachu_at(position: Vec3, grounded: bool) -> Result<Option<Sim>> {
+    let dir = dir();
+    if !PIKACHU.complete(&dir) {
+        eprintln!("SKIP: Pikachu disc cache absent");
+        return Ok(None);
+    }
+    let params = libssbm_assets::params::load_common(&dir, &PIKACHU)?;
+    let specials = libssbm_assets::params::load_pikachu_specials(&dir)?;
+    let mut sim = Sim::with_behavior(params, Box::new(Pikachu::new(specials)), position);
+    let animations = Animations::load_for(&dir, &PIKACHU)?;
+    sim.motion.definitions = animations.motion_definitions();
+    sim.action.definitions = libssbm_assets::action::load_for(&dir, &animations, &PIKACHU)?;
+    for (name, action) in &sim.action.definitions {
+        if let Some(motion) = sim.motion.definitions.get_mut(name) {
+            motion.looping |= action.looping;
+        }
+    }
+    sim.grounded = grounded;
+    sim.facing = Vec3::X;
+    Ok(Some(sim))
+}
+
+fn idle() -> Input {
+    Input::idle()
+}
+fn press(button: u32) -> Input {
+    Input { buttons: button, ..Input::idle() }
+}
+fn step(sim: &mut Sim, host: &mut FlatHost, input: Input) {
+    sim.advance(host, input, 1. / 60.);
+}
+/// Presses `button` for one tick then idles until the move ends; returns the
+/// furthest +X reached and asserts the fighter never moves back along it.
+fn run_move(sim: &mut Sim, host: &mut FlatHost, button: u32, max: usize) -> f32 {
+    for _ in 0..4 {
+        step(sim, host, idle());
+    }
+    let mut furthest = sim.position.x;
+    step(sim, host, press(button));
+    for tick in 0..max {
+        step(sim, host, idle());
+        assert!(
+            sim.position.x >= furthest - 1e-3,
+            "snap-back at tick {tick}: {} after reaching {furthest}",
+            sim.position.x
+        );
+        furthest = furthest.max(sim.position.x);
+        if sim.current_move.is_none() && tick > 3 {
+            break;
+        }
+    }
+    assert!(sim.current_move.is_none(), "move never ended");
+    furthest
+}
+
+#[test]
+fn quick_attack_reaches_a_locked_enemy_within_two_zips_without_snapback() -> Result<()> {
+    for (distance, label) in [(40., "near"), (90., "mid"), (250., "far")] {
+        let Some(mut sim) = pikachu_at(Vec3::ZERO, true)? else { return Ok(()) };
+        let mut host = FlatHost { events: Vec::new() };
+        sim.lock_target = Some(Vec3::new(distance, 0., 0.));
+        for _ in 0..4 {
+            step(&mut sim, &mut host, idle());
+        }
+        let mut furthest = 0f32;
+        let mut bursts = 0;
+        let mut fast = false;
+        step(&mut sim, &mut host, press(UP_B));
+        for tick in 0..400 {
+            step(&mut sim, &mut host, idle());
+            assert!(sim.position.x >= furthest - 1e-3, "{label}: snap-back at tick {tick}");
+            furthest = furthest.max(sim.position.x);
+            let moving = sim.velocity.length() > 2.;
+            if moving && !fast {
+                bursts += 1;
+            }
+            fast = moving;
+            if sim.current_move.is_none() && tick > 3 {
+                break;
+            }
+        }
+        assert!(bursts >= 1 && bursts <= 2, "{label}: {bursts} zips");
+        let gap = distance - sim.position.x;
+        assert!(
+            (0. ..=14.).contains(&gap),
+            "{label}: stopped {gap} short of the enemy (standoff is 12)"
+        );
+    }
+    Ok(())
+}
+
+#[test]
+fn quick_attack_without_a_lock_still_travels_forward() -> Result<()> {
+    let Some(mut sim) = pikachu_at(Vec3::ZERO, true)? else { return Ok(()) };
+    let mut host = FlatHost { events: Vec::new() };
+    let furthest = run_move(&mut sim, &mut host, UP_B, 300);
+    assert!(furthest > 20., "zip travelled only {furthest}");
+    Ok(())
+}
+
+#[test]
+fn skull_bash_travel_scales_with_charge_and_never_snaps_back() -> Result<()> {
+    let mut reach = Vec::new();
+    let mut damage = Vec::new();
+    for hold in [0usize, 80] {
+        let Some(mut sim) = pikachu_at(Vec3::ZERO, true)? else { return Ok(()) };
+        let mut host = FlatHost { events: Vec::new() };
+        for _ in 0..4 {
+            step(&mut sim, &mut host, idle());
+        }
+        let mut furthest = 0f32;
+        let mut strongest = 0f32;
+        step(&mut sim, &mut host, press(SIDE_B));
+        for tick in 0..400 {
+            // Hold B through the start clip and `hold` charge ticks, then release.
+            let held = tick < 14 + hold;
+            step(&mut sim, &mut host, if held { press(SIDE_B) } else { idle() });
+            assert!(sim.position.x >= furthest - 1e-3, "snap-back at tick {tick}");
+            furthest = furthest.max(sim.position.x);
+            for sample in &sim.action.samples {
+                strongest = strongest.max(sample.hitbox.damage * sample.strength);
+            }
+            if sim.current_move.is_none() && tick > 20 {
+                break;
+            }
+        }
+        assert!(sim.current_move.is_none(), "Skull Bash never ended");
+        reach.push(furthest);
+        damage.push(strongest);
+    }
+    assert!(reach[0] > 15., "uncharged bash travelled {}", reach[0]);
+    assert!(reach[1] > reach[0] * 1.2, "charge did not extend the bash: {reach:?}");
+    assert!((damage[0] - 4.).abs() < 0.5, "uncharged bash should hit for ~4%: {damage:?}");
+    assert!(damage[1] > damage[0] * 3., "charge did not raise damage: {damage:?}");
+    Ok(())
+}
+
+#[test]
+fn thunder_spawns_then_strikes_after_the_derived_delay() -> Result<()> {
+    let Some(mut sim) = pikachu_at(Vec3::ZERO, true)? else { return Ok(()) };
+    let expected = libssbm_assets::params::load_pikachu_specials(&dir())?.thunder_strike_frames;
+    let mut host = FlatHost { events: Vec::new() };
+    for _ in 0..4 {
+        step(&mut sim, &mut host, idle());
+    }
+    step(&mut sim, &mut host, press(DOWN_B));
+    let mut spawned: Option<i32> = None;
+    let mut struck: Option<i32> = None;
+    let mut early_hits = 0;
+    let mut crackle = 0f32;
+    for tick in 0..300i32 {
+        step(&mut sim, &mut host, idle());
+        let samples = sim.action.samples.len();
+        for sample in &sim.action.samples {
+            crackle = crackle.max(sample.hitbox.damage * sample.strength);
+        }
+        let waiting = spawned.is_some() && struck.is_none();
+        for e in host.events.drain(..) {
+            if e.kind == EventKind::Hit && e.move_id == Move::SpecialLw as u32 {
+                if e.strength == 1. {
+                    spawned = Some(tick);
+                } else if e.strength == 2. {
+                    struck = Some(tick);
+                }
+            }
+        }
+        // A tick that ends before the strike event must not have swung the hitbox.
+        if waiting && struck.is_none() {
+            early_hits += samples;
+        }
+        if sim.current_move.is_none() && tick > 3 {
+            break;
+        }
+    }
+    let (spawned, struck) = (spawned.expect("no cloud spawn"), struck.expect("no strike"));
+    assert!(
+        (struck - spawned - expected as i32).abs() <= 2,
+        "strike {} ticks after spawn, expected {expected}",
+        struck - spawned
+    );
+    assert!(sim.current_move.is_none());
+    assert_eq!(early_hits, 0, "the loop's hitbox must stay muted until the bolt strikes");
+    assert!((crackle - 17.).abs() < 0.5, "the strike should crackle for 17%: {crackle}");
+    Ok(())
+}
+
+#[test]
+fn moves_release_gravity_so_pikachu_falls_afterwards() -> Result<()> {
+    for button in [UP_B, DOWN_B, SIDE_B] {
+        let Some(mut sim) = pikachu_at(Vec3::new(0., 400., 0.), false)? else { return Ok(()) };
+        let mut host = FlatHost { events: Vec::new() };
+        for _ in 0..4 {
+            step(&mut sim, &mut host, idle());
+        }
+        step(&mut sim, &mut host, press(button));
+        for tick in 0..400 {
+            step(&mut sim, &mut host, idle());
+            if sim.current_move.is_none() && tick > 3 {
+                break;
+            }
+        }
+        assert!(sim.current_move.is_none(), "move {button} never ended");
+        let before = sim.position.y;
+        for _ in 0..30 {
+            step(&mut sim, &mut host, idle());
+        }
+        assert!(
+            sim.position.y < before - 1. || sim.grounded,
+            "button {button}: still hovering at {}",
+            sim.position.y
+        );
+    }
+    Ok(())
+}
+
+#[test]
+fn dash_attack_and_dash_grab_commit_their_travel() -> Result<()> {
+    for m in [Move::DashAttack, Move::DashGrab] {
+        let Some(mut sim) = pikachu_at(Vec3::ZERO, true)? else { return Ok(()) };
+        let mut host = FlatHost { events: Vec::new() };
+        let clip = if m == Move::DashAttack { "AttackDash" } else { "CatchDash" };
+        let travel = sim.motion.definitions[clip].forward_delta(0., sim.motion.definitions[clip].frames);
+        let Some(travel) = travel else { panic!("{clip} has no flagged travel") };
+        assert!(sim.start_move(&mut host, m, idle()));
+        let mut furthest = 0f32;
+        for _ in 0..200 {
+            step(&mut sim, &mut host, idle());
+            assert!(sim.position.x >= furthest - 1e-3, "{clip} snapped back");
+            furthest = furthest.max(sim.position.x);
+        }
+        assert!((sim.position.x - travel).abs() < 0.2, "{clip}: {} vs {travel}", sim.position.x);
+    }
+    Ok(())
+}
