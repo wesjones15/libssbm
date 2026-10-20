@@ -41,6 +41,7 @@ pub unsafe extern "C" fn ssbm_projectile_lifetime(h: *mut Handle, frames: f32) {
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn ssbm_projectile_new(
     dir: *const c_char,
+    fighter_kind: u32,
     kind: u32,
     state: u32,
     charge: f32,
@@ -49,14 +50,11 @@ pub unsafe extern "C" fn ssbm_projectile_new(
     guarded(std::ptr::null_mut(), || {
         let result = (|| -> libssbm_assets::Result<Handle> {
             let dir = unsafe { path(dir) }?;
-            if kind > 2
-                || kind == 1 && !(1..=8).contains(&state)
-                || kind != 1 && state > 1
-                || !charge.is_finite()
-            {
+            if !charge.is_finite() {
                 return Err("invalid projectile request".into());
             }
-            let article = Article::load(dir, kind, state)?;
+            let fighter = super::fighter_assets(fighter_kind)?;
+            let article = Article::load_for(dir, kind, state, fighter)?;
             let hit = article
                 .commands
                 .iter()
@@ -88,49 +86,58 @@ pub unsafe extern "C" fn ssbm_projectile_new(
                 explosion_radius: hit.radius,
                 explosion_frames: 0.,
             };
-            match kind {
-                0 => {
-                    p.initial_y = article.common[6];
-                    let explosion = Article::load(dir, 0, 1)?;
-                    p.explosion_radius = explosion
-                        .commands
-                        .iter()
-                        .find_map(|c| match &c.command {
-                            Command::Hitbox(h) => Some(h.radius),
-                            _ => None,
-                        })
-                        .ok_or("bomb explosion hitbox absent")?;
-                    p.explosion_frames = 28.;
-                }
+            match fighter_kind {
+                0 => match kind {
+                    0 => {
+                        p.initial_y = article.common[6];
+                        let explosion = Article::load_for(dir, 0, 1, fighter)?;
+                        p.explosion_radius = explosion
+                            .commands
+                            .iter()
+                            .find_map(|c| match &c.command {
+                                Command::Hitbox(h) => Some(h.radius),
+                                _ => None,
+                            })
+                            .ok_or("bomb explosion hitbox absent")?;
+                        p.explosion_frames = 28.;
+                    }
+                    1 => {
+                        p.speed = a[2] + (a[3] - a[2]) * charge.clamp(0., 1.);
+                    }
+                    2 if state == 0 => {
+                        p.life = a[1];
+                        p.homing_frames = a[2];
+                        p.speed = a[3];
+                        p.decay = a[4];
+                        p.min_speed = a[5];
+                        p.turn_accel = a[6];
+                        p.max_turn = a[7];
+                        p.min_angle = a[8];
+                        p.explosion_frames = 30.;
+                    }
+                    2 => {
+                        p.life = a[9];
+                        p.delay = a[10];
+                        p.speed = a[11];
+                        p.acceleration = a[12];
+                        p.max_speed = a[13];
+                        p.explosion_frames = 40.;
+                    }
+                    _ => (),
+                },
+                // Fox's Blaster laser: a straight, fast projectile. The shot
+                // article's own life; speed from ftFx_DatAttrs.x14.
                 1 => {
-                    p.speed = a[2] + (a[3] - a[2]) * charge.clamp(0., 1.);
-                }
-                2 if state == 0 => {
-                    p.life = a[1];
-                    p.homing_frames = a[2];
-                    p.speed = a[3];
-                    p.decay = a[4];
-                    p.min_speed = a[5];
-                    p.turn_accel = a[6];
-                    p.max_turn = a[7];
-                    p.min_angle = a[8];
-                    p.explosion_frames = 30.;
-                }
-                2 => {
-                    p.life = a[9];
-                    p.delay = a[10];
-                    p.speed = a[11];
-                    p.acceleration = a[12];
-                    p.max_speed = a[13];
-                    p.explosion_frames = 40.;
+                    p.life = a[0];
+                    p.speed = libssbm_assets::params::load_fox_specials(dir)?.blaster_speed;
                 }
                 _ => (),
             }
             // Expiration is encoded by the source item's var2 command, rather
             // than a host timer. Bomb explosion uses animation 1, missile 2/3.
             let mut explosion_commands = Vec::new();
-            if kind != 1 {
-                let explosion = Article::load(dir, kind, if kind == 0 { 1 } else { state + 2 })?;
+            if fighter_kind == 0 && kind != 1 {
+                let explosion = Article::load_for(dir, kind, if kind == 0 { 1 } else { state + 2 }, fighter)?;
                 let end=explosion.commands.iter().find(|c| matches!(&c.command,Command::Raw {opcode:19,words} if words[0]&0x03ffffff!=0)).ok_or("missing explosion end command")?;
                 p.explosion_frames = end.frame;
                 explosion_commands = explosion.commands;

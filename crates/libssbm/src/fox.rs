@@ -12,6 +12,7 @@ use glam::Vec3;
 /// Fox's special tuning, separate from the shared `Params`.
 #[derive(Clone, Debug)]
 pub struct Specials {
+    pub blaster_angle: f32,
     pub blaster_speed: f32,
     pub illusion_velocity: f32,
     pub fire_fox_velocity: f32,
@@ -21,6 +22,7 @@ impl Specials {
     /// Synthetic fixture only; runtime hosts read the disc.
     pub fn fixture() -> Self {
         Self {
+            blaster_angle: 0.,
             blaster_speed: 20.,
             illusion_velocity: 12.,
             fire_fox_velocity: 3.,

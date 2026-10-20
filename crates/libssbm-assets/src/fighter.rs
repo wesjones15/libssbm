@@ -131,7 +131,13 @@ pub const FOX: FighterAssets<'static> = FighterAssets {
         "audio/us/nr_name.ssm",
     ],
     sequences: "audio/us/smash2.sem",
-    articles: &[],
+    // Fox's three articles (It_Kind_Fox_Laser/Blaster/Illusion). States and
+    // special-word counts are approximate pending the disc's ftDataFox.x48_items.
+    articles: &[
+        ArticleLayout { states: 2, special_words: 8 },
+        ArticleLayout { states: 2, special_words: 8 },
+        ArticleLayout { states: 2, special_words: 8 },
+    ],
     common_index: 1,
     morph_visibility: None,
     upper_body_root: None,
@@ -140,9 +146,9 @@ pub const FOX: FighterAssets<'static> = FighterAssets {
             file: "MnSlChr.usd",
             root: "MnSelectChrDataTable",
         },
-        joint: 0,
-        frame: 0,
-        grid_joint: 0,
+        joint: 51, // TODO: verify Fox's selected-photo material joint
+        frame: 2,  // ICONHUD_FOX (mn/forward.h)
+        grid_joint: 23, // ICONJOINT_FOX (mn/types.h)
     },
     announce_sound: 0x7C835,
 };

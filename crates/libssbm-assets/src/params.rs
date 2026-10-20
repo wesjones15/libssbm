@@ -283,8 +283,20 @@ pub fn load_samus_specials(dir: &Path) -> Result<libssbm::samus::Specials> {    
     Ok(p)
 }
 
-/// Fox's `ext_attr` special tuning. Prototype fixture until the ftFx_DatAttrs
-/// offsets are sourced from ftFox/ftfoxspecial{n,s,hi,lw}.c.
-pub fn load_fox_specials(_dir: &Path) -> Result<libssbm::fox::Specials> {
-    Ok(libssbm::fox::Specials::fixture())
+/// Fox's `ext_attr` special tuning. ftFox/types.h::ftFox_DatAttrs; the pointer
+/// is `ftDataFox + 4`, same layout as Samus's special attributes.
+pub fn load_fox_specials(dir: &Path) -> Result<libssbm::fox::Specials> {
+    let profile = &crate::fighter::FOX;
+    profile.required()?;
+    let bytes = std::fs::read(dir.join(profile.data.file))?;
+    let fighter = Dat::parse(&bytes)?;
+    let root = fighter.root(profile.data.root)?;
+    let fx = fighter.required_ptr(root + 4)?;
+    Ok(libssbm::fox::Specials {
+        blaster_angle: fighter.f32(fx + 0x10)?,
+        blaster_speed: fighter.f32(fx + 0x14)?,
+        illusion_velocity: fighter.f32(fx + 0x28)?,
+        fire_fox_velocity: fighter.f32(fx + 0x74)?,
+        reflector_frames: fighter.f32(fx + 0x98)?.round() as u32,
+    })
 }
