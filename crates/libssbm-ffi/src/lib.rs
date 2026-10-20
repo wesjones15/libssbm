@@ -1050,6 +1050,20 @@ pub unsafe extern "C" fn ssbm_sim_play_sound(handle: *mut Handle, sound: u32) ->
         }
     })
 }
+/// Whether any fighter audio (a name call, an action cue) is still playing.
+/// # Safety
+/// Unique live fighter; call outside host callbacks.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn ssbm_sim_audio_active(handle: *const Handle) -> u32 {
+    if handle.is_null() {
+        return 0;
+    }
+    let h = unsafe { &*handle };
+    if h.poisoned {
+        return 0;
+    }
+    h.audio.active() as u32
+}
 /// # Safety
 /// Live handle and writable State pointer. Returns 0 for poisoned handles.
 #[unsafe(no_mangle)]

@@ -437,6 +437,11 @@ impl Mixer {
     pub fn clear(&mut self) {
         self.voices.clear();
     }
+    /// Whether any voice is still playing (or waiting). The host uses this to
+    /// keep a stream alive until a name call / cue has finished.
+    pub fn active(&self) -> bool {
+        !self.voices.is_empty()
+    }
     pub fn render(&mut self, out: &mut [f32]) {
         for frame in out.as_chunks_mut::<2>().0 {
             if self.clock == CLOCK {
