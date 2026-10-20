@@ -333,6 +333,18 @@ impl Sim {
     pub fn side_special_upper_aim(&self) -> Option<(f32, f32)> {
         self.behavior.side_special_upper_aim(self)
     }
+    /// The trophy entry's colour flash (ft_0C31.c::ftCo_800BFFD0 col_anim 0x75):
+    /// alternates the fighter's colour during the entry for the source duration.
+    pub fn entry_flash(&self) -> Option<[f32; 4]> {
+        let entry = self.entry.as_ref()?;
+        if entry.frame < entry.params.grow + entry.params.color_frames
+            && (entry.frame / 3) % 2 == 0
+        {
+            Some(entry.params.color)
+        } else {
+            None
+        }
+    }
     pub fn advance(&mut self, host: &mut impl Host, mut input: Input, dt: f64) -> u32 {
         // Explicit neutral-B keeps the existing charge hold/fire protocol while
         // remaining neutral even when LS is held or the camera points upward.

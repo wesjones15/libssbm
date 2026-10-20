@@ -1695,7 +1695,9 @@ pub unsafe extern "C" fn ssbm_view_update(v: *mut View, h: *const Handle, dt: f3
                 offset += 1;
             }
             let flash = h.sim.phase == libssbm::Phase::SmashCharge && (h.sim.frame / 4) % 2 == 0;
-            v.colors[i] = if flash {
+            v.colors[i] = if let Some(color) = h.sim.entry_flash() {
+                color
+            } else if flash {
                 [1., 0.9, 0.15, 1.]
             } else {
                 v.actor.color(i)
@@ -1997,6 +1999,46 @@ mod tests {
             assert!(p.model.batches.len() > 0, "no model batches");
             let visible = (0..p.model.batches.len()).any(|i| p.visible(i));
             assert!(visible, "no visible batches for {}", fighter.data.root);
+            // The in-game arrival (figurine return) must resolve the same way.
+            let entry = libssbm_assets::params::entry(&dir, fighter);
+            assert!(entry.is_ok(), "{} entry params: {:?}", fighter.data.root, entry.err());
+            eprintln!("{} entry: {:?}", fighter.data.root, entry.as_ref().map(|e| (e.grow, e.release, e.flat, e.platform)));
+            let rebirth = libssbm_assets::params::rebirth(&dir);
+            assert!(rebirth.is_ok(), "rebirth params: {:?}", rebirth.err());
+        }
+        Ok(())
+    }
+    #[test]
+    fn non_samus_arrival_hitboxes_and_view_do_not_fail() -> libssbm_assets::Result<()> {
+        let dir = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../assets");
+        for kind in [1u32, 2u32] {
+            let fighter = libssbm_assets::fighter::FighterKind::from_u32(kind).unwrap();
+            if !fighter.assets().unwrap().complete(&dir) {
+                eprintln!("SKIP: kind {kind} disc cache absent");
+                continue;
+            }
+            let cdir = std::ffi::CString::new(dir.to_str().unwrap()).unwrap();
+            let sim = unsafe { ssbm_sim_new_fighter(cdir.as_ptr(), V3::default(), kind) };
+            assert!(!sim.is_null(), "kind {kind} sim failed: {}", ERROR.with(|e| e.borrow().to_string_lossy().into_owned()));
+            assert_eq!(unsafe { ssbm_sim_begin_arrival(sim, cdir.as_ptr()) }, 1, "kind {kind} arrival: {}", ERROR.with(|e| e.borrow().to_string_lossy().into_owned()));
+            let mut host = HostTable { collide: None, event: None, user: std::ptr::null_mut() };
+            let pad = Pad { movement: V3::default(), aim: V3 { x: 0., y: 0., z: 1. }, buttons: 0, allowed: 0 };
+            for _ in 0..600 {
+                assert_ne!(unsafe { ssbm_sim_step(sim, &mut host, &pad, 1. / 60.) }, 0);
+                let n = unsafe { ssbm_sim_hitboxes(sim, std::ptr::null_mut(), 0) };
+                if n > 0 {
+                    let mut out = vec![HitboxSample::default(); n as usize];
+                    assert_eq!(unsafe { ssbm_sim_hitboxes(sim, out.as_mut_ptr(), n) }, n, "kind {kind} hitboxes: {}", ERROR.with(|e| e.borrow().to_string_lossy().into_owned()));
+                }
+            }
+            let view = unsafe { ssbm_view_new(cdir.as_ptr(), kind, 0) };
+            assert!(!view.is_null(), "kind {kind} view failed");
+            assert_eq!(unsafe { ssbm_view_update(view, sim, 1. / 60.) }, 1, "kind {kind} view update: {}", ERROR.with(|e| e.borrow().to_string_lossy().into_owned()));
+            let mut info = ModelInfo::default();
+            assert_eq!(unsafe { ssbm_view_model(view, &mut info) }, 1);
+            assert!(info.vertex_count > 0, "kind {kind} view has no vertices");
+            unsafe { ssbm_view_free(view) };
+            unsafe { ssbm_sim_free(sim) };
         }
         Ok(())
     }

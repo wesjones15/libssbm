@@ -138,6 +138,23 @@ impl Sim {
                 return true;
             }
             Phase::Figurine => {
+                if state.frame == 0 {
+                    // The vanilla rebirth ring (ft_0D4D.c::ftCo_800D4F24 spawns
+                    // 0x43F as the trophy appears).
+                    self.action.effects.push(crate::action::GfxCue {
+                        id: 0x43f,
+                        bone: 0,
+                        common: false,
+                        cycle: 0,
+                        destroy_on_change: false,
+                        offset: Vec3::ZERO,
+                        param: 1.,
+                        clip: "Entry",
+                        frame: 0.,
+                        origin: self.position,
+                        facing: self.facing,
+                    });
+                }
                 state.frame += 1;
                 let ready = state.frame >= state.params.arrival_frames
                     && self.entry.is_some_and(|e| e.frame >= e.params.grow);
