@@ -94,6 +94,15 @@ impl Behavior for Fox {
             sim.velocity.y = 0.;
         } else if m == Move::SpecialLw {
             sim.velocity = Vec3::ZERO;
+        } else if m == Move::SpecialN {
+            // Blaster fire sound (ftfoxspecialn.c::foxSFX[0], facing-forward id).
+            sim.action.sounds.push(crate::action::SoundCue {
+                sound: 110103,
+                volume: 127,
+                pan: 64,
+                channel: 0,
+                stop: false,
+            });
         }
     }
     fn aimable(&self, m: Move) -> bool {
