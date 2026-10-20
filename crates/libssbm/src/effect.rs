@@ -65,6 +65,10 @@ pub fn resolve(id: u32) -> Target {
         1163 => Model(2003),
         1164 => Model(2004),
         1165 => Particle(3008),
+        // Luigi's own effects (efsync.c 0x509/0x50A): the Cyclone spin and the
+        // Green Missile launch flash.
+        1289 => Model(2001),
+        1290 => Particle(95),
         // ftCo_8009F834 routes this to Camera_RequestQuake, before efsync.
         1299 => CameraShake(2),
         1300 => Particle(3), // iteffect.c 0x514: item effect 3

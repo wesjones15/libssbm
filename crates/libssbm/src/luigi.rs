@@ -4,7 +4,7 @@
 use crate::{
     action::GfxCue,
     behavior::Behavior,
-    sim::{Host, Input, Move, Phase, Sim, DOWN_B, NEUTRAL_B, SIDE_B, UP_B},
+    sim::{Host, Input, Move, Phase, Sim, DOWN_B, NEUTRAL_B, SIDE_B, SPECIAL, UP_B},
 };
 use glam::Vec3;
 
@@ -37,6 +37,34 @@ impl Luigi {
     /// Synthetic Luigi behavior for headless tests.
     pub fn fixture() -> Self {
         Self::new(Specials::fixture())
+    }
+    /// Fire the charged Green Missile: forward along the camera aim, with the
+    /// charge scaled from 250% (uncharged) to 1600% (full).
+    fn launch_missile(&self, sim: &mut Sim) {
+        let ratio = sim.shot_charge as f32 / self.charge_steps().max(1) as f32;
+        sim.move_strength = 2.5 + 13.5 * ratio;
+        let aim = sim.move_aim.with_y(0.);
+        let aim = if aim.length_squared() > 0.001 {
+            aim.normalize()
+        } else {
+            sim.facing
+        };
+        sim.velocity = aim * self.specials.missile_velocity * sim.options.speed_scale;
+        sim.grounded = false;
+        sim.pad_gravity = None;
+        sim.action.effects.push(GfxCue {
+            id: 1290,
+            bone: 0,
+            common: false,
+            cycle: 0,
+            destroy_on_change: false,
+            offset: Vec3::ZERO,
+            param: 0.,
+            clip: "SpecialS",
+            frame: 0.,
+            origin: sim.position,
+            facing: sim.facing,
+        });
     }
 }
 impl Behavior for Luigi {
@@ -84,27 +112,42 @@ impl Behavior for Luigi {
             };
             sim.jumps_used = sim.params.jumps + sim.options.extra_jumps;
         } else if m == Move::SpecialS {
-            // Green Missile: a horizontal dash in the facing direction.
-            sim.velocity.x = sim.facing.x * self.specials.missile_velocity * sim.options.speed_scale;
-            sim.velocity.z = sim.facing.z * self.specials.missile_velocity * sim.options.speed_scale;
-            sim.velocity.y = 0.;
-        } else if m == Move::SpecialLw {
-            // Luigi Cyclone: spin in place; the disc supplies the animation.
+            // Green Missile charge: hold in place; the launch happens on release.
             sim.velocity = Vec3::ZERO;
+        } else if m == Move::SpecialLw {
+            // Luigi Cyclone: briefly halt the fall and spin with its cyclone FX.
+            sim.velocity = Vec3::ZERO;
+            sim.pad_gravity = None;
+            sim.action.effects.push(GfxCue {
+                id: 1289,
+                bone: 0,
+                common: false,
+                cycle: 0,
+                destroy_on_change: false,
+                offset: Vec3::ZERO,
+                param: 0.,
+                clip: "SpecialLw",
+                frame: 0.,
+                origin: sim.position,
+                facing: sim.facing,
+            });
         }
         // Fireball (SpecialN) spawns through the projectile path; no body sound.
     }
     fn aimable(&self, m: Move) -> bool {
         matches!(m, Move::SpecialN | Move::SpecialS)
     }
-    fn is_charge_move(&self, _m: Move) -> bool {
-        false
+    fn is_charge_move(&self, m: Move) -> bool {
+        m == Move::SpecialS
+    }
+    fn charge_clip(&self) -> &'static str {
+        "SpecialSHold"
     }
     fn charge_voice_band(&self, _sim: &Sim) -> u32 {
         0
     }
     fn charge_steps(&self) -> u32 {
-        1
+        100
     }
     fn charge_visual(&self) -> (f32, f32) {
         (1., 1.)
@@ -112,13 +155,36 @@ impl Behavior for Luigi {
     fn store_special(&self, _sim: &mut Sim, _host: &mut dyn Host, _pressed: u32) -> bool {
         false
     }
-    fn resolve_startup(&self, _sim: &mut Sim, _input: Input) -> bool {
-        false
+    fn resolve_startup(&self, sim: &mut Sim, input: Input) -> bool {
+        // Enter the charge hold while RB stays pressed.
+        if sim.current_move == Some(Move::SpecialS)
+            && sim.shot_charge < self.charge_steps()
+            && input.buttons & SPECIAL != 0
+        {
+            sim.charge_clock = 0;
+            sim.set_phase(Phase::ChargeShot);
+            true
+        } else {
+            false
+        }
     }
     fn fire_strength(&self, sim: &mut Sim, _m: Move) -> f32 {
         sim.move_strength
     }
-    fn tick_charge(&self, _sim: &mut Sim, _host: &mut dyn Host, _input: Input, _pressed: u32) {}
+    fn tick_charge(&self, sim: &mut Sim, host: &mut dyn Host, input: Input, pressed: u32) {
+        sim.charge_clock += 1;
+        if sim.charge_clock >= 1 {
+            sim.charge_clock = 0;
+            sim.shot_charge = (sim.shot_charge + 1).min(self.charge_steps());
+        }
+        let fire = pressed & (crate::sim::CANCEL | crate::sim::GRAB | crate::sim::JUMP) != 0
+            || sim.shot_charge >= self.charge_steps()
+            || input.buttons & SPECIAL == 0;
+        if fire {
+            self.launch_missile(sim);
+            sim.fire(host);
+        }
+    }
     fn tick_charge_cancel(&self, sim: &mut Sim) -> bool {
         if sim.motion.finished() {
             sim.set_phase(Phase::Free);

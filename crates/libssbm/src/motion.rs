@@ -96,7 +96,7 @@ pub fn select(s: &Sim, input: Input) -> (&'static str, f32) {
         return ("KneeBend", 1.);
     }
     if s.phase == Phase::ChargeShot {
-        return ("SpecialNHold", 1.);
+        return (s.behavior.charge_clip(), 1.);
     }
     if s.phase == Phase::Helpless {
         return (fall_clip(s, true), 1.);

@@ -34,6 +34,10 @@ pub trait Behavior: Send {
     fn aimable(&self, m: Move) -> bool;
     /// The charge-shot move, if this fighter has one (Samus: ChargeShot).
     fn is_charge_move(&self, m: Move) -> bool;
+    /// Clip for the hold-to-charge phase (Samus: SpecialNHold).
+    fn charge_clip(&self) -> &'static str {
+        "SpecialNHold"
+    }
     /// Source charge-voice band for the held charge (0..4).
     fn charge_voice_band(&self, sim: &Sim) -> u32;
     /// Charge levels and visual scale range for a charge-capable fighter.

@@ -135,12 +135,17 @@ pub unsafe extern "C" fn ssbm_projectile_new(
                 }
                 // Luigi's Fireball: speed and life from the item's special
                 // attributes (itLuigiFireballAttributes x0/x4). It bounces off
-                // the ground (RoR2's open stages) and dies on walls/ceilings.
+                // the ground (RoR2's open stages) at a consistent height until
+                // its life expires, and dies on walls/ceilings.
                 2 => {
-                    p.speed = a[0];
+                    p.speed = a[0] * 1.6;
                     p.life = a[1];
-                    p.max_bounces = 10;
-                    p.bounce_factor = 0.5;
+                    // The disc item carries no gravity; give it a gentle fall so
+                    // it reaches the ground and bounces instead of flying level.
+                    p.gravity = 0.06;
+                    p.initial_y = -0.4;
+                    p.max_bounces = u32::MAX;
+                    p.bounce_factor = 1.0;
                 }
                 _ => (),
             }
