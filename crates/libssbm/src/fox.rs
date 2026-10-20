@@ -80,18 +80,54 @@ impl Behavior for Fox {
         if m == Move::SpecialHi {
             sim.pad_gravity = None;
             sim.grounded = false;
-            // Fire Fox rises to the host's standard jump apex, like every jump.
-            sim.velocity.y = if let Some(height) = sim.host_jump_height {
-                crate::controls::jump_velocity(height, sim.params.gravity)
+            // Fire Fox launches toward the camera aim (RoR2 adaptation of the
+            // source's 360-degree stick angle), with the distance scaled up for
+            // open-world traversal. ftfoxspecialhi.c::ftFx_SpecialAirHi_Enter.
+            let aim = if sim.move_aim.length_squared() > 0.001 {
+                sim.move_aim.normalize()
+            } else {
+                Vec3::Y
+            };
+            let speed = if let Some(height) = sim.host_jump_height {
+                crate::controls::jump_velocity(height, sim.params.gravity) * 1.8
             } else {
                 self.specials.fire_fox_velocity * sim.options.jump_scale
             };
+            sim.velocity = aim * speed;
             sim.jumps_used = sim.params.jumps + sim.options.extra_jumps;
+            // Fire Fox launch flame (ftfoxspecialhi.c::ftFx_SpecialHi_CreateLaunchGFX).
+            sim.action.effects.push(crate::action::GfxCue {
+                id: 1164,
+                bone: 0,
+                common: false,
+                cycle: 0,
+                destroy_on_change: false,
+                offset: Vec3::ZERO,
+                param: 0.,
+                clip: "SpecialHi",
+                frame: 0.,
+                origin: sim.position,
+                facing: sim.facing,
+            });
         } else if m == Move::SpecialS {
-            // Fox Illusion: a horizontal dash in the facing direction.
+            // Fox Illusion: a horizontal dash in the facing direction with the
+            // blue streak. ftfoxspecials.c::ftFx_SpecialS_Enter.
             sim.velocity.x = sim.facing.x * self.specials.illusion_velocity * sim.options.speed_scale;
             sim.velocity.z = sim.facing.z * self.specials.illusion_velocity * sim.options.speed_scale;
             sim.velocity.y = 0.;
+            sim.action.effects.push(crate::action::GfxCue {
+                id: 1165,
+                bone: 0,
+                common: false,
+                cycle: 0,
+                destroy_on_change: false,
+                offset: Vec3::ZERO,
+                param: 0.,
+                clip: "SpecialS",
+                frame: 0.,
+                origin: sim.position,
+                facing: sim.facing,
+            });
         } else if m == Move::SpecialLw {
             sim.velocity = Vec3::ZERO;
         } else if m == Move::SpecialN {

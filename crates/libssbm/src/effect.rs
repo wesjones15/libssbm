@@ -60,6 +60,11 @@ pub fn resolve(id: u32) -> Target {
         1157 => Particle(2014),
         1158 => Model(2001),
         1159 => Model(2002),
+        // Fox's own article effects (efalt.c 0x48B..0x48D): Fire Fox charge
+        // flame, Fire Fox launch flame and the Illusion blue streak.
+        1163 => Model(2003),
+        1164 => Model(2004),
+        1165 => Particle(3008),
         // ftCo_8009F834 routes this to Camera_RequestQuake, before efsync.
         1299 => CameraShake(2),
         1300 => Particle(3), // iteffect.c 0x514: item effect 3
