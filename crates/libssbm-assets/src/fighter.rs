@@ -106,6 +106,46 @@ pub const SAMUS: FighterAssets<'static> = FighterAssets {
     },
     announce_sound: 0x7C84E,
 };
+/// Fox's asset profile. Blaster/Illusion/Fire Fox/Reflector article layouts and
+/// the CSS portrait indices are TODO until Fox's disc assets are exercised.
+pub const FOX: FighterAssets<'static> = FighterAssets {
+    data: Archive {
+        file: "PlFx.dat",
+        root: "ftDataFox",
+    },
+    animations: "PlFxAJ.dat",
+    costumes: &[
+        "PlFxNr.dat",
+        "PlFxPi.dat",
+        "PlFxBk.dat",
+        "PlFxGr.dat",
+        "PlFxLa.dat",
+    ],
+    effects: Archive {
+        file: "EfFxData.dat",
+        root: "effFoxDataTable",
+    },
+    samples: &[
+        "audio/us/fox.ssm",
+        "audio/us/main.ssm",
+        "audio/us/nr_name.ssm",
+    ],
+    sequences: "audio/us/smash2.sem",
+    articles: &[],
+    common_index: 1,
+    morph_visibility: None,
+    upper_body_root: None,
+    portrait: crate::portrait::Portrait {
+        archive: Archive {
+            file: "MnSlChr.usd",
+            root: "MnSelectChrDataTable",
+        },
+        joint: 0,
+        frame: 0,
+        grid_joint: 0,
+    },
+    announce_sound: 0x7C835,
+};
 /// The FFI's fighter selector. Adding a fighter means adding a variant here, a
 /// `FighterAssets` definition, and returning it from [`FighterKind::assets`].
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -137,7 +177,7 @@ impl FighterKind {
     pub fn assets(self) -> Option<&'static FighterAssets<'static>> {
         match self {
             Self::Samus => Some(&SAMUS),
-            Self::Fox => None,
+            Self::Fox => Some(&FOX),
             Self::Pikachu => None,
         }
     }

@@ -256,8 +256,7 @@ pub fn load_common(dir: &Path, profile: &crate::fighter::FighterAssets<'_>) -> R
 
 /// Samus's `ext_attr` special tuning (ftSs_DatAttrs and charge-shot article
 /// attributes). Other fighters supply their own behavior parameters.
-pub fn load_samus_specials(dir: &Path) -> Result<libssbm::samus::Specials> {
-    let profile = &crate::fighter::SAMUS;
+pub fn load_samus_specials(dir: &Path) -> Result<libssbm::samus::Specials> {    let profile = &crate::fighter::SAMUS;
     profile.required()?;
     let bytes = std::fs::read(dir.join(profile.data.file))?;
     let fighter = Dat::parse(&bytes)?;
@@ -282,4 +281,10 @@ pub fn load_samus_specials(dir: &Path) -> Result<libssbm::samus::Specials> {
         bomb_velocity: fighter.f32(ss + 0x58)?,
     };
     Ok(p)
+}
+
+/// Fox's `ext_attr` special tuning. Prototype fixture until the ftFx_DatAttrs
+/// offsets are sourced from ftFox/ftfoxspecial{n,s,hi,lw}.c.
+pub fn load_fox_specials(_dir: &Path) -> Result<libssbm::fox::Specials> {
+    Ok(libssbm::fox::Specials::fixture())
 }

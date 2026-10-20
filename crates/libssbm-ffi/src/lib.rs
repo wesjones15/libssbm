@@ -464,9 +464,12 @@ pub unsafe extern "C" fn ssbm_sim_new_fighter(dir: *const c_char, pos: V3, kind:
                         fighter.upper_body_root,
                     )),
                 ),
-                libssbm_assets::fighter::FighterKind::Fox => {
-                    return Err(format!("fighter kind {kind} (Fox) behavior not implemented").into());
-                }
+                libssbm_assets::fighter::FighterKind::Fox => (
+                    libssbm_assets::params::load_common(dir, fighter)?,
+                    Box::new(libssbm::fox::Fox::new(
+                        libssbm_assets::params::load_fox_specials(dir)?,
+                    )),
+                ),
                 libssbm_assets::fighter::FighterKind::Pikachu => {
                     return Err(format!("fighter kind {kind} (Pikachu) behavior not implemented").into());
                 }
