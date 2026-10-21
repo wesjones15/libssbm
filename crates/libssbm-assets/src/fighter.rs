@@ -260,7 +260,7 @@ pub const PIKACHU: FighterAssets<'static> = FighterAssets {
         grid_joint: 30,  // ICONJOINT_PIKACHU (mn/types.h)
     },
     announce_sound: 0x7C84D, // CKind_Pikachu -> gm_1601.c::gm_80168C5C case 13
-    clip_aliases: &[],
+    clip_aliases: &[("AttackS4S", "AttackS4")],
 };
 /// Captain Falcon's asset profile. Every special (Falcon Punch, Raptor Boost,
 /// Falcon Dive, Falcon Kick) is a body move, so `articles` is empty.
@@ -361,6 +361,8 @@ pub const LINK: FighterAssets<'static> = FighterAssets {
         ("SpecialAirN", "SpecialAirNStart"),
         ("SpecialS", "SpecialS1"),
         ("SpecialAirS", "SpecialAirS1"),
+        ("AttackS3S", "AttackS3"),
+        ("AttackS4S", "AttackS41"),
     ],
 };
 /// Yoshi's asset profile. Egg Throw spawns the thrown egg article; Egg Lay and
