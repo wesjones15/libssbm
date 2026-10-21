@@ -10,10 +10,18 @@ pub struct MotionDef {
     pub looping: bool,
     /// Source TransN forward positions at 60 Hz, when motion extraction is enabled.
     pub root_forward: Option<Vec<f32>>,
+    /// Source TransN vertical positions at 60 Hz (the lift of Luigi's Super Jump Punch).
+    pub root_up: Option<Vec<f32>>,
 }
 impl MotionDef {
     pub fn forward_delta(&self, frame: f32, rate: f32) -> Option<f32> {
-        let samples = self.root_forward.as_ref()?;
+        self.delta(self.root_forward.as_ref()?, frame, rate)
+    }
+    /// How far the clip's root motion lifts the fighter between `frame` and `frame + rate`.
+    pub fn up_delta(&self, frame: f32, rate: f32) -> Option<f32> {
+        self.delta(self.root_up.as_ref()?, frame, rate)
+    }
+    fn delta(&self, samples: &[f32], frame: f32, rate: f32) -> Option<f32> {
         if samples.is_empty() {
             return Some(0.);
         }
@@ -148,7 +156,7 @@ pub fn select(s: &Sim, input: Input) -> (&'static str, f32) {
         return (fall_clip(s, false), 1.);
     }
     if s.motion.clip.starts_with("Landing") && !s.motion.finished() {
-        return (s.motion.clip, 1.);
+        return (s.motion.clip, s.landing_rate);
     }
     let gait = locomotion(s, input);
     if gait.0 != "Wait" {

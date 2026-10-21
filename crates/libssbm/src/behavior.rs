@@ -17,6 +17,14 @@ pub struct Flutter {
     pub boost: f32,
 }
 
+/// How an up special ends (Luigi's Super Jump Punch, ftCo_80096900): the fighter is helpless in
+/// the air with its drift scaled by `mobility` (x50), and landing from it costs `landing_lag` frames.
+#[derive(Clone, Copy, Debug)]
+pub struct SpecialFall {
+    pub mobility: f32,
+    pub landing_lag: f32,
+}
+
 pub trait Behavior: Send {
     // --- Move classification ------------------------------------------------
     /// Skill slot (0..4) a move maps to. Common A-attacks use slot 1.
@@ -124,6 +132,16 @@ pub trait Behavior: Send {
     /// scaled by `gravity`, the takeoff speed by `boost`, and hits do not move him
     /// (the jump's armor). `None` is an ordinary double jump.
     fn flutter(&self) -> Option<Flutter> {
+        None
+    }
+
+    /// Runs at the end of every tick, after the clip's script has created or cleared this
+    /// tick's hitboxes and before the host samples them: a move that rewrites a hitbox's
+    /// numbers (Luigi's charged missile) does it here so no sample sees the clip's own.
+    fn after_script(&self, _sim: &mut Sim) {}
+    /// A move that ends in a helpless special fall when it finishes in the air. `None` (the
+    /// default) returns control to the fighter, as every other up special here does.
+    fn special_fall(&self, _m: Move) -> Option<SpecialFall> {
         None
     }
 

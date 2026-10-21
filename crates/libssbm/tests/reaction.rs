@@ -16,6 +16,7 @@ fn airborne_damage_falls_bounces_and_stands_before_releasing_control() {
             clip.into(),
             MotionDef {
                 root_forward: None,
+                root_up: None,
                 frames,
                 looping: clip == "Wait" || clip == "DamageFall",
             },
@@ -53,6 +54,7 @@ fn contextual_attack_tapped_in_hitstun_executes_once_when_recovered() {
             clip.into(),
             MotionDef {
                 root_forward: None,
+                root_up: None,
                 frames,
                 looping: clip == "Wait",
             },
@@ -90,6 +92,7 @@ fn knockdown_blocks_repeat_hits_through_get_up_and_for_one_second_after() {
             clip.into(),
             MotionDef {
                 root_forward: None,
+                root_up: None,
                 frames,
                 looping: clip == "Wait",
             },

@@ -373,6 +373,17 @@ impl Animations {
                                 })
                                 .collect()
                         }),
+                        root_up: clip.motion_joint.map(|joint| {
+                            let track = clip
+                                .tracks
+                                .iter()
+                                .find(|t| t.joint == joint && t.channel == 6);
+                            (0..=clip.frames.ceil() as usize)
+                                .map(|frame| {
+                                    track.and_then(|t| t.sample(frame as f32)).unwrap_or(0.)
+                                })
+                                .collect()
+                        }),
                         frames: clip.frames,
                         looping: clip.looping
                             || name.starts_with("Fall")

@@ -368,10 +368,38 @@ pub fn load_luigi_specials(dir: &Path) -> Result<libssbm::luigi::Specials> {
     let fighter = Dat::parse(&bytes)?;
     let root = fighter.root(profile.data.root)?;
     let lg = fighter.required_ptr(root + 4)?;
+    let f = |offset: usize| fighter.f32(lg + offset);
     Ok(libssbm::luigi::Specials {
-        missile_velocity: fighter.f32(lg + 0x24)?,
-        super_jump_velocity: fighter.f32(lg + 0x6c)?,
-        cyclone_momentum: fighter.f32(lg + 0x74)?,
+        smash_window: f(0x4)?,
+        charge_start: f(0x8)?,
+        max_charge: f(0xc)?,
+        damage_tilt: f(0x10)?,
+        damage_slope: f(0x14)?,
+        start_traction: f(0x18)?,
+        start_decel: f(0x1c)?,
+        vel_x: f(0x24)?,
+        mul_x: f(0x28)?,
+        vel_y: f(0x2c)?,
+        fly_gravity: f(0x30)?,
+        fly_terminal: f(0x34)?,
+        friction_end: f(0x38)?,
+        end_decel: f(0x3c)?,
+        end_gravity: f(0x40)?,
+        misfire_chance: f(0x44)?,
+        misfire_vx: f(0x48)?,
+        misfire_vy: f(0x4c)?,
+        jump_freefall: f(0x50)?,
+        jump_landing_lag: f(0x54)?,
+        jump_stick_min: f(0x5c)?,
+        jump_angle: f(0x60)?,
+        jump_air_keep: f(0x64)?,
+        cyclone_tap_momentum: f(0x70)?,
+        cyclone_tap_lift: f(0x8c)?,
+        cyclone_ground_cap: f(0x74)?,
+        cyclone_ground_accel: f(0x7c)?,
+        cyclone_air_cap: f(0x78)?,
+        cyclone_air_accel: f(0x80)?,
+        cyclone_wind_down: f(0x84)?,
     })
 }
 

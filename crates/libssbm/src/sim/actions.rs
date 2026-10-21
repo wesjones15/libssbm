@@ -10,11 +10,23 @@ impl Sim {
             return;
         }
         self.action.active.clear();
-        self.current_move = None;
-        // The up special no longer enters helpless fall: the host lets the
-        // fighter act airborne, and its i-frames survive until landing or a
-        // new attack.
-        self.set_phase(Phase::Free);
+        let ended = self.current_move.take();
+        // Up specials do not enter helpless fall: the host lets the fighter act
+        // airborne, and its i-frames survive until landing or a new attack. A
+        // behavior can ask for the source's special fall (Luigi's Super Jump
+        // Punch): helpless drift, then landing lag.
+        let fall = if self.grounded {
+            None
+        } else {
+            ended.and_then(|m| self.behavior.special_fall(m))
+        };
+        if let Some(fall) = fall {
+            self.special_fall = Some(fall);
+            self.set_phase(Phase::Helpless);
+        } else {
+            self.special_fall = None;
+            self.set_phase(Phase::Free);
+        }
     }
     pub(super) fn update_disc_action(&mut self, host: &mut impl Host, input: Input, pressed: u32) {
         let m = self.current_move.unwrap();

@@ -23,6 +23,7 @@ fn fighter() -> Sim {
                 frames,
                 looping,
                 root_forward: None,
+                root_up: None,
             },
         );
     }

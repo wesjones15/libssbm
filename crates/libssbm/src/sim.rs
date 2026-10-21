@@ -244,8 +244,28 @@ pub struct Sim {
     /// A behavior holds `pad_gravity` for a scripted move; cleared when the
     /// move ends so a special can never leave the fighter floating.
     pub(crate) owns_gravity: bool,
+    /// The helpless fall an up special ended in (`Behavior::special_fall`) and the speed the
+    /// landing clip plays at to last its landing lag.
+    pub(crate) special_fall: Option<crate::behavior::SpecialFall>,
+    pub(crate) landing_rate: f32,
+    /// Set once Luigi's Cyclone has used its air lift; cleared on landing.
+    pub(crate) air_charge: bool,
+    rng: u32,
 }
 impl Sim {
+    /// A pseudo-random number in `0..bound` (the source's HSD_Randi), deterministic from the
+    /// sim's own history so headless runs repeat.
+    pub fn random(&mut self, bound: u32) -> u32 {
+        if self.rng == 0 {
+            self.rng = 0x2545_F491 ^ (self.frame as u32).wrapping_mul(0x9E37_79B9);
+        }
+        let mut x = self.rng;
+        x ^= x << 13;
+        x ^= x >> 17;
+        x ^= x << 5;
+        self.rng = x;
+        if bound == 0 { 0 } else { x % bound }
+    }
     /// Synthetic Samus for headless tests. Runtime hosts use [`Sim::with_behavior`].
     pub fn new(params: Params, position: Vec3) -> Self {
         Self::with_behavior(
@@ -309,6 +329,10 @@ impl Sim {
             flutter: 0,
             flutter_gravity: 1.,
             owns_gravity: false,
+            special_fall: None,
+            landing_rate: 1.,
+            air_charge: false,
+            rng: 0,
         }
     }
     /// Split-borrow bridge: temporarily moves the behavior out so `f` can mutate
@@ -485,6 +509,7 @@ impl Sim {
         self.current_move = None;
         self.smash_charge = 0;
         self.up_special_invulnerable = false;
+        self.special_fall = None;
         self.set_phase(Phase::Free);
     }
     /// Host damage notification, deliberately independent of engine health types.
@@ -955,6 +980,12 @@ impl Sim {
             self.velocity += gravity;
         } else {
             let horizontal = self.velocity.with_y(0.);
+            // A helpless special fall drifts at a fraction of the usual air speed.
+            let mobility = if self.phase == Phase::Helpless {
+                self.special_fall.map_or(1., |f| f.mobility)
+            } else {
+                1.
+            };
             let (speed, friction) = if self.grounded {
                 if input.buttons & SPRINT != 0 && !self.mobile_action() {
                     (self.params.run_speed, self.params.friction)
@@ -965,7 +996,7 @@ impl Sim {
                 (self.params.air_speed, self.params.air_friction)
             };
             let target = if movable {
-                movement * speed * self.options.speed_scale
+                movement * speed * self.options.speed_scale * mobility
             } else {
                 Vec3::ZERO
             };
@@ -993,7 +1024,7 @@ impl Sim {
                 // horizontal axes. Neutral input decelerates by air friction.
                 let drift = |vel: f32, stick: f32| {
                     let scale = self.options.speed_scale;
-                    let target = stick * self.params.air_speed * scale;
+                    let target = stick * self.params.air_speed * scale * mobility;
                     let friction = self.params.air_friction * scale;
                     if target.abs() < 0.00001 {
                         return vel - sign_deceleration(vel, friction);
@@ -1092,6 +1123,7 @@ impl Sim {
                     self.reaction = Some(crate::reaction::Stage::Bound);
                     self.motion.select("DownBoundU", 1.);
                 } else {
+                    let helpless_landing = self.phase == Phase::Helpless;
                     let landing = match self.current_move {
                         Some(Move::NeutralAir) => "LandingAirN",
                         Some(Move::ForwardAir) => "LandingAirF",
@@ -1112,12 +1144,23 @@ impl Sim {
                         self.action.active.clear();
                         self.set_phase(Phase::Free);
                     }
-                    self.motion.select(landing, 1.);
+                    // A special fall's landing lasts its landing lag (ftCo_LandingFallSpecial).
+                    let mut rate = 1.;
+                    if helpless_landing {
+                        if let Some(fall) = self.special_fall.take() {
+                            if fall.landing_lag > 0. {
+                                rate = self.motion.length(landing) / fall.landing_lag;
+                            }
+                        }
+                    }
+                    self.landing_rate = rate;
+                    self.motion.select(landing, rate);
                 }
                 self.emit(host, EventKind::Land, 0, -self.velocity.y);
             }
             self.velocity.y = 0.;
             self.jumps_used = 0;
+            self.air_charge = false;
             if self.phase == Phase::Helpless {
                 self.set_phase(Phase::Free);
             }
@@ -1158,6 +1201,7 @@ impl Sim {
         self.locomotion_weight += (target - self.locomotion_weight).clamp(-0.25, 0.25);
         if !self.action.definitions.is_empty() {
             self.execute_disc_commands(host, input);
+            self.using_behavior(|b, s| b.after_script(s));
         }
         self.previous = input;
     }
