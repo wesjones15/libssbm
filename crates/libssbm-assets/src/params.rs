@@ -298,6 +298,13 @@ pub fn load_fox_specials(dir: &Path) -> Result<libssbm::fox::Specials> {
         illusion_velocity: fighter.f32(fx + 0x28)?,
         fire_fox_velocity: fighter.f32(fx + 0x74)?,
         reflector_frames: fighter.f32(fx + 0x98)?.round() as u32,
+        illusion_ground_end: fighter.f32(fx + 0x34)?,
+        illusion_friction: fighter.f32(fx + 0x38)?,
+        illusion_air_end: fighter.f32(fx + 0x3c)?,
+        fire_fox_duration: fighter.f32(fx + 0x68)?,
+        fire_fox_duration_end: fighter.f32(fx + 0x70)?,
+        fire_fox_reverse_accel: fighter.f32(fx + 0x78)?,
+        reflector_gravity_delay: fighter.u32(fx + 0xa4)?,
     })
 }
 

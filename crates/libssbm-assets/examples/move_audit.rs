@@ -297,8 +297,36 @@ fn main() -> Result<()> {
     if args.first().map(String::as_str) == Some("script") {
         return scripts(&dir, &args[1..]);
     }
+    if args.first().map(String::as_str) == Some("articles") {
+        let Some((_, assets)) = build(&args[1], &dir)? else { return Ok(()) };
+        for kind in 0..assets.articles.len() as u32 {
+            let layout = assets.articles[kind as usize];
+            for state in 0..layout.states {
+                match libssbm_assets::article::Article::load_for(&dir, kind, state, assets) {
+                    Ok(a) => {
+                        println!("article {kind} state {state}: {} joints {} batches clips {:?} common {:?} special {:?}", a.model.joints.len(), a.model.batches.len(), a.animations.clips.keys().collect::<Vec<_>>(), a.common, a.special);
+                        for c in &a.commands {
+                            println!("    {} {:?}", c.frame, c.command);
+                        }
+                    }
+                    Err(e) => println!("article {kind} state {state}: no model ({e})"),
+                }
+            }
+        }
+        return Ok(());
+    }
+    if args.first().map(String::as_str) == Some("motion") {
+        let Some((sim, _)) = build(&args[1], &dir)? else { return Ok(()) };
+        for (name, d) in &sim.motion.definitions {
+            if name.starts_with("Special") || name.starts_with("Catch") {
+                println!("{name:<22} frames {:>5} looping {} travel {:?}", d.frames, d.looping, d.forward_delta(0., d.frames));
+            }
+        }
+        return Ok(());
+    }
     if args.first().map(String::as_str) == Some("specials") {
         use libssbm_assets::params::*;
+        println!("{:?}", load_fox_specials(&dir)?);
         println!("{:?}", load_pikachu_specials(&dir)?);
         println!("{:?}", load_captain_specials(&dir)?);
         println!("{:?}", load_link_specials(&dir)?);

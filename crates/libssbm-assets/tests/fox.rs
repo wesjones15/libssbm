@@ -1,0 +1,157 @@
+//! Fox's staged specials against his real disc clips (skipped without the
+//! player's extracted cache): the Blaster fires and repeats, the Illusion dash
+//! carries its hitbox, Fire Fox holds in place then launches along the aim, and
+//! the Reflector announces its burst. Each move plays its clips once.
+use glam::Vec3;
+use libssbm::{
+    fox::Fox,
+    sim::{EventKind, FlatHost, DOWN_B, NEUTRAL_B, SIDE_B, UP_B},
+    Input, Sim,
+};
+use libssbm_assets::{Result, animation::Animations, fighter::FOX};
+
+fn dir() -> std::path::PathBuf {
+    std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../assets")
+}
+
+fn fox_at(grounded: bool) -> Result<Option<Sim>> {
+    let dir = dir();
+    if !FOX.complete(&dir) {
+        eprintln!("SKIP: Fox disc cache absent");
+        return Ok(None);
+    }
+    let params = libssbm_assets::params::load_common(&dir, &FOX)?;
+    let specials = libssbm_assets::params::load_fox_specials(&dir)?;
+    let position = if grounded { Vec3::ZERO } else { Vec3::new(0., 200., 0.) };
+    let mut sim = Sim::with_behavior(params, Box::new(Fox::new(specials)), position);
+    let animations = Animations::load_for(&dir, &FOX)?;
+    sim.motion.definitions = animations.motion_definitions();
+    sim.action.definitions = libssbm_assets::action::load_for(&dir, &animations, &FOX)?;
+    for (name, action) in &sim.action.definitions {
+        if let Some(motion) = sim.motion.definitions.get_mut(name) {
+            motion.looping |= action.looping;
+        }
+    }
+    sim.grounded = grounded;
+    sim.facing = Vec3::X;
+    Ok(Some(sim))
+}
+
+fn input(buttons: u32, aim: Vec3) -> Input {
+    Input { buttons, aim, ..Input::idle() }
+}
+fn step(sim: &mut Sim, host: &mut FlatHost, i: Input) {
+    sim.advance(host, i, 1. / 60.);
+}
+fn shots(host: &FlatHost) -> usize {
+    host.events.iter().filter(|e| e.kind == EventKind::Hit && e.move_id == 20).count()
+}
+
+#[test]
+fn blaster_fires_once_per_tap_and_plays_its_clips_once() -> Result<()> {
+    let Some(mut sim) = fox_at(true)? else { return Ok(()) };
+    let mut host = FlatHost { events: Vec::new() };
+    for _ in 0..4 {
+        step(&mut sim, &mut host, Input::idle());
+    }
+    step(&mut sim, &mut host, input(NEUTRAL_B, Vec3::X));
+    let mut ticks = 0;
+    while sim.current_move.is_some() && ticks < 200 {
+        step(&mut sim, &mut host, Input::idle());
+        ticks += 1;
+    }
+    assert!(sim.current_move.is_none(), "blaster never ended");
+    assert_eq!(shots(&host), 1, "one tap, one shot");
+    // Start 7 + Loop 10 + End 24 frames, not doubled.
+    assert!(ticks < 60, "blaster took {ticks} ticks (clip chain is 41)");
+    Ok(())
+}
+
+#[test]
+fn blaster_keeps_firing_while_the_button_is_held() -> Result<()> {
+    let Some(mut sim) = fox_at(true)? else { return Ok(()) };
+    let mut host = FlatHost { events: Vec::new() };
+    for _ in 0..4 {
+        step(&mut sim, &mut host, Input::idle());
+    }
+    for _ in 0..90 {
+        step(&mut sim, &mut host, input(NEUTRAL_B, Vec3::X));
+    }
+    assert!(shots(&host) >= 5, "held blaster fired {} shots", shots(&host));
+    Ok(())
+}
+
+#[test]
+fn illusion_dashes_through_a_hitbox_and_ends() -> Result<()> {
+    let Some(mut sim) = fox_at(true)? else { return Ok(()) };
+    let mut host = FlatHost { events: Vec::new() };
+    for _ in 0..4 {
+        step(&mut sim, &mut host, Input::idle());
+    }
+    step(&mut sim, &mut host, input(SIDE_B, Vec3::X));
+    let mut boxed = false;
+    for _ in 0..200 {
+        step(&mut sim, &mut host, Input::idle());
+        boxed |= sim.action.samples.iter().any(|s| s.hitbox.damage >= 7. && s.hitbox.element == 3);
+        if sim.current_move.is_none() {
+            break;
+        }
+    }
+    assert!(sim.current_move.is_none(), "illusion never ended");
+    assert!(boxed, "no dash hitbox was ever active");
+    assert!(sim.position.x > 80., "illusion covered only {}", sim.position.x);
+    Ok(())
+}
+
+#[test]
+fn fire_fox_holds_in_place_then_launches_along_the_aim() -> Result<()> {
+    let Some(mut sim) = fox_at(false)? else { return Ok(()) };
+    let mut host = FlatHost { events: Vec::new() };
+    for _ in 0..4 {
+        step(&mut sim, &mut host, Input::idle());
+    }
+    let start = sim.position;
+    let aim = Vec3::new(1., 0.4, 0.).normalize();
+    step(&mut sim, &mut host, input(UP_B, aim));
+    // Stage one: he hangs in space for the charge.
+    for _ in 0..30 {
+        step(&mut sim, &mut host, input(0, aim));
+    }
+    assert!((sim.position - start).length() < 1., "moved during the charge: {:?}", sim.position - start);
+    let mut strongest = 0f32;
+    for _ in 0..120 {
+        step(&mut sim, &mut host, input(0, aim));
+        for s in &sim.action.samples {
+            strongest = strongest.max(s.hitbox.damage);
+        }
+        if sim.current_move.is_none() {
+            break;
+        }
+    }
+    let travelled = sim.position - start;
+    assert!(travelled.x > 100. && travelled.y > 30., "fire fox travelled {travelled:?}");
+    assert!(travelled.y < travelled.x, "launch did not follow the aim {travelled:?}");
+    assert!(strongest >= 19., "launch hit only {strongest}%");
+    Ok(())
+}
+
+#[test]
+fn reflector_announces_its_burst_and_releases() -> Result<()> {
+    let Some(mut sim) = fox_at(true)? else { return Ok(()) };
+    let mut host = FlatHost { events: Vec::new() };
+    for _ in 0..4 {
+        step(&mut sim, &mut host, Input::idle());
+    }
+    step(&mut sim, &mut host, input(DOWN_B, Vec3::X));
+    for _ in 0..60 {
+        step(&mut sim, &mut host, input(DOWN_B, Vec3::X));
+    }
+    assert!(sim.current_move.is_some(), "reflector ended while held");
+    let bursts = host.events.iter().filter(|e| e.kind == EventKind::Hit && e.move_id == 24).count();
+    assert_eq!(bursts, 1, "burst events");
+    for _ in 0..80 {
+        step(&mut sim, &mut host, Input::idle());
+    }
+    assert!(sim.current_move.is_none(), "reflector never released");
+    Ok(())
+}

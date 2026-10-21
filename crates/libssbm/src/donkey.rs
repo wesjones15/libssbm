@@ -128,6 +128,9 @@ impl Behavior for Donkey {
     fn store_special(&self, _sim: &mut Sim, _host: &mut dyn Host, _pressed: u32) -> bool {
         false
     }
+    fn fire_replays(&self, _m: Move) -> bool {
+        false
+    }
     fn resolve_startup(&self, _sim: &mut Sim, _input: Input) -> bool {
         false
     }

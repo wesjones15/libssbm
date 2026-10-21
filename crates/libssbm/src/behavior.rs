@@ -102,6 +102,14 @@ pub trait Behavior: Send {
     }
     /// The host reports that the current move's hitbox connected.
     fn on_connect(&self, _sim: &mut Sim) {}
+    /// A neutral special whose single disc clip has finished: `true` replays the
+    /// clip in the Recovery phase (Samus's charge shot, whose second pass is the
+    /// release); `false` ends the move there. A fighter whose neutral special is
+    /// one pass of the clip, or a staged chain, must return `false` or the whole
+    /// animation (and its hitboxes) plays twice.
+    fn fire_replays(&self, _m: Move) -> bool {
+        true
+    }
 
     // --- Prototype timing (not purported frame-perfect source data) ----------
     /// Special-only override for the shared prototype startup; `None` uses the

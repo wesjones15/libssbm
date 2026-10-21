@@ -56,8 +56,12 @@ impl Sim {
             return;
         }
         if m == Move::SpecialN && self.phase == Phase::Startup {
-            if !self.using_behavior(|b, s| b.resolve_startup(s, input)) {
+            if self.using_behavior(|b, s| b.resolve_startup(s, input)) {
+                // The special entered its hold phase.
+            } else if self.behavior.fire_replays(m) {
                 self.fire(host);
+            } else {
+                self.finish_disc_action();
             }
         } else {
             self.finish_disc_action();

@@ -707,6 +707,28 @@ pub unsafe extern "C" fn ssbm_sim_gfx(
         count
     })
 }
+/// Like `ssbm_sim_bone`, but `part` is a common FtPart index (ft/forward.h:
+/// HipN = 4, RThumbNb = 49, ...) resolved through the fighter's common bone
+/// table. Returns 0 when the part has no joint.
+/// # Safety
+/// Live simulation and 16 writable floats for the posed bone matrix.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn ssbm_sim_common_bone(
+    handle: *const Handle,
+    part: u32,
+    out: *mut f32,
+) -> u32 {
+    if handle.is_null() || out.is_null() {
+        return 0;
+    }
+    let h = unsafe { &*handle };
+    guarded(0, || {
+        let Some(&joint) = h.rig.common_bones.get(part as usize) else {
+            return 0;
+        };
+        unsafe { ssbm_sim_bone(handle, joint as u32, out) }
+    })
+}
 /// # Safety
 /// Live simulation and 16 writable floats for the posed physical bone matrix.
 #[unsafe(no_mangle)]
@@ -936,6 +958,18 @@ impl Host for Adapter<'_> {
     fn event(&mut self, e: Event) {
         if let Some(f) = self.0.event {
             let position = if let Some(bone) = e.attachment {
+                // An attachment at or above 0x10000 names a common FtPart (the
+                // Blaster's right thumb), resolved through the common bone table.
+                let bone = if bone >= 0x1_0000 {
+                    self.1
+                        .common_bones
+                        .get(bone - 0x1_0000)
+                        .copied()
+                        .map(usize::from)
+                        .unwrap_or(usize::MAX)
+                } else {
+                    bone
+                };
                 let action_loop = self
                     .1
                     .animations
