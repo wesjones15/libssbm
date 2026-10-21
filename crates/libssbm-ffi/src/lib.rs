@@ -2055,6 +2055,21 @@ pub unsafe extern "C" fn ssbm_sim_hurt(handle: *mut Handle) {
         guarded((), || unsafe { (&mut *handle).sim.hurt() });
     }
 }
+/// A hit that took `severity` (a fraction of the fighter's health): the fighter is hurt and a
+/// big enough hit plays a hurt voice. Returns 1 when applied; a null handle is the capability
+/// query and returns 0 without effect.
+/// # Safety
+/// Unique live sim or null. Call outside a native host callback.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn ssbm_sim_hurt_scaled(handle: *mut Handle, severity: f32) -> u32 {
+    if handle.is_null() {
+        return 0;
+    }
+    guarded(0, || {
+        unsafe { (&mut *handle).sim.hurt_scaled(severity) };
+        1
+    })
+}
 /// # Safety
 /// # Safety
 /// Live unique handle or null; velocity is units/tick, gravity units/tick squared.

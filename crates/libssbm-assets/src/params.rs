@@ -194,6 +194,37 @@ pub fn defense_for(
     Ok(p)
 }
 
+/// The fighter data's sound table (ftData +0x4C, FtSFX): the smash voices (an array at +0), the
+/// KO voices (+4, +8) and the hurt voices (arrays at +0x1C, +0x20). 0x83D60 is "no sound".
+fn load_voices(d: &Dat<'_>, table: usize) -> Result<libssbm::params::Voices> {
+    let sound = |id: u32| id != 0x83d60 && id != 0x83d61;
+    let single = |offset: usize| -> Result<Vec<u32>> {
+        let id = d.u32(table + offset)?;
+        Ok(if sound(id) { vec![id] } else { Vec::new() })
+    };
+    let array = |offset: usize| -> Result<Vec<u32>> {
+        let Some(arr) = d.ptr(table + offset)? else { return Ok(Vec::new()) };
+        let count = d.u32(arr)? as usize;
+        let Some(list) = d.ptr(arr + 4)? else { return Ok(Vec::new()) };
+        let mut ids = Vec::new();
+        for i in 0..count.min(16) {
+            let id = d.u32(list + i * 4)?;
+            if sound(id) {
+                ids.push(id);
+            }
+        }
+        Ok(ids)
+    };
+    let mut ko = single(0x4)?;
+    ko.extend(single(0x8)?);
+    Ok(libssbm::params::Voices {
+        smash: array(0x0)?,
+        ko,
+        hurt_light: array(0x1c)?,
+        hurt_heavy: array(0x20)?,
+    })
+}
+
 pub fn load(dir: &Path) -> Result<Params> {
     load_common(dir, &crate::fighter::SAMUS)
 }
@@ -249,6 +280,7 @@ pub fn load_common(dir: &Path, profile: &crate::fighter::FighterAssets<'_>) -> R
         fast_fall: fighter.f32(co + 0x74)?,
         smash_threshold: common.f32(global + 0x3c)?,
         smash_window: common.u32(global + 0x40)?,
+        voices: load_voices(&fighter, sounds)?,
         jab_2_window: fighter.f32(co + 0x7c)?.round().max(0.) as u32,
         jab_3_window: fighter.f32(co + 0x80)?.round().max(0.) as u32,
         rapid_jab_window: fighter.u32(co + 0x98)?,

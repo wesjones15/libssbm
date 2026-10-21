@@ -1,3 +1,17 @@
+/// The voices a fighter's data names for events code plays (ftData +0x4C, `FtSFX`), as the
+/// sound ids of its SEM bank. Scripts name their own voices; these are the ones they do not.
+/// The source's "no sound" id (0x83D60) is dropped.
+#[derive(Clone, Debug, Default)]
+pub struct Voices {
+    /// Played with script command 18 (ftAction_80071CCC), one picked at random: the smash grunt.
+    pub smash: Vec<u32>,
+    /// The blast-zone KO (ft_0D31.c playDeadSfx).
+    pub ko: Vec<u32>,
+    /// Played when a hit sends the fighter flying (ftCo_Damage.c): a light and a heavy set.
+    pub hurt_light: Vec<u32>,
+    pub hurt_heavy: Vec<u32>,
+}
+
 /// Common fighter tuning shared by every character: locomotion, jump, air
 /// drift, gravity and smash timing. Special-move tuning lives in each fighter's
 /// behavior module (see `crate::samus::Specials`), not here.
@@ -37,6 +51,7 @@ pub struct Params {
     pub fast_fall: f32,
     pub smash_threshold: f32,
     pub smash_window: u32,
+    pub voices: Voices,
     /// Ticks after a jab starts in which another press continues the chain
     /// (ftCo_DatAttrs jab_2_input_window, jab_3_input_window).
     pub jab_2_window: u32,
@@ -116,6 +131,7 @@ impl Params {
             fast_fall: 3.,
             smash_threshold: 0.8,
             smash_window: 4,
+            voices: Voices::default(),
             jab_2_window: 20,
             jab_3_window: 20,
             rapid_jab_window: 4,

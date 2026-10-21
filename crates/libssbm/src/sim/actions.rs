@@ -3,6 +3,11 @@
 use super::*;
 use crate::action::{ActiveHitbox, Command, HitSample, SoundCue};
 
+/// Host adaptation of the source's two hurt-voice knockback thresholds: the fraction of health
+/// a hit takes.
+const HURT_LIGHT: f32 = 0.05;
+const HURT_HEAVY: f32 = 0.2;
+
 impl Sim {
     fn finish_disc_action(&mut self) {
         if self.grabbed {
@@ -209,7 +214,7 @@ impl Sim {
                     event.command,
                     Command::Hitbox(_)
                         | Command::Raw {
-                            opcode: 10 | 17 | 54 | 55,
+                            opcode: 10 | 17 | 18 | 54 | 55,
                             ..
                         }
                 )
@@ -347,6 +352,13 @@ impl Sim {
                     self.action.visibility.insert(group, choice);
                 }
                 Command::Raw { opcode, words } => {
+                    // ftAction_80071CCC: the smash voice.
+                    if opcode == 18 {
+                        let ids = self.params.voices.smash.clone();
+                        if let Some(cue) = self.pick_voice(&ids) {
+                            self.action.sounds.push(cue);
+                        }
+                    }
                     // ftAction_80071A14/1A58: global override/all-capsule hurt state.
                     // EscapeAir uses 26 (not per-bone command 28).
                     if opcode == 26 || opcode == 27 {
@@ -497,6 +509,45 @@ impl Sim {
             origin: self.position,
             facing: self.facing,
         });
+    }
+    /// A voice cue on the fighter's voice slot (ft_800881D8): a new voice replaces the last.
+    fn voice_cue(id: u32) -> SoundCue {
+        SoundCue { sound: id, volume: 127, pan: 64, channel: VOICE_CHANNEL, stop: false }
+    }
+    /// ft_800889F4: one of an array of voices, picked at random. Its own generator, so voices
+    /// never move the sim's.
+    fn pick_voice(&mut self, ids: &[u32]) -> Option<SoundCue> {
+        if ids.is_empty() {
+            return None;
+        }
+        let mut x = self.voice_rng;
+        x ^= x << 13;
+        x ^= x >> 17;
+        x ^= x << 5;
+        self.voice_rng = x;
+        Some(Self::voice_cue(ids[x as usize % ids.len()]))
+    }
+    /// The blast-zone KO voices (ft_0D31.c playDeadSfx).
+    pub(crate) fn ko_voice(&mut self) {
+        for id in self.params.voices.ko.clone() {
+            self.action.sounds.push(Self::voice_cue(id));
+        }
+    }
+    /// ftCo_Damage.c: a big enough hit plays a hurt voice (a light or a heavy set) and the
+    /// common sound 0x50 or 0x4F. The source thresholds knockback; the host adaptation
+    /// thresholds the fraction of health the hit took. Queued, so it sounds on the next step.
+    pub(crate) fn hurt_voice(&mut self, severity: f32) {
+        let (sfx, ids) = if severity >= HURT_HEAVY {
+            (0x4f, self.params.voices.hurt_heavy.clone())
+        } else if severity >= HURT_LIGHT {
+            (0x50, self.params.voices.hurt_light.clone())
+        } else {
+            return;
+        };
+        self.queued_sounds.push(SoundCue { sound: sfx, volume: 127, pan: 64, channel: 0, stop: false });
+        if let Some(cue) = self.pick_voice(&ids) {
+            self.queued_sounds.push(cue);
+        }
     }
     /// ftAction_80071B50: play/replace/stop a fighter sound slot. 54/55 supply the stored
     /// footstep/landing cue; world-surface substitution remains a host adaptation, using the

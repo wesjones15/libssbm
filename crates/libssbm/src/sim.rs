@@ -20,6 +20,8 @@ pub const SIDE_B: u32 = 512;
 pub const UP_B: u32 = 1024;
 pub const DOWN_B: u32 = 2048;
 pub const DEFEND: u32 = 4096;
+/// The sound channel of the fighter's voice (script sounds use channels 0 to 6).
+pub const VOICE_CHANNEL: u32 = 8;
 
 #[derive(Clone, Copy, Debug, Default)]
 pub struct Input {
@@ -239,6 +241,9 @@ pub struct Sim {
     pending_pressed: u32,
     pending_released: u32,
     released: u32,
+    /// Sounds queued between steps (a hurt voice), played at the start of the next one.
+    queued_sounds: Vec<crate::action::SoundCue>,
+    voice_rng: u32,
     pub(crate) jab: JabChain,
     buffered_attack: u32,
     pub(crate) knockdown_grace: u32,
@@ -356,6 +361,8 @@ impl Sim {
             pending_pressed: 0,
             pending_released: 0,
             released: 0,
+            queued_sounds: Vec::new(),
+            voice_rng: 0x9e37_79b9,
             jab: JabChain::default(),
             buffered_attack: 0,
             knockdown_grace: 0,
@@ -468,6 +475,7 @@ impl Sim {
         }
         self.action.samples.clear();
         self.action.sounds.clear();
+        self.action.sounds.append(&mut self.queued_sounds);
         self.action.effects.clear();
         if !dt.is_finite() || dt < 0. || !input.movement.is_finite() || !input.aim.is_finite() {
             return 0;
@@ -576,6 +584,12 @@ impl Sim {
     }
     /// Host damage notification, deliberately independent of engine health types.
     pub fn hurt(&mut self) {
+        self.hurt_scaled(0.);
+    }
+    /// A hit that cost this fraction of the fighter's health. The source plays a hurt voice when
+    /// the knockback is large (ftCo_Damage.c compares it with two PlCo thresholds); the host has
+    /// no knockback, so the damage fraction stands in (see `hurt_voice`).
+    pub fn hurt_scaled(&mut self, severity: f32) {
         if self.defense_flags() & (2 | 64 | 128) != 0 {
             return;
         }
@@ -592,6 +606,7 @@ impl Sim {
         self.motion.select(stage.clip(), 1.);
         self.motion.frame = 0.;
         self.action.active.clear();
+        self.hurt_voice(severity);
     }
     /// Keep the post-get-up window open while a host stun still owns control.
     /// It cannot grant protection to an unrelated crowd-control state.

@@ -116,6 +116,7 @@ impl Sim {
                         channel: 0,
                         stop: false,
                     });
+                    self.ko_voice();
                     self.action.effects.push(crate::action::GfxCue {
                         id: 0x42b,
                         bone: 0,
