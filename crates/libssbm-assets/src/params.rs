@@ -383,7 +383,9 @@ pub fn load_captain_specials(dir: &Path) -> Result<libssbm::captain::Specials> {
     let ca = fighter.required_ptr(root + 4)?;
     Ok(libssbm::captain::Specials {
         punch_momentum: fighter.f32(ca + 0xc)?,
-        raptor_velocity: fighter.f32(ca + 0x14)?,
+        raptor_hit_mult: fighter.f32(ca + 0x14)?,
+        raptor_grav: fighter.f32(ca + 0x18)?,
+        raptor_terminal: fighter.f32(ca + 0x1c)?,
         dive_velocity: fighter.f32(ca + 0x44)?,
     })
 }
