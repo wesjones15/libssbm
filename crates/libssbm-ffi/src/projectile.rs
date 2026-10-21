@@ -4,11 +4,16 @@ use libssbm::action::Command;
 use libssbm::projectile::{Params, Projectile};
 use libssbm_assets::article::Article;
 
+/// Link's boomerang flies this much further than the source (host adaptation).
+const BOOMERANG_HOST_SCALE: f32 = 2.;
 pub struct Handle {
     sim: Projectile,
     element: u32,
     notified: bool,
     explosion: Vec<libssbm::action::TimedCommand>,
+    /// Link's arrow bursts on impact but keeps its authored damage; Samus's bomb
+    /// (also article kind 0) takes its damage from the explosion animation instead.
+    keep_damage: bool,
 }
 #[repr(C)]
 #[derive(Clone, Copy, Default)]
@@ -162,13 +167,30 @@ pub unsafe extern "C" fn ssbm_projectile_new(
                 // Bomb (2). Speeds are prototype fixtures; the arrow scales with
                 // the bow's charge, and the bomb lobs down to detonate.
                 5 => match kind {
+                    // Hero's Bow arrow (itLinkArrow_802A850C): speed climbs with the
+                    // charge from the item's min to max (words 1 and 2, stored as
+                    // integers) and it flies for the item's life (word 0). The source
+                    // authors the damage in code; 4% to 12% stands in. The arrow sags
+                    // gently over distance (a tenth of the item's gravity).
                     0 => {
-                        p.speed = 8. + 12. * charge.clamp(0., 1.);
-                        p.life = 40.;
+                        let word = |i: usize| a.get(i).map_or(0., |v| v.to_bits() as f32);
+                        let charge = charge.clamp(0., 1.);
+                        p.speed = word(1) + (word(2) - word(1)) * charge;
+                        p.life = word(0).max(1.);
+                        p.gravity = article.common[4] * 0.1;
+                        p.damage = 4. + 8. * charge;
                     }
+                    // The Boomerang (itLinkBoomerang): throw speed from the fighter's
+                    // ext attrs, deceleration, floor and return speed from the item.
+                    // Distances are doubled for open worlds (host adaptation): speeds,
+                    // deceleration and the catch radius scale together so the path
+                    // keeps its shape.
                     1 => {
-                        p.speed = 6.;
-                        p.life = 30.;
+                        let link = libssbm_assets::params::load_link_specials(dir)?;
+                        let k = BOOMERANG_HOST_SCALE;
+                        p.speed = link.boomerang_speed_b * k;
+                        p.life = a[0].to_bits() as f32 + a[1].to_bits() as f32;
+                        p.gravity = 0.;
                     }
                     2 => {
                         p.speed = 4.;
@@ -216,6 +238,18 @@ pub unsafe extern "C" fn ssbm_projectile_new(
                 explosion_commands = explosion.commands;
             }
             let mut sim = Projectile::new(p, direction.into());
+            if fighter_kind == 5 && kind == 1 {
+                let k = BOOMERANG_HOST_SCALE;
+                sim.boomerang = Some(libssbm::projectile::Boomerang {
+                    decel: a[3] * k,
+                    min_speed: a[6] * k,
+                    max_speed: a[5] * k,
+                    // x24 degrees a tick in the source; quadrupled here so the return
+                    // arc closes inside an open world (host adaptation).
+                    turn: a[9].to_radians() * 4.,
+                    catch_radius: a[11] * k,
+                });
+            }
             if fighter_kind == 3 && kind == 1 {
                 sim.arc = true;
                 // The orb hits harder in flight than the ground jolt it becomes.
@@ -234,6 +268,7 @@ pub unsafe extern "C" fn ssbm_projectile_new(
                 element,
                 notified: false,
                 explosion: explosion_commands,
+                keep_damage: fighter_kind == 5,
             })
         })();
         match result {
@@ -288,7 +323,7 @@ pub unsafe extern "C" fn ssbm_projectile_state(h: *const Handle, out: *mut State
         } else {
             s.params.radius
         };
-        if s.params.kind == 0 && s.impacted {
+        if s.params.kind == 0 && s.impacted && !h.keep_damage {
             damage = 0.;
             for cue in h
                 .explosion
@@ -316,7 +351,7 @@ pub unsafe extern "C" fn ssbm_projectile_state(h: *const Handle, out: *mut State
             radius,
             kind: s.params.kind,
             state: s.state(),
-            flags: u32::from(s.impacted) | (u32::from(s.finished) << 1),
+            flags: u32::from(s.impacted) | (u32::from(s.finished) << 1) | (u32::from(s.returning()) << 2),
             element: h.element,
         };
         1
@@ -445,4 +480,85 @@ pub unsafe extern "C" fn ssbm_hit_feedback(
             _ => 0,
         }
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::ffi::CString;
+
+    fn assets() -> Option<(std::path::PathBuf, CString)> {
+        let dir = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../assets");
+        if !libssbm_assets::fighter::LINK.complete(&dir) {
+            eprintln!("SKIP: Link disc cache absent");
+            return None;
+        }
+        let c = CString::new(dir.to_str().unwrap()).unwrap();
+        Some((dir, c))
+    }
+    fn v(x: f32, y: f32, z: f32) -> V3 {
+        V3 { x, y, z }
+    }
+
+    #[test]
+    fn link_arrow_speed_and_damage_climb_with_the_charge() {
+        let Some((_, dir)) = assets() else { return };
+        let read = |charge: f32| unsafe {
+            let h = ssbm_projectile_new(dir.as_ptr(), 5, 0, 0, charge, v(0., 0., 1.));
+            assert!(!h.is_null(), "arrow did not spawn");
+            let mut s = State::default();
+            ssbm_projectile_step(h, 1. / 60., v(0., 0., 0.), 0);
+            assert_eq!(ssbm_projectile_state(h, &mut s), 1);
+            ssbm_projectile_free(h);
+            (s.velocity.z, s.damage)
+        };
+        let (slow, weak) = read(0.);
+        let (fast, strong) = read(1.);
+        assert!(fast > slow + 1., "speed {slow} -> {fast}");
+        assert!(strong > weak + 4., "damage {weak} -> {strong}");
+    }
+
+    #[test]
+    fn link_arrow_keeps_its_damage_when_it_bursts() {
+        let Some((_, dir)) = assets() else { return };
+        unsafe {
+            let h = ssbm_projectile_new(dir.as_ptr(), 5, 0, 0, 1., v(0., 0., 1.));
+            ssbm_projectile_impact(h, std::ptr::null_mut());
+            let mut s = State::default();
+            ssbm_projectile_state(h, &mut s);
+            ssbm_projectile_free(h);
+            assert!(s.damage > 0., "a burst arrow does {} damage", s.damage);
+        }
+    }
+
+    #[test]
+    fn link_boomerang_goes_out_turns_around_and_is_caught() {
+        let Some((_, dir)) = assets() else { return };
+        unsafe {
+            let h = ssbm_projectile_new(dir.as_ptr(), 5, 1, 0, 0., v(0., 0., 1.));
+            assert!(!h.is_null(), "boomerang did not spawn");
+            let mut s = State::default();
+            let (mut furthest, mut turned, mut caught) = (0f32, None, None);
+            for tick in 0..900 {
+                // The thrower stands where the boomerang started.
+                ssbm_projectile_step(h, 1. / 60., v(0., 0., 0.), 1);
+                ssbm_projectile_state(h, &mut s);
+                furthest = furthest.max(s.position.z);
+                if turned.is_none() && s.flags & 4 != 0 {
+                    turned = Some((tick, s.position.z));
+                }
+                if s.flags & 2 != 0 {
+                    caught = Some(tick);
+                    break;
+                }
+            }
+            ssbm_projectile_free(h);
+            let (turn_tick, turn_at) = turned.expect("never turned around");
+            assert!(turn_at > 20., "turned after only {turn_at} units");
+            assert!(furthest >= turn_at, "never flew out");
+            let caught = caught.expect("never caught");
+            eprintln!("boomerang: turned at tick {turn_tick} ({turn_at} units out), furthest {furthest}, caught at tick {caught}");
+            assert!(caught > turn_tick, "caught before it turned");
+        }
+    }
 }

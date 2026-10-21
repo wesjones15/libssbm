@@ -1925,6 +1925,16 @@ pub unsafe extern "C" fn ssbm_sim_lock_target(handle: *mut Handle, target: V3, v
         h.sim.lock_target = if valid != 0 && t.is_finite() { Some(t) } else { None };
     }
 }
+/// World facts the host reports to the fighter's staged specials (Link's boomerang
+/// out, a carried bomb); see `HOST_*` in libssbm's `link.rs`. Set every tick.
+/// # Safety
+/// Unique live sim or null.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn ssbm_sim_set_host_flags(handle: *mut Handle, flags: u32) {
+    if let Some(h) = unsafe { handle.as_mut() } {
+        h.sim.host_flags = flags;
+    }
+}
 /// The current move's hitbox connected with an enemy (Skull Bash stops on it).
 /// # Safety
 /// Unique live sim or null. Call outside a native host callback.

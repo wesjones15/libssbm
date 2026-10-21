@@ -400,6 +400,12 @@ pub fn load_link_specials(dir: &Path) -> Result<libssbm::link::Specials> {
     Ok(libssbm::link::Specials {
         bow_charge_steps: fighter.f32(lk)?.round() as u32,
         spin_rise_velocity: fighter.f32(lk + 0x40)?,
+        // ftlinkspecials.c::calcAnglePos reads the stick deadzone (x14), the
+        // angle scale (x18 * x1C) and the throw speeds (x20 / x24).
+        boomerang_stick_threshold: fighter.f32(lk + 0x14)?,
+        boomerang_max_angle: fighter.f32(lk + 0x18)? * fighter.f32(lk + 0x1c)?,
+        boomerang_speed_a: fighter.f32(lk + 0x20)?,
+        boomerang_speed_b: fighter.f32(lk + 0x24)?,
     })
 }
 

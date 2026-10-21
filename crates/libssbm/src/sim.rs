@@ -234,6 +234,9 @@ pub struct Sim {
     /// aiming nearest, refreshed every tick. Staged specials (Quick Attack)
     /// steer to it; `None` falls back to stick and camera aim.
     pub lock_target: Option<Vec3>,
+    /// World facts the host reports each tick (see `HOST_*` in `link.rs`): Link's
+    /// boomerang being out, a carried bomb. A behavior reads them to choose a clip.
+    pub host_flags: u32,
     /// A behavior holds `pad_gravity` for a scripted move; cleared when the
     /// move ends so a special can never leave the fighter floating.
     pub(crate) owns_gravity: bool,
@@ -298,6 +301,7 @@ impl Sim {
             stage_dir: Vec3::ZERO,
             stage_value: 0.,
             lock_target: None,
+            host_flags: 0,
             owns_gravity: false,
         }
     }

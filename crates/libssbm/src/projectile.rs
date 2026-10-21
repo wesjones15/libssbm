@@ -29,8 +29,24 @@ pub struct Params {
     /// Vertical velocity retained on each ground bounce.
     pub bounce_factor: f32,
 }
+/// Link's boomerang (itlinkboomerang.c): it decelerates on its way out until it
+/// reaches `min_speed`, then curves back toward its owner while speeding up to
+/// `max_speed`, and is caught inside `catch_radius`. The host passes the owner's
+/// position (relative to the spawn) as the step target.
+#[derive(Clone, Debug)]
+pub struct Boomerang {
+    pub decel: f32,
+    pub min_speed: f32,
+    pub max_speed: f32,
+    /// Steering toward the owner, radians per tick.
+    pub turn: f32,
+    pub catch_radius: f32,
+}
 pub struct Projectile {
     pub params: Params,
+    /// Set for Link's boomerang; see [`Boomerang`].
+    pub boomerang: Option<Boomerang>,
+    returning: bool,
     pub position: Vec3,
     pub velocity: Vec3,
     pub direction: Vec3,
@@ -56,6 +72,8 @@ impl Projectile {
         let velocity = direction * params.speed + Vec3::Y * params.initial_y;
         Self {
             params,
+            boomerang: None,
+            returning: false,
             position: Vec3::ZERO,
             velocity,
             direction,
@@ -118,6 +136,41 @@ impl Projectile {
         }
         true
     }
+    /// A boomerang on its way back to its owner. Enemies it passed on the way out
+    /// can be hit again.
+    pub fn returning(&self) -> bool {
+        self.returning
+    }
+    fn step_boomerang(&mut self, b: &Boomerang, target: Option<Vec3>) {
+        let heading = self.velocity.try_normalize().unwrap_or(self.direction);
+        let mut speed = self.velocity.length();
+        if !self.returning {
+            speed -= b.decel;
+            if speed <= b.min_speed {
+                speed = b.min_speed;
+                self.returning = true;
+            }
+            self.velocity = heading * speed;
+            return;
+        }
+        speed = (speed + b.decel).min(b.max_speed);
+        let mut heading = heading;
+        if let Some(owner) = target {
+            let to = owner - self.position;
+            if to.length() <= b.catch_radius.max(speed) {
+                self.finished = true;
+                self.velocity = Vec3::ZERO;
+                return;
+            }
+            if let Some(want) = to.try_normalize() {
+                let angle = heading.dot(want).clamp(-1., 1.).acos();
+                if angle > 1e-4 {
+                    heading = heading.slerp(want, (b.turn / angle).min(1.)).normalize_or_zero();
+                }
+            }
+        }
+        self.velocity = heading * speed;
+    }
     /// Ground bounces taken so far.
     pub fn bounced(&self) -> u32 {
         self.bounces
@@ -161,6 +214,11 @@ impl Projectile {
                 } else {
                     self.impact();
                 }
+                continue;
+            }
+            if let Some(b) = self.boomerang.clone() {
+                self.step_boomerang(&b, target);
+                self.position += self.velocity;
                 continue;
             }
             match self.params.kind {
