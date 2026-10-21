@@ -48,6 +48,9 @@ All commits are in the libssbm / ror2-common / ror2-samus repos; hashes are pref
 - **The native build gate works again** (ror2-samus `16f49c9`). After `bfc71fc` the C# boundary check still expected ten ground bounces plus a wall reflect, failed with
   "Thunder Shock bounced 9 times", and `build.ps1 -Deploy` refused to stage anything. The check now expects ten surface contacts in all. The build passes
   (18 checks) and is staged at `pikmin-main/target/BepInEx/plugins/Melee/`.
+- **Dead clip aliases fixed** (libssbm `337dbf7`): Pikachu's forward smash (`AttackS4S` -> `AttackS4`) and Link's forward tilt and forward smash
+  (`AttackS3S` -> `AttackS3`, `AttackS4S` -> `AttackS41`) now resolve, so those three BROKEN normals hit again. Pikachu's `sortPosition` 105 collided with
+  Captain Falcon's and is now 107 (ror2-samus `8828157`).
 
 ## 3. Still open, in the order to do it
 
@@ -59,14 +62,13 @@ All commits are in the libssbm / ror2-common / ror2-samus repos; hashes are pref
    - **Yoshi.** Egg Lay: tongue grab, on contact `SpecialN2` swallows and lays an egg. Egg Roll: `Start` (intangible) -> `Loop` (4% x2 at `egg_roll_speed`) -> `End`. Yoshi Bomb: add the 40-frame `SpecialLwLanding` stun. Egg Throw: a stick-moved reticle.
    - **Donkey Kong.** Giant Punch: `Start` (8) -> `Loop` (12, each loop one more windmill swing up to `MAX_ARM_SWINGS`) -> B releases `SpecialN` with damage = base + swings x `DAMAGE_PER_SWING`. Hand Slap: `Start` -> `Loop` (27 frames, two bursts of four 11% boxes at frames 5 and 16; B again repeats) -> `End` (20).
    Done when: `move_audit` shows the full clip chain, hitboxes and events for each, and a test next to `crates/libssbm-assets/tests/fox.rs` asserts them.
-2. **Dead clip aliases** (one line each in `crates/libssbm-assets/src/fighter.rs`): Pikachu `AttackS4S` -> `AttackS4`; Link `AttackS3S` -> `AttackS3` and `AttackS4S` -> `AttackS41`. Without them Pikachu's forward smash and Link's forward tilt and
-   forward smash end in 4 ticks with no hitbox.
+2. ~~**Dead clip aliases**~~ **DONE** (`337dbf7`): Pikachu `AttackS4S` -> `AttackS4`; Link `AttackS3S` -> `AttackS3` and `AttackS4S` -> `AttackS41`.
 3. **Angled and extra attacks are unreachable:** angled tilts and smashes (`AttackS3Hi/Lw`, `AttackS4Hi/Lw`), Jab 3 (`Attack13`, Falcon and Link), rapid jab (`Attack100Start/Loop/End`, Falcon and Link), Link's second smash hit (`AttackS41`/`AttackS42`).
    The picker knows one forward tilt and one forward smash.
 4. **Implausible tuning, read from guessed offsets in `crates/libssbm-assets/src/params.rs`:** Falcon `raptor_velocity` 0.18 (so neither Raptor Boost nor Falcon Kick lunges: travel 0.1),
    Yoshi `egg_roll_speed` -0.2 (negative), Donkey Kong Giant Punch momentum 0.12, Spinning Kong rise 0.675 and Falcon Dive 0.85 (the last two are replaced by the host jump height, so they do not show). Pikachu's values are sensible. Check each offset against the decomp's `DatAttrs` struct before fixing.
 5. **Copied code that should be shared.** Seven `HitTracker` classes (`Combat.cs` for Samus, and Fox, Luigi, Captain, Link, Yoshi, Donkey `*Combat.cs`) duplicate `ror2-common/MeleeHitTracker.cs`, which only Pikachu uses. `LinkShot` and `Egg` are hand-written projectile hosts next to `MeleeBouncingShot`.
-   Pikachu and Captain Falcon both have `sortPosition = 105` on the select screen.
+   (The Pikachu/Captain `sortPosition` 105 collision is fixed, `8828157`.)
 6. **Skill and pause text promises things that do not happen yet.** See section 7.
 7. **Not modelled for any fighter:** the helpless special fall after an up special, wall rebounds, Pikachu's body tilt toward a Quick Attack zip, a helpless fall after an aerial Quick Attack.
 8. **Play-test list (all unverified):** Fox gun model position and rotation, Illusion distance, Fire Fox travel and damage, Reflector knockback; generic grab feel (capture reach, hold position, throw launch force 1800); model scaling against hitboxes;
@@ -121,7 +123,7 @@ RT Thunder Shock, LT A attack, RB Thunder, LB Quick Attack, B Skull Bash (all co
 | Up tilt | Tilt up + A | LS held, camera 20 deg or more above level, + LT | `AttackHi3`, 25 ticks, top hit 7%. | OK |
 | Down tilt | Tilt down + A | LS held, camera 50 deg or more below level, + LT | `AttackLw3`, 23 ticks, top hit 7%. | OK |
 | Dash attack | A while dashing | Sprint (LS click) + LS + LT | `AttackDash`, 51 ticks, top hit 8%, travels 38. | OK |
-| Forward smash | Smash left/right (C-stick or flick + A) | LS flick + LT; hold LT to charge | **Nothing.** The sim asks for clip `AttackS4S`, which is not in this fighter's disc data, so the move ends in 3 frames with no hitbox. | BROKEN |
+| Forward smash | Smash left/right (C-stick or flick + A) | LS flick + LT; hold LT to charge | `AttackS4S` (aliased to `AttackS4`), 51 ticks, top hit 21%. | OK |
 | Up smash | Smash up | LS flick, camera 20 deg or more up, + LT; hold to charge | `AttackHi4`, 45 ticks, top hit 19%. | OK |
 | Down smash | Smash down | LS flick, camera 50 deg or more down, + LT; hold to charge | `AttackLw4`, 56 ticks, top hit 3%. | OK |
 | Neutral air | A in the air | LT in the air, LS neutral | `AttackAirN`, 41 ticks, top hit 12%. | OK |
@@ -130,10 +132,9 @@ RT Thunder Shock, LT A attack, RB Thunder, LB Quick Attack, B Skull Bash (all co
 | Up air | Up + A in the air | LS held, camera 20 deg or more up, + LT | `AttackAirHi`, 29 ticks, top hit 4%. | OK |
 | Down air | Down + A in the air | LS held, camera 50 deg or more down, + LT | `AttackAirLw`, 59 ticks, top hit 12%. | OK |
 
-Not reachable from the generic attack picker: angled forward tilts (`AttackS3Hi`, `AttackS3Lw`). Pikachu's forward smash is
-`AttackS4` on the disc.
+Not reachable from the generic attack picker: angled forward tilts (`AttackS3Hi`, `AttackS3Lw`).
 
-**Pikachu to fix, in order:** the forward smash alias (`AttackS4S` -> `AttackS4`), the Skull Bash wall rebound, the cloud model.
+**Pikachu to fix, in order:** the Skull Bash wall rebound, the cloud model.
 
 ---
 
@@ -198,11 +199,11 @@ RT Hero's Bow, LT A attack, RB Boomerang, LB Spin Attack, B Bomb (cooldowns 0.3 
 | --- | --- | --- | --- | --- |
 | Jab | A | LT, stationary / Secondary | `Attack11`, 26 ticks, top hit 5%. | OK |
 | Jab 2 | A, A (combo) | LT again inside the combo window | `Attack12`, 23 ticks, top hit 3%. | OK |
-| Forward tilt | Tilt left/right + A | LS held (walk pace) + LT | **Nothing.** The sim asks for clip `AttackS3S`, which is not in this fighter's disc data, so the move ends in 3 frames with no hitbox. | BROKEN |
+| Forward tilt | Tilt left/right + A | LS held (walk pace) + LT | `AttackS3S` (aliased to `AttackS3`), 41 ticks, top hit 14%. | OK |
 | Up tilt | Tilt up + A | LS held, camera 20 deg or more above level, + LT | `AttackHi3`, 31 ticks, top hit 9%. | OK |
 | Down tilt | Tilt down + A | LS held, camera 50 deg or more below level, + LT | `AttackLw3`, 41 ticks, top hit 11%. | OK |
 | Dash attack | A while dashing | Sprint (LS click) + LS + LT | `AttackDash`, 55 ticks, top hit 12%, travels 25. | OK |
-| Forward smash | Smash left/right (C-stick or flick + A) | LS flick + LT; hold LT to charge | **Nothing.** The sim asks for clip `AttackS4S`, which is not in this fighter's disc data, so the move ends in 3 frames with no hitbox. | BROKEN |
+| Forward smash | Smash left/right (C-stick or flick + A) | LS flick + LT; hold LT to charge | `AttackS4S` (aliased to `AttackS41`), 51 ticks, top hit 14%. | OK |
 | Up smash | Smash up | LS flick, camera 20 deg or more up, + LT; hold to charge | `AttackHi4`, 62 ticks, top hit 10%. | OK |
 | Down smash | Smash down | LS flick, camera 50 deg or more down, + LT; hold to charge | `AttackLw4`, 51 ticks, top hit 17%. | OK |
 | Neutral air | A in the air | LT in the air, LS neutral | `AttackAirN`, 41 ticks, top hit 11%. | OK |
@@ -217,8 +218,7 @@ tether hit rather than a capture.
 Not reachable: Jab 3 (`Attack13`), rapid jab (`Attack100Start/Loop/End`), the second hit of the forward smash
 (`AttackS41` / `AttackS42`).
 
-**Link to fix, in order:** the bow's `End` stage (and arrow), the boomerang stages and flight, forward-tilt and
-forward-smash aliases (`AttackS3S` -> `AttackS3`, `AttackS4S` -> `AttackS41`), jab 3 and rapid
+**Link to fix, in order:** the bow's `End` stage (and arrow), the boomerang stages and flight, jab 3 and rapid
 jab, bomb as a held item.
 
 ---
