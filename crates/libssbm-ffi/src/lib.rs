@@ -6,6 +6,9 @@ use libssbm::{Contact, Event, Host, Input, Sim};
 use libssbm_assets::presentation::Presentation;
 mod particles;
 mod projectile;
+mod replay;
+pub use replay::{ssbm_sim_ops_take, ssbm_sim_record, ssbm_sim_replay};
+use replay::{NetLog, Op};
 use std::{
     cell::RefCell,
     ffi::{CStr, CString, c_char, c_void},
@@ -149,6 +152,8 @@ pub struct Handle {
     /// A sword trail's tuning and bone (Link), and the last three blade samples, newest first.
     trail: Option<(libssbm::trail::Params, usize)>,
     trail_samples: Vec<libssbm::trail::Sample>,
+    /// What the host did to the sim, for multiplayer (see `replay`).
+    net: NetLog,
 }
 struct Rig {
     grapple: Option<libssbm_assets::grapple::Tuning>,
@@ -542,6 +547,7 @@ pub unsafe extern "C" fn ssbm_sim_new_fighter(dir: *const c_char, pos: V3, kind:
                     poisoned: false,
                     trail,
                     trail_samples: Vec::new(),
+                    net: NetLog::with_dir(unsafe { path(dir) }.map(Path::to_path_buf).unwrap_or_default()),
                 }))
             }
             Ok(_) => {
@@ -783,6 +789,7 @@ pub unsafe extern "C" fn ssbm_sim_set_grabbed(h: *mut Handle, held: u32) {
     if !h.is_null() {
         unsafe {
             (&mut *h).sim.set_grabbed(held != 0);
+            (&mut *h).net.log(Op::SetGrabbed(held));
         }
     }
 }
@@ -1064,6 +1071,7 @@ pub unsafe extern "C" fn ssbm_sim_step(
     }
     match catch_unwind(AssertUnwindSafe(|| {
         let p = unsafe { *pad };
+        h.net.log(Op::Step { pad: p, dt });
         let ticks = h.sim.advance(
             &mut Adapter(unsafe { &*host }, &h.rig),
             Input {
@@ -1075,6 +1083,7 @@ pub unsafe extern "C" fn ssbm_sim_step(
             dt,
         );
         sample_trail(h);
+        h.log_sync();
         for cue in &h.sim.action.sounds {
             if cue.stop {
                 h.audio.stop(cue.channel);
@@ -1251,6 +1260,7 @@ pub unsafe extern "C" fn ssbm_sim_tuning(handle: *mut Handle, t: Tuning) -> u32 
         hold_charge: t.hold_charge != 0,
         smash_max_frames: t.smash_max_frames,
     };
+    h.net.log(Op::Tuning(t));
     1
 }
 /// Deprecated host mobile-move override: the fighter's `Behavior` now owns which
@@ -1268,6 +1278,7 @@ pub unsafe extern "C" fn ssbm_sim_place(handle: *mut Handle, v: V3, kind: u32) {
     }
     let h = unsafe { &mut *handle };
     if !h.poisoned {
+        h.net.log(Op::Place { v, kind });
         if kind == 2 {
             h.sim.correct_position(v.into());
         } else if kind == 0 {
@@ -1286,6 +1297,7 @@ pub unsafe extern "C" fn ssbm_sim_facing(handle: *mut Handle, facing: V3) {
     if let Some(h) = unsafe { handle.as_mut() } {
         if !h.poisoned {
             h.sim.set_host_facing(facing.into());
+            h.net.log(Op::Facing(facing));
         }
     }
 }
@@ -1297,6 +1309,7 @@ pub unsafe extern "C" fn ssbm_sim_jump_height(handle: *mut Handle, height: f32) 
     if let Some(h) = unsafe { handle.as_mut() } {
         if !h.poisoned && height.is_finite() && height >= 0. {
             h.sim.host_jump_height = if height > 0. { Some(height) } else { None };
+            h.net.log(Op::JumpHeight(height));
         }
     }
 }
@@ -1317,6 +1330,7 @@ pub unsafe extern "C" fn ssbm_sim_defense_flags(h: *const Handle) -> u32 {
 pub unsafe extern "C" fn ssbm_sim_hold_knockdown(h: *mut Handle) {
     if let Some(h) = unsafe { h.as_mut() }.filter(|h| !h.poisoned) {
         h.sim.hold_knockdown_protection();
+        h.net.log(Op::HoldKnockdown);
     }
 }
 /// # Safety
@@ -1362,6 +1376,7 @@ pub unsafe extern "C" fn ssbm_sim_anchor(handle: *mut Handle, position: V3, grou
             h.sim.position = p;
             h.sim.velocity = Vec3::ZERO;
             h.sim.grounded = grounded != 0;
+            h.net.log(Op::Anchor { position, grounded });
         }
     }
 }
@@ -1612,6 +1627,7 @@ unsafe fn begin_return(h: *mut Handle, dir: *const c_char, destination: V3, init
                 };
                 if started {
                     h.audio.clear();
+                    h.net.log(if initial { Op::Arrival } else { Op::Rebirth(destination) });
                     1
                 } else {
                     0
@@ -2013,6 +2029,7 @@ pub unsafe extern "C" fn ssbm_sim_interrupt(handle: *mut Handle) {
         let h = unsafe { &mut *handle };
         if !h.poisoned {
             h.sim.interrupt();
+            h.net.log(Op::Interrupt);
         }
     }
 }
@@ -2026,6 +2043,7 @@ pub unsafe extern "C" fn ssbm_sim_lock_target(handle: *mut Handle, target: V3, v
     if let Some(h) = unsafe { handle.as_mut() } {
         let t: Vec3 = target.into();
         h.sim.lock_target = if valid != 0 && t.is_finite() { Some(t) } else { None };
+        h.net.log(Op::LockTarget { target, valid });
     }
 }
 /// World facts the host reports to the fighter's staged specials (Link's boomerang
@@ -2036,6 +2054,7 @@ pub unsafe extern "C" fn ssbm_sim_lock_target(handle: *mut Handle, target: V3, v
 pub unsafe extern "C" fn ssbm_sim_set_host_flags(handle: *mut Handle, flags: u32) {
     if let Some(h) = unsafe { handle.as_mut() } {
         h.sim.host_flags = flags;
+        h.net.log(Op::HostFlags(flags));
     }
 }
 /// The current move's hitbox connected with an enemy (Skull Bash stops on it).
@@ -2044,7 +2063,11 @@ pub unsafe extern "C" fn ssbm_sim_set_host_flags(handle: *mut Handle, flags: u32
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn ssbm_sim_connect(handle: *mut Handle) {
     if !handle.is_null() {
-        guarded((), || unsafe { (&mut *handle).sim.attack_connected() });
+        guarded((), || unsafe {
+            let h = &mut *handle;
+            h.sim.attack_connected();
+            h.net.log(Op::Connect);
+        });
     }
 }
 /// # Safety
@@ -2052,7 +2075,11 @@ pub unsafe extern "C" fn ssbm_sim_connect(handle: *mut Handle) {
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn ssbm_sim_hurt(handle: *mut Handle) {
     if !handle.is_null() {
-        guarded((), || unsafe { (&mut *handle).sim.hurt() });
+        guarded((), || unsafe {
+            let h = &mut *handle;
+            h.sim.hurt();
+            h.net.log(Op::Hurt(0.));
+        });
     }
 }
 /// A hit that took `severity` (a fraction of the fighter's health): the fighter is hurt and a
@@ -2066,7 +2093,11 @@ pub unsafe extern "C" fn ssbm_sim_hurt_scaled(handle: *mut Handle, severity: f32
         return 0;
     }
     guarded(0, || {
-        unsafe { (&mut *handle).sim.hurt_scaled(severity) };
+        unsafe {
+            let h = &mut *handle;
+            h.sim.hurt_scaled(severity);
+            h.net.log(Op::Hurt(severity));
+        }
         1
     })
 }
@@ -2081,6 +2112,7 @@ pub unsafe extern "C" fn ssbm_sim_launch_pad(handle: *mut Handle, velocity: V3, 
     let h = unsafe { &mut *handle };
     if !h.poisoned {
         h.sim.launch_pad(velocity.into(), gravity.into());
+        h.net.log(Op::LaunchPad { velocity, gravity });
     }
 }
 #[cfg(test)]
@@ -2457,6 +2489,7 @@ mod tests {
             poisoned: false,
             trail: None,
             trail_samples: Vec::new(),
+            net: NetLog::default(),
         };
         let actions = libssbm_assets::action::load(&dir, &h.rig.animations)?;
         let mut tested = 0;

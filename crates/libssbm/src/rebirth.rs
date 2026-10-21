@@ -53,6 +53,14 @@ impl Sim {
         self.teleport(position);
         self.rebirth = protection;
     }
+    /// Moves the fighter to `position` without touching its action, velocity or clocks: a
+    /// multiplayer shadow sim is pulled back to where the owner's sim really is.
+    pub fn nudge(&mut self, position: Vec3, grounded: bool) {
+        if position.is_finite() {
+            self.position = position;
+            self.grounded = grounded;
+        }
+    }
     pub fn begin_rebirth(
         &mut self,
         params: Params,

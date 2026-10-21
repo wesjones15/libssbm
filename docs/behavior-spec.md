@@ -283,7 +283,8 @@ Screw Attack or bomb cancels it. Both are covered by a synthetic scenario.
 Runtime creation requires disc tuning; missing assets return an error.
 Attack schedules and coefficients remain prototype values. Original sound,
 hitboxes, grabs/throws, ledges, blast-zone presentation, percent/stock HUD,
-multiplayer and complete item integration are not claimed.
+and complete item integration are not claimed. Multiplayer is the host's: `libssbm-ffi/src/replay.rs` records the calls
+made on a sim and replays them on a shadow sim (tested headless for every fighter; never run between two machines).
 
 Viewer verification: actual rendered screenshot inspected. Single-bone envelopes
 use local coordinates when the owner is a skeleton root; blended envelopes use
