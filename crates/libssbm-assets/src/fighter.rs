@@ -147,7 +147,7 @@ pub const FOX: FighterAssets<'static> = FighterAssets {
     ],
     common_index: 1,
     morph_visibility: None,
-    upper_body_root: None,
+    upper_body_root: Some(21), // torso root above HipN (arms + head subtree)
     portrait: crate::portrait::Portrait {
         archive: Archive {
             file: "MnSlChr.usd",
@@ -200,7 +200,7 @@ pub const LUIGI: FighterAssets<'static> = FighterAssets {
     }],
     common_index: 17, // Ft_Kind_Luigi (ft/forward.h)
     morph_visibility: None,
-    upper_body_root: None,
+    upper_body_root: Some(5), // torso root above HipN (arms + head subtree)
     portrait: crate::portrait::Portrait {
         archive: Archive {
             file: "MnSlChr.usd",
@@ -249,7 +249,7 @@ pub const PIKACHU: FighterAssets<'static> = FighterAssets {
     ],
     common_index: 12, // Ft_Kind_Pikachu (ft/forward.h)
     morph_visibility: None,
-    upper_body_root: None,
+    upper_body_root: Some(5), // torso root above HipN (arms + head subtree)
     portrait: crate::portrait::Portrait {
         archive: Archive {
             file: "MnSlChr.usd",
@@ -292,7 +292,7 @@ pub const CAPTAIN: FighterAssets<'static> = FighterAssets {
     articles: &[],
     common_index: 2, // Ft_Kind_Captain (ft/forward.h)
     morph_visibility: None,
-    upper_body_root: None,
+    upper_body_root: Some(18), // torso root above HipN (arms + head subtree)
     portrait: crate::portrait::Portrait {
         archive: Archive {
             file: "MnSlChr.usd",
@@ -343,7 +343,7 @@ pub const LINK: FighterAssets<'static> = FighterAssets {
     ],
     common_index: 6, // Ft_Kind_Link (ft/forward.h)
     morph_visibility: None,
-    upper_body_root: None,
+    upper_body_root: Some(17), // torso root above HipN (arms + head subtree)
     portrait: crate::portrait::Portrait {
         archive: Archive {
             file: "MnSlChr.usd",
@@ -401,7 +401,7 @@ pub const YOSHI: FighterAssets<'static> = FighterAssets {
     ],
     common_index: 14, // Ft_Kind_Yoshi (ft/forward.h)
     morph_visibility: None,
-    upper_body_root: None,
+    upper_body_root: Some(22), // torso root above HipN (arms + head subtree)
     portrait: crate::portrait::Portrait {
         archive: Archive {
             file: "MnSlChr.usd",
@@ -448,7 +448,7 @@ pub const DONKEY: FighterAssets<'static> = FighterAssets {
     articles: &[],
     common_index: 3, // Ft_Kind_Donkey (ft/forward.h)
     morph_visibility: None,
-    upper_body_root: None,
+    upper_body_root: Some(25), // torso root above HipN (arms + head subtree)
     portrait: crate::portrait::Portrait {
         archive: Archive {
             file: "MnSlChr.usd",
