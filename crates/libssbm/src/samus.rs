@@ -147,6 +147,13 @@ impl Behavior for Samus {
     fn charge_visual(&self) -> (f32, f32) {
         (self.specials.charge_visual_min, self.specials.charge_visual_max)
     }
+    /// Samus's charge shot is the one neutral special that genuinely replays its
+    /// clip: `SpecialNStart` finishes, then `SpecialN` plays the release. Every
+    /// other fighter's neutral special is a single pass, so the shared default is
+    /// `false`; Samus opts back into the replay.
+    fn fire_replays(&self, _m: Move) -> bool {
+        true
+    }
     fn store_special(&self, sim: &mut Sim, host: &mut dyn Host, pressed: u32) -> bool {
         if sim.current_move == Some(Move::SpecialN)
             && matches!(sim.phase, Phase::Startup | Phase::ChargeShot)

@@ -2098,6 +2098,39 @@ mod tests {
         Ok(())
     }
     #[test]
+    fn captain_falcon_punch_hits_via_ffi() -> libssbm_assets::Result<()> {
+        let dir = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../assets");
+        let captain = &libssbm_assets::fighter::CAPTAIN;
+        if !captain.complete(&dir) {
+            eprintln!("SKIP: Captain disc cache absent");
+            return Ok(());
+        }
+        let cdir = std::ffi::CString::new(dir.to_str().unwrap()).unwrap();
+        let sim = unsafe { ssbm_sim_new_fighter(cdir.as_ptr(), V3::default(), 4) };
+        assert!(!sim.is_null(), "{}", ERROR.with(|e| e.borrow().to_string_lossy().into_owned()));
+        let mut host = HostTable { collide: None, event: None, user: std::ptr::null_mut() };
+        let idle = Pad { movement: V3::default(), aim: V3 { x: 0., y: 0., z: 1. }, buttons: 0, allowed: 0x1f };
+        for _ in 0..30 {
+            unsafe { ssbm_sim_step(sim, &mut host, &idle, 1. / 60.) };
+        }
+        let press = Pad { buttons: libssbm::sim::NEUTRAL_B, ..idle };
+        for _ in 0..3 {
+            unsafe { ssbm_sim_step(sim, &mut host, &press, 1. / 60.) };
+        }
+        let mut max_hitboxes = 0u32;
+        let mut max_gfx = 0u32;
+        for _ in 0..120 {
+            unsafe { ssbm_sim_step(sim, &mut host, &idle, 1. / 60.) };
+            max_hitboxes = max_hitboxes.max(unsafe { ssbm_sim_hitboxes(sim, std::ptr::null_mut(), 0) });
+            max_gfx = max_gfx.max(unsafe { ssbm_sim_gfx(sim, std::ptr::null_mut(), 0) });
+        }
+        eprintln!("Falcon Punch: max hitboxes {max_hitboxes} max gfx {max_gfx} err {}", ERROR.with(|e| e.borrow().to_string_lossy().into_owned()));
+        assert!(max_hitboxes > 0, "Falcon Punch produced no FFI hitboxes");
+        assert!(max_gfx > 0, "Falcon Punch produced no FFI effects");
+        unsafe { ssbm_sim_free(sim) };
+        Ok(())
+    }
+    #[test]
     fn yoshi_and_donkey_assets_load_and_sim_steps() -> libssbm_assets::Result<()> {
         let dir = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../assets");
         for kind in [6u32, 7u32] {

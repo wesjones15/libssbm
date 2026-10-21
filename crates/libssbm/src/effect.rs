@@ -51,6 +51,7 @@ pub fn resolve(id: u32) -> Target {
         1080 => Model(34),
         1086 => Model(36),
         1087 => Particle(202), // efasync.c 0x43F: rebirth ring
+        1094 => Particle(27),  // efasync.c 0x446: Captain Falcon Punch fist flame
         1151 => Particle(2004),
         1152 => Particle(2002),
         1153 => Particle(2003),

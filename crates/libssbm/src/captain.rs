@@ -125,23 +125,12 @@ impl Behavior for Captain {
             });
         } else if m == Move::SpecialN {
             // Falcon Punch: a single devastating punch. The source gives the
-            // aerial version forward momentum (ftcaptainspecialn.c IASA).
+            // aerial version forward momentum (ftcaptainspecialn.c IASA); the
+            // flame at the fist is authored by the disc script (efasync 0x446
+            // and 0x3FF), so no manual effect cue belongs here.
             if !sim.grounded {
                 sim.velocity = sim.facing * self.specials.punch_momentum * sim.options.speed_scale;
             }
-            sim.action.effects.push(GfxCue {
-                id: 1167, // Falcon Punch flame (efSync_Spawn)
-                bone: 0,
-                common: false,
-                cycle: 0,
-                destroy_on_change: false,
-                offset: Vec3::ZERO,
-                param: 0.,
-                clip: "SpecialN",
-                frame: 0.,
-                origin: sim.position,
-                facing: sim.facing,
-            });
         }
     }
     fn aimable(&self, m: Move) -> bool {

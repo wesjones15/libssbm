@@ -104,11 +104,12 @@ pub trait Behavior: Send {
     fn on_connect(&self, _sim: &mut Sim) {}
     /// A neutral special whose single disc clip has finished: `true` replays the
     /// clip in the Recovery phase (Samus's charge shot, whose second pass is the
-    /// release); `false` ends the move there. A fighter whose neutral special is
-    /// one pass of the clip, or a staged chain, must return `false` or the whole
-    /// animation (and its hitboxes) plays twice.
+    /// release); `false` ends the move there. The default is `false` because the
+    /// common disc neutral special is a single pass of the clip: replaying it
+    /// would play the whole animation (and its hitboxes) twice, the "double anim"
+    /// every new fighter inherited. Only Samus's charge shot opts back in.
     fn fire_replays(&self, _m: Move) -> bool {
-        true
+        false
     }
 
     // --- Prototype timing (not purported frame-perfect source data) ----------

@@ -55,9 +55,13 @@ pub unsafe extern "C" fn ssbm_projectile_new(
             }
             let fighter = super::fighter_assets(fighter_kind)?;
             let article = Article::load_for(dir, kind, state, fighter)?;
-            // Link's arrow and bomb author their hitbox dynamically
-            // (itlinkarrow.c/itlinkbomb.c), not in the item script; a prototype
-            // fixture stands in when the script has none.
+            // Several fighters (Link's arrow/bomb, Yoshi's egg, and most of the
+            // rest) author their hitbox dynamically in the item C code rather
+            // than in the item script, so `article.commands` has none. A shared
+            // prototype fixture stands in for those instead of rejecting the
+            // projectile outright: without it, only the few articles that happen
+            // to carry a script hitbox (Luigi's fireball, Pikachu's jolt) ever
+            // spawned, and every other fighter's projectile was destroyed here.
             let hit = article
                 .commands
                 .iter()
@@ -67,9 +71,7 @@ pub unsafe extern "C" fn ssbm_projectile_new(
                 });
             let (damage, radius, element) = match hit {
                 Some(h) => (h.damage, h.radius, h.element),
-                None if fighter_kind == 5 => (8., 2.5, 0),
-                None if fighter_kind == 6 => (8., 2.5, 0),
-                None => return Err("article has no source hitbox".into()),
+                None => (8., 2.5, 0),
             };
             let a = &article.special;
             let mut p = Params {
@@ -142,9 +144,10 @@ pub unsafe extern "C" fn ssbm_projectile_new(
                     p.speed = libssbm_assets::params::load_fox_specials(dir)?.blaster_speed;
                 }
                 // Luigi's Fireball: speed and life from the item's special
-                // attributes (itLuigiFireballAttributes x0/x4). It bounces off
-                // the ground (RoR2's open stages) at a consistent height until
-                // its life expires, and dies on walls/ceilings.
+                // attributes (itLuigiFireballAttributes x0/x4). It flies level
+                // until the host's 200 m / map-bounds cap, falls onto the floor,
+                // and bounces ten times at a constant height (bounce_factor 1)
+                // before despawning; it dies early on an enemy or a wall.
                 2 => {
                     p.speed = a[0] * 1.6;
                     p.life = a[1];
@@ -152,7 +155,7 @@ pub unsafe extern "C" fn ssbm_projectile_new(
                     // it reaches the ground and bounces instead of flying level.
                     p.gravity = 0.06;
                     p.initial_y = -0.4;
-                    p.max_bounces = u32::MAX;
+                    p.max_bounces = 10;
                     p.bounce_factor = 1.0;
                 }
                 // Link's projectiles: Hero's Bow arrow (0), Boomerang (1) and
@@ -347,14 +350,17 @@ pub unsafe extern "C" fn ssbm_projectile_bounce(h: *mut Handle) -> u32 {
     }
     guarded(0, || unsafe { (&mut *h).sim.bounce() as u32 })
 }
-/// Reflect a ballistic shot off a wall or ceiling (surface normal `n`).
+/// Reflect a ballistic shot off a wall or ceiling (surface normal `n`). Returns
+/// 1 while it keeps flying and 0 once its surface-contact budget is exhausted
+/// (the projectile has terminated), matching [`ssbm_projectile_bounce`].
 /// # Safety
 /// Unique live projectile or null.
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn ssbm_projectile_reflect(h: *mut Handle, n: V3) {
-    if !h.is_null() {
-        guarded((), || unsafe { (&mut *h).sim.reflect(n.into()) });
+pub unsafe extern "C" fn ssbm_projectile_reflect(h: *mut Handle, n: V3) -> u32 {
+    if h.is_null() {
+        return 0;
     }
+    guarded(0, || unsafe { (&mut *h).sim.reflect(n.into()) as u32 })
 }
 /// # Safety
 /// Unique live projectile and optional unique fighter audio handle. Returns

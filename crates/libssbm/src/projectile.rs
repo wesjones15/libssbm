@@ -97,17 +97,26 @@ impl Projectile {
         true
     }
     /// Reflect off a wall or ceiling with surface `normal`; the ground uses
-    /// [`Projectile::bounce`], which owns the bounce budget. Speed is kept.
-    pub fn reflect(&mut self, normal: Vec3) {
+    /// [`Projectile::bounce`]. Speed is kept. The same surface-contact budget
+    /// (`max_bounces`) bounds both, so a Pikachu Thunder Jolt arcs off ten
+    /// surfaces total (ground, wall or ceiling) before it fizzles. Returns true
+    /// while the projectile keeps flying and false once the budget is spent.
+    pub fn reflect(&mut self, normal: Vec3) -> bool {
         if self.impacted || self.finished {
-            return;
+            return false;
+        }
+        if self.params.max_bounces != 0 && self.bounces >= self.params.max_bounces {
+            self.impact();
+            return false;
         }
         if let Some(n) = normal.try_normalize() {
             let into = self.velocity.dot(n);
             if into < 0. {
                 self.velocity -= 2. * into * n;
+                self.bounces += 1;
             }
         }
+        true
     }
     /// Ground bounces taken so far.
     pub fn bounced(&self) -> u32 {
