@@ -37,6 +37,13 @@ pub struct Params {
     pub fast_fall: f32,
     pub smash_threshold: f32,
     pub smash_window: u32,
+    /// Ticks after a jab starts in which another press continues the chain
+    /// (ftCo_DatAttrs jab_2_input_window, jab_3_input_window).
+    pub jab_2_window: u32,
+    pub jab_3_window: u32,
+    /// Presses and releases of A, counted from the first jab, that start the rapid jab
+    /// (ftCo_DatAttrs rapid_jab_window).
+    pub rapid_jab_window: u32,
 }
 impl Params {
     pub fn validate(&self) -> Result<(), &'static str> {
@@ -109,6 +116,9 @@ impl Params {
             fast_fall: 3.,
             smash_threshold: 0.8,
             smash_window: 4,
+            jab_2_window: 20,
+            jab_3_window: 20,
+            rapid_jab_window: 4,
         }
     }
 }

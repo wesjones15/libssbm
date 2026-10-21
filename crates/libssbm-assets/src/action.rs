@@ -256,6 +256,7 @@ fn decode_script(dat: &Dat, start: usize, horizon: f32, item: bool) -> Result<Ve
                 23 => Command::Interrupt,
                 24 => Command::ThrowFlag(0),
                 29 => Command::JabCombo(value == 0),
+                30 => Command::JabRapid(value != 0),
                 31 => Command::Visibility {
                     group: signed(word >> 19 & 127, 7),
                     choice: signed(word & 0x7ffff, 19),

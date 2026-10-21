@@ -249,6 +249,9 @@ pub fn load_common(dir: &Path, profile: &crate::fighter::FighterAssets<'_>) -> R
         fast_fall: fighter.f32(co + 0x74)?,
         smash_threshold: common.f32(global + 0x3c)?,
         smash_window: common.u32(global + 0x40)?,
+        jab_2_window: fighter.f32(co + 0x7c)?.round().max(0.) as u32,
+        jab_3_window: fighter.f32(co + 0x80)?.round().max(0.) as u32,
+        rapid_jab_window: fighter.u32(co + 0x98)?,
     };
     p.validate()?;
     Ok(p)

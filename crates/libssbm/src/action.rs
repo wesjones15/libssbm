@@ -32,6 +32,8 @@ pub enum Command {
     Variable(u32, u32),
     Interrupt,
     JabCombo(bool),
+    /// Command 30 (ftAction_80071B28): whether mashing A may start the rapid jab now.
+    JabRapid(bool),
     ThrowFlag(u32),
     SmashCharge {
         max_frames: u32,

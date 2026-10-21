@@ -63,6 +63,23 @@ impl Input {
     }
 }
 
+/// The jab chain's counters (ftCo_Attack1.c, ftCo_Attack100.c), kept across the jabs of one chain.
+#[derive(Clone, Copy, Debug, Default)]
+pub(crate) struct JabChain {
+    /// The jab last started (fp->unk_msid) and the ticks left to continue it (fp->hitlag_mul).
+    pub last: Option<Move>,
+    pub window: u32,
+    /// A press landed inside the window (fp->mv.co.attack1.x0).
+    pub queued: bool,
+    /// Presses and releases of A since the chain's first jab (fp->x1A54).
+    pub presses: u32,
+    /// Command 30 opened the rapid jab (fp->x2218_b2).
+    pub rapid_ok: bool,
+    /// The rapid jab's loop has begun (attack100.x0) and A moved since its last beat (x4).
+    pub looping: bool,
+    pub fed: bool,
+}
+
 #[repr(u32)]
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Move {
@@ -80,6 +97,9 @@ pub enum Move {
     DownSmash = 12,
     Jab2 = 13,
     BackAir = 14,
+    /// The third jab (Attack13) and the rapid jab (Attack100Start, Loop, End).
+    Jab3 = 15,
+    RapidJab = 16,
     // Special-move slots 20..24 are fighter-neutral: each fighter's `Behavior`
     // maps its own specials here (neutral, side, side-strong, up, down).
     SpecialN = 20,
@@ -217,6 +237,9 @@ pub struct Sim {
     suppress_initial_landing: bool,
     sampled_buttons: u32,
     pending_pressed: u32,
+    pending_released: u32,
+    released: u32,
+    pub(crate) jab: JabChain,
     buffered_attack: u32,
     pub(crate) knockdown_grace: u32,
     previous: Input,
@@ -331,6 +354,9 @@ impl Sim {
             suppress_initial_landing: true,
             sampled_buttons: 0,
             pending_pressed: 0,
+            pending_released: 0,
+            released: 0,
+            jab: JabChain::default(),
             buffered_attack: 0,
             knockdown_grace: 0,
             previous: Input::idle(),
@@ -447,12 +473,14 @@ impl Sim {
             return 0;
         }
         self.pending_pressed |= input.buttons & !self.sampled_buttons;
+        self.pending_released |= self.sampled_buttons & !input.buttons;
         self.sampled_buttons = input.buttons;
         self.accumulator += dt.min(0.25);
         let mut ticks = 0;
         while self.accumulator + 1e-10 >= 1. / TICK_HZ {
             self.accumulator = (self.accumulator - 1. / TICK_HZ).max(0.);
             let pressed = std::mem::take(&mut self.pending_pressed);
+            self.released = std::mem::take(&mut self.pending_released);
             self.tick(host, input, pressed);
             ticks += 1;
         }
@@ -543,6 +571,7 @@ impl Sim {
         self.special_fall = None;
         self.afterimage = -1;
         self.colanim.clear();
+        self.jab = JabChain::default();
         self.set_phase(Phase::Free);
     }
     /// Host damage notification, deliberately independent of engine health types.
@@ -610,6 +639,29 @@ impl Sim {
         if input.allowed & (1 << self.behavior.slot(m)) == 0 {
             return;
         }
+        // ftCo_Attack1.c checkAttack11 / doAttack12Normal: a first jab starts a fresh chain; the
+        // later jabs keep the press count; the rapid jab keeps it too; anything else ends it.
+        match m {
+            Move::Jab => {
+                self.jab = JabChain {
+                    last: Some(m),
+                    window: self.params.jab_2_window,
+                    ..JabChain::default()
+                }
+            }
+            Move::Jab2 | Move::Jab3 => {
+                self.jab.last = Some(m);
+                self.jab.window = if m == Move::Jab2 { self.params.jab_3_window } else { 0 };
+                self.jab.queued = false;
+            }
+            Move::RapidJab => {
+                self.jab.last = None;
+                self.jab.window = 0;
+                self.jab.looping = false;
+                self.jab.fed = false;
+            }
+            _ => self.jab = JabChain::default(),
+        }
         self.current_move = Some(m);
         self.stage = 0;
         self.flutter = 0;
@@ -649,6 +701,7 @@ impl Sim {
     /// and disc animation command timing remain engine-independent.
     pub fn set_grabbed(&mut self, grabbed: bool) {
         self.grabbed = grabbed;
+        self.jab = JabChain::default();
         self.action.reset();
         self.velocity = Vec3::ZERO;
         self.current_move = if grabbed { Some(Move::GrabHold) } else { None };
@@ -936,7 +989,11 @@ impl Sim {
                         self.start(host, m, input);
                     }
                 } else if pressed & ATTACK != 0 {
-                    self.start(host, self.choose_attack(input), input);
+                    // Attack1_CheckInput: a press inside the window after a jab ends, with the
+                    // combo opened, goes on to the next jab (a smash or tilt input does not).
+                    let attack = self.choose_attack(input);
+                    let next = if attack == Move::Jab { self.jab_resume() } else { None };
+                    self.start(host, next.unwrap_or(attack), input);
                 }
             }
             Phase::JumpSquat => {
@@ -1005,6 +1062,7 @@ impl Sim {
                 self.using_behavior(|b, s| b.tick_charge_cancel(s));
             }
         }
+        self.jab.window = self.jab.window.saturating_sub(1);
         let movable = self.reaction.is_none()
             && (matches!(self.phase, Phase::Free | Phase::JumpSquat | Phase::Helpless)
                 || self.mobile_action())

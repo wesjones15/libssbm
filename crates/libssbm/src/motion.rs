@@ -125,6 +125,13 @@ pub fn select(s: &Sim, input: Input) -> (&'static str, f32) {
             Move::ThrowUp => "ThrowHi",
             Move::ThrowDown => "ThrowLw",
             Move::Jab2 => "Attack12",
+            Move::Jab3 => "Attack13",
+            // ftCo_Attack100Start -> Loop -> End; `stage` is the clip.
+            Move::RapidJab => match s.stage {
+                0 => "Attack100Start",
+                1 => "Attack100Loop",
+                _ => "Attack100End",
+            },
             Move::BackAir => "AttackAirB",
             Move::SideTilt => "AttackS3S",
             Move::UpTilt => "AttackHi3",

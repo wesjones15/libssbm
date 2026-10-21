@@ -52,8 +52,24 @@ impl Sim {
             }
             return;
         }
-        if m == Move::Jab && self.action.jab_combo && pressed & ATTACK != 0 {
-            self.start(host, Move::Jab2, input);
+        if matches!(m, Move::Jab | Move::Jab2 | Move::Jab3) && self.jab_chain(host, input, pressed) {
+            return;
+        }
+        if m == Move::RapidJab {
+            // ftCo_Attack100Loop_IASA: A pressed or released since the last beat keeps it going.
+            if (pressed | self.released) & ATTACK != 0 {
+                self.jab.fed = true;
+            }
+            // ftCo_Attack100Start_Anim hands over to the loop; the loop ends on a beat
+            // (see the ThrowFlag command); the end clip plays out.
+            match self.stage {
+                0 if self.motion.finished() => {
+                    self.stage = 1;
+                    self.jab.looping = true;
+                }
+                2 if self.motion.finished() => self.finish_disc_action(),
+                _ => {}
+            }
             return;
         }
         if self.action.interrupt && pressed & ATTACK != 0 {
@@ -79,6 +95,55 @@ impl Sim {
         } else {
             self.finish_disc_action();
         }
+    }
+
+    /// The jab after `m` in its chain, from the clips the fighter has: Attack12, Attack13; a
+    /// fighter with no Attack12 (Pikachu) repeats Attack11 (doAttack12Rapid).
+    fn jab_next(&self, m: Move) -> Option<Move> {
+        let has = |clip: &str| self.action.definitions.contains_key(clip);
+        match m {
+            Move::Jab if has("Attack12") => Some(Move::Jab2),
+            Move::Jab => Some(Move::Jab),
+            Move::Jab2 if has("Attack13") => Some(Move::Jab3),
+            _ => None,
+        }
+    }
+
+    /// A press after a jab has ended but inside its window (ftCo_Attack1_CheckInput).
+    pub(super) fn jab_resume(&self) -> Option<Move> {
+        let last = self.jab.last?;
+        if self.jab.window > 0 && self.grounded && self.action.jab_combo {
+            self.jab_next(last)
+        } else {
+            None
+        }
+    }
+
+    /// The jab's input checks while it plays: ftCo_Attack_800D6A50 (every press and every release
+    /// of A counts toward the rapid jab, once a script has allowed it) then checkAttack12/13 (a
+    /// press inside the window, with the script's combo flag open, starts the next jab).
+    fn jab_chain(&mut self, host: &mut impl Host, input: Input, pressed: u32) -> bool {
+        if (pressed | self.released) & ATTACK != 0 {
+            self.jab.presses += 1;
+        }
+        let serial = self.action.serial;
+        if self.jab.rapid_ok
+            && self.jab.presses >= self.params.rapid_jab_window.max(1)
+            && self.action.definitions.contains_key("Attack100Loop")
+        {
+            self.start(host, Move::RapidJab, input);
+            return self.action.serial != serial;
+        }
+        if self.jab.window > 0 && pressed & ATTACK != 0 {
+            self.jab.queued = true;
+        }
+        if self.jab.queued && self.action.jab_combo {
+            if let Some(next) = self.jab.last.and_then(|m| self.jab_next(m)) {
+                self.start(host, next, input);
+                return self.action.serial != serial;
+            }
+        }
+        false
     }
 
     fn disc_projectile(&mut self, host: &mut impl Host) {
@@ -212,6 +277,18 @@ impl Sim {
                     }
                 }
                 Command::ThrowFlag(_) => {
+                    // ftCo_Attack100Loop_Anim: the loop's beat. With no press or release since
+                    // the last one, the rapid jab ends; otherwise it goes round again.
+                    if self.current_move == Some(Move::RapidJab)
+                        && self.stage == 1
+                        && clip == "Attack100Loop"
+                    {
+                        if self.jab.looping && !self.jab.fed {
+                            self.stage = 2;
+                        } else {
+                            self.jab.fed = false;
+                        }
+                    }
                     if self.grabbed
                         && matches!(
                             self.current_move,
@@ -251,6 +328,7 @@ impl Sim {
                 }
                 Command::Interrupt => self.action.interrupt = true,
                 Command::JabCombo(value) => self.action.jab_combo = value,
+                Command::JabRapid(on) => self.jab.rapid_ok = on,
                 Command::SmashCharge {
                     max_frames,
                     damage_per_frame,

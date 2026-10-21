@@ -16,7 +16,7 @@ written earlier the same day; everything that has since been fixed is moved into
 | Fox | All four staged and tested; the Reflector now reflects enemy projectiles while held, stuns bosses and can be jump-cancelled (2026-10-20 night) | Not re-audited | Generic grab, unplayed | Gun model placement, knockback feel, reflected-shot behavior: unseen |
 | Luigi | Fireball (shared bouncing shot). Green Missile (charge, misfire, fly, stops on a hit), Super Jump Punch (root-motion rise, special fall, landing lag) and Cyclone (re-hits, pull, air taps) rebuilt as staged specials (2026-10-20 night) | Not re-audited | Generic grab, unplayed | Unplayed: everything; slippery movement not checked; no wall-embed (not in the decomp) |
 | Pikachu | Thunder Jolt (now leaves diagonally down and crawls along floors, walls and ceilings), Skull Bash, Quick Attack, Thunder (stuns bosses) all staged | Forward smash dead | Generic grab, unplayed | Forward smash alias; Skull Bash wall rebound; cloud model; unplayed crawl |
-| Captain Falcon | Falcon Punch, Raptor Boost (uppercut or spike), Falcon Dive (catch, explosion, rebound) and Falcon Kick all staged (2026-10-20 evening) | OK (no jab 3 or rapid jab) | Generic grab, unplayed | Unplayed: travel distances, Dive grab reach, force multipliers |
+| Captain Falcon | Falcon Punch, Raptor Boost (uppercut or spike), Falcon Dive (catch, explosion, rebound) and Falcon Kick all staged (2026-10-20 evening) | OK (jab 3 and rapid jab reachable) | Generic grab, unplayed | Unplayed: travel distances, Dive grab reach, force multipliers |
 | Link | Spin Attack OK; bow, boomerang and bomb staged (2026-10-20 evening); the bomb is carried, thrown or dropped | Forward tilt and forward smash were dead until the alias fix | Generic grab, unplayed | Unplayed: arrow numbers, boomerang arc, bomb feel; no boomerang catch animation |
 | Yoshi | Flutter jump, Egg Lay, Egg Roll, Egg Throw and Yoshi Bomb all staged (2026-10-20 evening) | OK | Generic grab, unplayed | Unplayed: the egg model size, tongue reach, roll feel; the tongue has no model |
 | Donkey Kong | Giant Punch (stored swings), Headbutt (buries, spikes), Spinning Kong (steerable) and Hand Slap (infinite, shockwaves, stunlock) all staged (2026-10-20 evening) | OK | Generic grab, unplayed | Unplayed: burial look, shockwave reach, force multipliers; no cargo carry |
@@ -56,7 +56,7 @@ All commits are in the libssbm / ror2-common / ror2-samus repos; hashes are pref
 
 1. ~~**Stage the specials of Falcon, Link, Yoshi and Donkey Kong.**~~ **DONE** on the evening of 2026-10-20, each following Fox's pattern (section 6): Link in d9ca615, Yoshi in 877277f, Falcon in 8ced907 and Donkey Kong in the commit after it. What each does is in its section below; the unfinished edges are the Link to fix / Falcon to fix / Yoshi to fix / Donkey Kong to fix lines.
 2. ~~**Dead clip aliases**~~ **DONE** (`337dbf7`): Pikachu `AttackS4S` -> `AttackS4`; Link `AttackS3S` -> `AttackS3` and `AttackS4S` -> `AttackS41`.
-3. **Angled and extra attacks are unreachable:** angled tilts and smashes (`AttackS3Hi/Lw`, `AttackS4Hi/Lw`), Jab 3 (`Attack13`, Falcon and Link), rapid jab (`Attack100Start/Loop/End`, Falcon and Link), Link's second smash hit (`AttackS41`/`AttackS42`).
+3. **Angled and extra attacks are unreachable:** angled tilts and smashes (`AttackS3Hi/Lw`, `AttackS4Hi/Lw`), ~~Jab 3 and rapid jab~~ (done, see the jab chain note below), Link's second smash hit (`AttackS41`/`AttackS42`).
    The picker knows one forward tilt and one forward smash.
 4. **Implausible tuning, read from guessed offsets in `crates/libssbm-assets/src/params.rs`:** Falcon `raptor_velocity` 0.18 (so neither Raptor Boost nor Falcon Kick lunges: travel 0.1),
    Yoshi `egg_roll_speed` -0.2 (negative), Donkey Kong Giant Punch momentum 0.12, Spinning Kong rise 0.675 and Falcon Dive 0.85 (the last two are replaced by the host jump height, so they do not show). Pikachu's values are sensible. Check each offset against the decomp's `DatAttrs` struct before fixing.
@@ -165,9 +165,11 @@ RT Falcon Punch, LT A attack, RB Raptor Boost, LB Falcon Dive, B Falcon Kick (co
 | Down air | Down + A in the air | LS held, camera 50 deg or more down, + LT | `AttackAirLw`, 46 ticks, top hit 16%. | OK |
 
 Not reachable: angled tilts (`AttackS3Hi`, `AttackS3Lw` and their `...S` forms), angled smashes (`AttackS4Hi`,
-`AttackS4Lw`), Jab 3 (`Attack13`) and rapid jab (`Attack100Start/Loop/End`).
+`AttackS4Lw`). Jab 3 and the rapid jab are reachable (see the jab chain note below).
 
-**Falcon to fix, in order:** jab 3 and rapid jab; the aerial Falcon Punch landing; play-test the travel scale, the Dive's grab reach and the force multipliers.
+**Jab chain (2026-10-21):** jab 1, 2 and 3 and the rapid jab are reachable. `ftCo_Attack1.c` and `ftCo_Attack100.c` are the spec: a press inside `jab_2_input_window` / `jab_3_input_window` (PlXx.dat attrs +0x7C / +0x80, 24 to 30 ticks here) queues the next jab, which starts once the clip's `JabCombo` command has opened the combo; a fighter with no `Attack12` (Pikachu) plays `Attack11` again. Every press and every release of A counts toward `rapid_jab_window` (+0x98), and once command 30 (`JabRapid`, set in Fox's jab 2, Falcon's jab 3 and Link's jab 2) has allowed it the next tick starts `Attack100Start`, then `Attack100Loop`; at each beat (the loop's `ThrowFlag`) the loop ends unless A moved since the last one, then `Attack100End` plays. So A, A, A starts Fox's rapid jab, Falcon's starts at frame 12 of jab 3, Link needs five quick events before the end of jab 2, and a held A is one jab. Tests: `tests/jab.rs`, `examples/jab_probe.rs`.
+
+**Falcon to fix, in order:** the aerial Falcon Punch landing; play-test the travel scale, the Dive's grab reach and the force multipliers.
 
 ---
 
@@ -207,10 +209,10 @@ RT Hero's Bow, LT A attack, RB Boomerang, LB Spin Attack, B Bomb (cooldowns 0.3 
 Link's Z-air (air grab) is the one that does damage in the disc: `AirCatch` carries 6% boxes, so in the air X acts as a short
 tether hit rather than a capture.
 
-Not reachable: Jab 3 (`Attack13`), rapid jab (`Attack100Start/Loop/End`), the second hit of the forward smash
+Not reachable: the second hit of the forward smash
 (`AttackS41` / `AttackS42`).
 
-**Link to fix, in order:** jab 3 and rapid jab; the boomerang catch pose (`SpecialS2`); check the arrow, boomerang and bomb numbers in game (damage, fuse and blast radius are placeholders).
+**Link to fix, in order:** the boomerang catch pose (`SpecialS2`); check the arrow, boomerang and bomb numbers in game (damage, fuse and blast radius are placeholders).
 
 ---
 
@@ -310,7 +312,7 @@ Clip lengths in ticks (60 per second) from the audit tool:
 | Fighter | Grab | Dash grab | Pummel (hit) | Forward throw | Back throw | Up throw | Down throw |
 | --- | --- | --- | --- | --- | --- | --- | --- |
 | Pikachu | 31 | 41 | 25 (3%, electric) | 45 | 51 | 45 | 49 |
-| Captain Falcon | Falcon Punch, Raptor Boost (uppercut or spike), Falcon Dive (catch, explosion, rebound) and Falcon Kick all staged (2026-10-20 evening) | OK (no jab 3 or rapid jab) | Generic grab, unplayed | Unplayed: travel distances, Dive grab reach, force multipliers |
+| Captain Falcon | Falcon Punch, Raptor Boost (uppercut or spike), Falcon Dive (catch, explosion, rebound) and Falcon Kick all staged (2026-10-20 evening) | OK (jab 3 and rapid jab reachable) | Generic grab, unplayed | Unplayed: travel distances, Dive grab reach, force multipliers |
 | Link | 86 | 96 | 26 (3%) | 41 | 41 | 51 | 51 |
 | Yoshi | 80 | 71 | 25 (3%) | 41 | 45 | 45 | 45 |
 | Donkey Kong | Giant Punch (stored swings), Headbutt (buries, spikes), Spinning Kong (steerable) and Hand Slap (infinite, shockwaves, stunlock) all staged (2026-10-20 evening) | OK | Generic grab, unplayed | Unplayed: burial look, shockwave reach, force multipliers; no cargo carry |
