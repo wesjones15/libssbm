@@ -108,7 +108,17 @@ impl Model {
         let mut model = Self::parse(&Dat::parse(&bytes)?)?;
         let bytes = std::fs::read(dir.join(fighter.data.file))?;
         let d = Dat::parse(&bytes)?;
-        let desc = d.required_ptr(d.root(fighter.data.root)? + 8)?;
+        let root = d.root(fighter.data.root)?;
+        let desc = d.required_ptr(root + 8)?;
+        // ftCo_DatAttrs.model_scaling (co + 0x8C) normalizes each fighter's raw
+        // model to the shared in-game scale (Luigi/Link authored small, Samus and
+        // Pikachu authored large). Apply it so relative heights match the source.
+        let co = d.required_ptr(root)?;
+        let model_scaling = d.f32(co + 0x8c)?;
+        if !model_scaling.is_finite() || model_scaling <= 0. {
+            return Err("invalid fighter model scaling".into());
+        }
+        model.scale(model_scaling);
         model.normal_visible = visibility(&d, desc, costume, model.normal_visible.len(), 0)?;
         model.ball_visible = if let Some(choice) = fighter.morph_visibility {
             visibility(&d, desc, costume, model.ball_visible.len(), choice)?
@@ -271,6 +281,34 @@ impl Model {
     }
     pub fn bind_world(&self) -> Vec<Mat4> {
         self.joints.iter().map(|j| j.bind).collect()
+    }
+    /// Uniformly scale the whole model (joint skeleton and bind-space vertices).
+    /// ftCo_DatAttrs.model_scaling applies this in the source; both the joint
+    /// translations and the authored vertex positions scale so skinning and bone
+    /// attachments stay consistent.
+    pub fn scale(&mut self, factor: f32) {
+        if !factor.is_finite() || factor <= 0. || (factor - 1.).abs() < 1e-6 {
+            return;
+        }
+        for joint in &mut self.joints {
+            joint.translation *= factor;
+        }
+        // `from_joint` walks parents before children, so an index-ordered pass
+        // rebuilds each bind from an already-rescaled parent.
+        for i in 0..self.joints.len() {
+            let j = &self.joints[i];
+            let parent = j.parent;
+            let bind = parent.map_or(Mat4::IDENTITY, |p| self.joints[p].bind)
+                * local(j.translation, j.rotation, j.scale);
+            let joint = &mut self.joints[i];
+            joint.bind = bind;
+            joint.inverse = bind.inverse();
+        }
+        for batch in &mut self.batches {
+            for vertex in &mut batch.vertices {
+                vertex.position *= factor;
+            }
+        }
     }
     pub fn skin(&self, batch: usize, world: &[Mat4]) -> Vec<(Vec3, Vec3)> {
         self.batches[batch]
