@@ -92,6 +92,8 @@ impl Sim {
             } else {
                 0
             }
+            // A fluttering jump's armor (Yoshi): hits do not move him.
+            | if self.flutter > 0 { 256 } else { 0 }
     }
     pub fn shield_hit(&mut self, damage: f32) -> bool {
         if self.defense_flags() & 1 == 0 || !damage.is_finite() || damage < 0. {

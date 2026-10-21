@@ -421,9 +421,22 @@ pub fn load_yoshi_specials(dir: &Path) -> Result<libssbm::yoshi::Specials> {
     let root = fighter.root(profile.data.root)?;
     let ys = fighter.required_ptr(root + 4)?;
     Ok(libssbm::yoshi::Specials {
-        egg_roll_speed: fighter.f32(ys + 0x54)?,
+        // Egg Roll (ftyoshispecials.c): the start hop (x5C) and gravity (x6C), the
+        // ground acceleration (x74), braking (x78), target (x7C) and top speed (x80),
+        // the stick deadzone for turning around (x9C), the wall bounce (xAC / xB0),
+        // and the frames it lasts (x48) before B can end it (x4C frames earlier).
+        egg_roll_hop: fighter.f32(ys + 0x5c)?,
+        egg_roll_gravity: fighter.f32(ys + 0x6c)?,
+        egg_roll_accel: fighter.f32(ys + 0x74)?,
+        egg_roll_brake: fighter.f32(ys + 0x78)?,
+        egg_roll_speed: fighter.f32(ys + 0x7c)?,
+        egg_roll_max: fighter.f32(ys + 0x80)?,
+        egg_roll_turn_stick: fighter.f32(ys + 0x9c)?,
+        egg_roll_wall_bounce: fighter.f32(ys + 0xac)?,
+        egg_roll_frames: fighter.u32(ys + 0x48)?,
         egg_throw_speed: fighter.f32(ys + 0xfc)?,
         bomb_fall_speed: fighter.f32(ys + 0x114)?,
+        flutter_frames: fighter.u32(ys)?,
     })
 }
 

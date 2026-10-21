@@ -219,7 +219,14 @@ pub unsafe extern "C" fn ssbm_projectile_new(
                 // the disc item carries no gravity, so it falls with a gentle
                 // arc like Luigi's fireball.
                 6 if kind == 0 => {
-                    p.speed = libssbm_assets::params::load_yoshi_specials(dir)?.egg_throw_speed;
+                    // The source's throw speed grows with how long the reticle was up
+                    // (x4 * x100 + xFC). The host owns the reticle, so it passes the
+                    // launch speed it wants in `charge`; zero keeps the disc's base.
+                    p.speed = if charge > 0. {
+                        charge
+                    } else {
+                        libssbm_assets::params::load_yoshi_specials(dir)?.egg_throw_speed
+                    };
                     p.life = a[0];
                     p.gravity = 0.08;
                     p.max_fall = 4.;

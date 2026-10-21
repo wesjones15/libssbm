@@ -237,6 +237,10 @@ pub struct Sim {
     /// World facts the host reports each tick (see `HOST_*` in `link.rs`): Link's
     /// boomerang being out, a carried bomb. A behavior reads them to choose a clip.
     pub host_flags: u32,
+    /// Ticks left of a fluttering aerial jump (`Behavior::flutter`) and the gravity
+    /// scale it applies.
+    pub(crate) flutter: u32,
+    pub(crate) flutter_gravity: f32,
     /// A behavior holds `pad_gravity` for a scripted move; cleared when the
     /// move ends so a special can never leave the fighter floating.
     pub(crate) owns_gravity: bool,
@@ -302,6 +306,8 @@ impl Sim {
             stage_value: 0.,
             lock_target: None,
             host_flags: 0,
+            flutter: 0,
+            flutter_gravity: 1.,
             owns_gravity: false,
         }
     }
@@ -548,6 +554,7 @@ impl Sim {
         }
         self.current_move = Some(m);
         self.stage = 0;
+        self.flutter = 0;
         self.stage_frame = 0;
         self.stage_len = 0;
         self.stage_vec = Vec3::ZERO;
@@ -699,6 +706,14 @@ impl Sim {
             }) * self.options.jump_scale
         };
         self.jumps_used += 1;
+        self.flutter = 0;
+        if aerial {
+            if let Some(flutter) = self.behavior.flutter() {
+                self.flutter = flutter.frames;
+                self.flutter_gravity = flutter.gravity;
+                self.velocity.y *= flutter.boost;
+            }
+        }
         self.set_phase(Phase::Free);
         self.emit(host, EventKind::Jump, 0, self.jumps_used as f32);
     }
@@ -1019,8 +1034,15 @@ impl Sim {
                 } else {
                     self.params.fall_speed
                 };
-                self.velocity.y = (self.velocity.y - self.params.gravity).max(-cap);
+                let gravity = if self.flutter > 0 {
+                    self.flutter -= 1;
+                    self.params.gravity * self.flutter_gravity
+                } else {
+                    self.params.gravity
+                };
+                self.velocity.y = (self.velocity.y - gravity).max(-cap);
             } else {
+                self.flutter = 0;
                 self.velocity.y = self.velocity.y.min(0.);
             }
         }

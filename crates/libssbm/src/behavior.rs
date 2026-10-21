@@ -9,6 +9,14 @@ use crate::{
 };
 use glam::Vec3;
 
+/// A fluttering mid-air jump; see [`Behavior::flutter`].
+#[derive(Clone, Copy, Debug)]
+pub struct Flutter {
+    pub frames: u32,
+    pub gravity: f32,
+    pub boost: f32,
+}
+
 pub trait Behavior: Send {
     // --- Move classification ------------------------------------------------
     /// Skill slot (0..4) a move maps to. Common A-attacks use slot 1.
@@ -110,6 +118,13 @@ pub trait Behavior: Send {
     /// every new fighter inherited. Only Samus's charge shot opts back in.
     fn fire_replays(&self, _m: Move) -> bool {
         false
+    }
+    /// A fighter whose mid-air jump flutters (Yoshi, ftCo_JumpAerial.c::
+    /// ftYs_JumpAerial_Enter): for `frames` ticks after each aerial jump gravity is
+    /// scaled by `gravity`, the takeoff speed by `boost`, and hits do not move him
+    /// (the jump's armor). `None` is an ordinary double jump.
+    fn flutter(&self) -> Option<Flutter> {
+        None
     }
 
     // --- Prototype timing (not purported frame-perfect source data) ----------

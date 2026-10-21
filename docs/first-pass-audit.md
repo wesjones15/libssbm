@@ -18,7 +18,7 @@ written earlier the same day; everything that has since been fixed is moved into
 | Pikachu | Thunder Shock, Skull Bash, Quick Attack, Thunder all staged | Forward smash dead | Generic grab, unplayed | Forward smash alias; Skull Bash wall rebound; cloud model |
 | Captain Falcon | Falcon Punch OK; Raptor Boost, Falcon Dive, Falcon Kick cut short | OK (no jab 3 or rapid jab) | Generic grab, unplayed | Staged specials; implausible tuning offsets |
 | Link | Spin Attack OK; bow, boomerang and bomb staged (2026-10-20 evening); the bomb is carried, thrown or dropped | Forward tilt and forward smash were dead until the alias fix | Generic grab, unplayed | Unplayed: arrow numbers, boomerang arc, bomb feel; no boomerang catch animation |
-| Yoshi | Egg Throw partial; **Egg Lay and Egg Roll do nothing**; Yoshi Bomb partial | OK | Generic grab, unplayed | Staged Lay, Roll; negative roll speed |
+| Yoshi | Flutter jump, Egg Lay, Egg Roll, Egg Throw and Yoshi Bomb all staged (2026-10-20 evening) | OK | Generic grab, unplayed | Unplayed: the egg model size, tongue reach, roll feel; the tongue has no model |
 | Donkey Kong | Headbutt and Spinning Kong OK; Giant Punch has no charge; **Hand Slap does nothing** | OK | Generic grab, unplayed | Staged Hand Slap and Giant Punch charge |
 
 ## 2. What changed since the first version of this audit
@@ -59,7 +59,7 @@ All commits are in the libssbm / ror2-common / ror2-samus repos; hashes are pref
    - **Falcon.** Raptor Boost: `SpecialSStart` lunge (80 frames, inert trigger boxes on frames 15-35), on contact continue into `SpecialS` (the 7% uppercut), on a miss recover on the ground or fall with miss landing lag in the air.
      Falcon Dive: grab boxes on the rise, `SpecialHiCatch` (5% fire hit), `SpecialHiThrow` (the explosion launch), then special fall. Falcon Kick: ground travel, then `SpecialLwEnd`; air: diagonal dive, `...EndAir` on landing.
    - **Link.** Done on 2026-10-20 evening (bow, boomerang flight, carried bomb); see the Link section. Still missing: the `SpecialS2` catch pose.
-   - **Yoshi.** Egg Lay: tongue grab, on contact `SpecialN2` swallows and lays an egg. Egg Roll: `Start` (intangible) -> `Loop` (4% x2 at `egg_roll_speed`) -> `End`. Yoshi Bomb: add the 40-frame `SpecialLwLanding` stun. Egg Throw: a stick-moved reticle.
+   - **Yoshi.** Done on 2026-10-20 evening (flutter jump, Egg Lay, Egg Roll, Egg Throw arcs, Yoshi Bomb with stars); see the Yoshi section.
    - **Donkey Kong.** Giant Punch: `Start` (8) -> `Loop` (12, each loop one more windmill swing up to `MAX_ARM_SWINGS`) -> B releases `SpecialN` with damage = base + swings x `DAMAGE_PER_SWING`. Hand Slap: `Start` -> `Loop` (27 frames, two bursts of four 11% boxes at frames 5 and 16; B again repeats) -> `End` (20).
    Done when: `move_audit` shows the full clip chain, hitboxes and events for each, and a test next to `crates/libssbm-assets/tests/fox.rs` asserts them.
 2. ~~**Dead clip aliases**~~ **DONE** (`337dbf7`): Pikachu `AttackS4S` -> `AttackS4`; Link `AttackS3S` -> `AttackS3` and `AttackS4S` -> `AttackS41`.
@@ -230,10 +230,10 @@ RT Egg Lay, LT A attack, RB Egg Roll, LB Egg Throw, B Yoshi Bomb (cooldowns 0.5 
 
 | Move | Melee input | RoR2 input | Does now | Should do | Status |
 | --- | --- | --- | --- | --- | --- |
-| Egg Lay | B | RT / Primary | Plays the 40-frame tongue clip once. No hitbox, no event, no capture: the tongue does nothing. `SpecialN2` never plays. | The tongue is a grab; on contact the victim is swallowed (`SpecialN2`) and Yoshi lays an egg containing it (the disc's Egg Lay article). | BROKEN |
-| Egg Roll | Side + B | RB / Utility | Plays only `SpecialSStart` (20 frames): no roll, no hitbox. The roll speed read from the disc is -0.2 (negative), which looks like a wrong field. `SpecialSLoop` (60 frames, two 4% boxes) and `SpecialSEnd` (40) are never reached. | Start (intangible), then roll along the ground at `egg_roll_speed` hitting for 4%, then End. | BROKEN |
-| Egg Throw | Up + B | LB / Special | Emits the egg event and hops (33 above start). The C# `Egg` article arcs along the crosshair, bounces off the ground and bursts on contact, damage from the article, or the shared 8% placeholder when the item script has none. | Melee: Yoshi hops, a reticle moves under stick control, the egg flies in an arc and bursts on contact. Aim here is the camera ray. | PARTIAL |
-| Yoshi Bomb | Down + B | B / C (fifth slot) | Ground: 16% at frame 27 of a 28-frame clip. Air: a quick 14% plunge. `SpecialLwLanding` (40-frame landing stun) never plays. | Stall, plunge, shockwave on landing, then the landing stun. | PARTIAL |
+| Egg Lay | B | RT / Primary | Staged: `SpecialN1` (tongue), `SpecialN2` (swallow). The tongue event fires on frame 20; the host casts a 7 m sphere along the camera aim and swallows the first enemy, **bosses included**; the swallow clip then plays and the egg is laid. The victim's AI and state machines are held idle and it stays put until it breaks out (4 s, 6 s for large, 9 s for bosses). The egg is sized to the victim but not to scale: at most 2.4 m for ordinary enemies, 3 to 5.5 m for bosses. It can still be hit meanwhile. No cooldown. The egg model's size is a guess. | Same; the source's egg is a fixed item. | PARTIAL (unplayed) |
+| Egg Roll | Side + B | RB / Utility | Staged: `SpecialS` (curl up), `SpecialSLoop` (rolling, hitbox 4% twice), `SpecialSEnd`. Speed climbs to the disc's 3.0 units a tick (top 5.0) and he rolls for the disc's 360 ticks unless a second press ends it. The move stick steers him, a wall bounces him back and the loop's hitboxes renew every second, so it hits repeatedly. | Same; the source reads one stick axis and has slope terms and a separate air roll. | PARTIAL (unplayed) |
+| Egg Throw | Up + B | LB / Special | Hops and throws an egg on a ballistic arc: the camera pitch sets the angle (pitch + 22 degrees, 5 to 70), launch speed 4.5 units a tick, gravity 0.08, bounces up to four times and bursts on the first enemy or wall in a 2 m blast. No cooldown. | The source's speed grows with the time the reticle is up; here the angle is the control. | PARTIAL (unplayed; damage a placeholder) |
+| Yoshi Bomb | Down + B | B / C (fifth slot) | Grounded: a short hop (35% of the host jump) and hang for the 28-frame `SpecialLw`, then a dive; airborne: the dive starts at once (`SpecialAirLw`, straight down at the disc's 5.0 units a tick). A 14% hitbox rides the dive. The landing plays `SpecialLwLanding` (40 frames), hits everything within 4.5 m and sends eight stars running out along the ground. | Same; the source spawns two stars (left and right). | PARTIAL (unplayed) |
 | Shield / Air Feint | Shield | B (alt) | Ground shield, one air evade. | Same (Yoshi's disc shield clips are `GuardOn`/`GuardOff` only). | OK |
 
 ### Normals, tilts, smashes and aerials (grab, pummel and throws: see the shared section below)
@@ -257,8 +257,7 @@ RT Egg Lay, LT A attack, RB Egg Roll, LB Egg Throw, B Yoshi Bomb (cooldowns 0.5 
 
 Not reachable: angled tilts (`AttackS3Hi/Lw` and `...S` forms) and angled smashes (`AttackS4Hi/Lw`).
 
-**Yoshi to fix, in order:** Egg Roll stages, Egg Lay (grab, swallow, egg), Yoshi Bomb landing,
-the reticle for Egg Throw.
+**Yoshi to fix, in order:** check the egg model size, the tongue reach and the star damage in game; add a tongue model; the roll's slope terms from the source.
 
 ---
 
