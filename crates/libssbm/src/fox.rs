@@ -362,6 +362,9 @@ impl Fox {
     }
 }
 impl Behavior for Fox {
+    fn hurt_eyes(&self) -> bool {
+        true
+    }
     fn slot(&self, m: Move) -> u32 {
         match m {
             Move::SpecialN => 0,

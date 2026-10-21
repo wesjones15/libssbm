@@ -114,6 +114,10 @@ impl Sim {
     pub(crate) fn execute_disc_commands(&mut self, host: &mut impl Host, input: Input) {
         let clip = self.motion.clip;
         let frame = self.motion.frame;
+        if self.action.script_clip != clip {
+            // ftAnim_80070F28 (on every motion change): part animations end.
+            self.parts = [None; 5];
+        }
         if self.action.script_clip != clip || frame < self.action.script_frame {
             self.action.cursor = 0;
             self.action.script_clip = clip;
@@ -302,6 +306,18 @@ impl Sim {
                         }
                         if words[0] >> 25 & 1 != 0 && idx2 < self.face.len() {
                             self.face[idx2] = frame;
+                        }
+                    }
+                    // ftAction_800727C8: start part animation `index` in `slot` (hand poses, the
+                    // mouth), blending in over `blend` frames.
+                    if opcode == 41 {
+                        let slot = (words[0] >> 19 & 0x7f) as usize;
+                        if slot < self.parts.len() {
+                            self.parts[slot] = Some(crate::sim::PartPlay {
+                                index: (words[0] >> 12 & 0x7f) as u8,
+                                age: 0.,
+                                blend: (words[0] & 0xfff) as u16,
+                            });
                         }
                     }
                     // ftAction_80072B3C: the sword trail on (0) or off (-1).

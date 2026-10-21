@@ -32,6 +32,124 @@ pub struct Clip {
 pub struct Animations {
     pub clips: BTreeMap<String, Clip>,
 }
+/// A part animation laid over the main pose (ftAnim_ApplyPartAnim): the clip, how far into it
+/// the pose is, and how much of it replaces the main pose's value (1 once the blend-in ends).
+#[derive(Clone, Copy)]
+pub struct Overlay<'a> {
+    pub clip: &'a Clip,
+    pub frame: f32,
+    pub weight: f32,
+}
+/// The fighter's part animations (`ftData_x1C`, ft/types.h): five slots (hands, ears, tail,
+/// mouth...), each a list of animations that script command 41 picks by index. A clip's tracks
+/// already name model joints: the animation's joint tree walks the rig from the slot's start
+/// bone in the same child-then-next order the model's joints are numbered in.
+#[derive(Clone, Default)]
+pub struct PartAnimations {
+    pub slots: Vec<Vec<Clip>>,
+}
+impl PartAnimations {
+    pub fn get(&self, slot: usize, index: usize) -> Option<&Clip> {
+        self.slots.get(slot)?.get(index)
+    }
+    pub fn load(dir: &Path, fighter: &crate::fighter::FighterAssets<'_>) -> Result<Self> {
+        let bytes = std::fs::read(dir.join(fighter.data.file))?;
+        let d = Dat::parse(&bytes)?;
+        Self::parse(&d, d.root(fighter.data.root)?)
+    }
+    /// Reads the table at the fighter data's +0x1C. The animation arrays are not counted, so a
+    /// slot's list ends at the first entry that is not a valid animation tree.
+    pub fn parse(d: &Dat, root: usize) -> Result<Self> {
+        let Some(table) = d.ptr(root + 0x1c)? else { return Ok(Self::default()) };
+        let mut slots = Vec::new();
+        for slot in 0..5 {
+            let mut clips = Vec::new();
+            if let Ok(Some(entry)) = d.ptr(table + slot * 4)
+                && let (Ok(start), Ok(Some(anims))) = (d.u16(entry), d.ptr(entry + 8))
+            {
+                for i in 0..16 {
+                    let Ok(Some(tree)) = d.ptr(anims + i * 4) else { break };
+                    match Self::tree(d, tree, start as usize) {
+                        Ok(clip) => clips.push(clip),
+                        Err(_) => break,
+                    }
+                }
+            }
+            slots.push(clips);
+        }
+        Ok(Self { slots })
+    }
+    /// ftAnim_80070904: the animation joint tree (child first, then next) from the start bone.
+    fn tree(d: &Dat, root: usize, start: usize) -> Result<Clip> {
+        let mut tracks = Vec::new();
+        let mut frames = 0f32;
+        let mut looping = false;
+        let mut seen = std::collections::HashSet::new();
+        let mut stack = vec![root];
+        let mut index = 0;
+        while let Some(at) = stack.pop() {
+            if !seen.insert(at) || seen.len() > 512 {
+                return Err("cyclic/oversized part animation tree".into());
+            }
+            if let Some(next) = d.ptr(at + 4)? {
+                stack.push(next);
+            }
+            if let Some(child) = d.ptr(at)? {
+                stack.push(child);
+            }
+            if let Some(aobj) = d.ptr(at + 8)? {
+                let end = d.f32(aobj + 4)?;
+                if !(0. ..=100000.).contains(&end) {
+                    return Err("invalid part animation length".into());
+                }
+                frames = frames.max(end);
+                looping |= d.u32(aobj)? & (1 << 29) != 0;
+                let mut fobj = d.ptr(aobj + 8)?;
+                let mut visited = std::collections::HashSet::new();
+                while let Some(f) = fobj {
+                    if !visited.insert(f) || visited.len() > 64 {
+                        return Err("cyclic/oversized part tracks".into());
+                    }
+                    let raw = d.bytes(d.required_ptr(f + 16)?, d.u32(f + 4)? as usize)?;
+                    let frac = d.bytes(f + 13, 2)?;
+                    tracks.push(Track {
+                        joint: start + index,
+                        channel: d.bytes(f + 12, 1)?[0],
+                        keys: keys(raw, frac[0], frac[1], d.f32(f + 8)?)?,
+                    });
+                    fobj = d.ptr(f)?;
+                }
+            }
+            index += 1;
+        }
+        Ok(Clip { frames, looping, tracks, motion_joint: None })
+    }
+}
+
+/// How much of a part animation shows `age` ticks after it started (ftAnim_800707B0): with
+/// no blend frames it is all of it at once; otherwise each tick moves the display toward the
+/// animation by `step / (step + remaining)`, where the step is the animation's length over the
+/// blend frames and `remaining` counts down to the blend frame count. Returns the combined
+/// weight of the ticks so far.
+pub fn part_blend(age: f32, blend_frames: f32, clip_frames: f32) -> f32 {
+    if blend_frames <= 0. {
+        return 1.;
+    }
+    let step = clip_frames / blend_frames;
+    if step <= 0. {
+        return 0.;
+    }
+    let mut kept = 1f32;
+    let mut done = 0f32;
+    for _ in 0..age.max(0.) as usize {
+        done += step;
+        if done >= blend_frames {
+            return 1.;
+        }
+        kept *= 1. - step / (step + (blend_frames - done));
+    }
+    1. - kept
+}
 struct Reader<'a> {
     data: &'a [u8],
     at: usize,
@@ -527,7 +645,18 @@ impl Animations {
         Ok(Self { clips })
     }
     pub fn pose(&self, model: &Model, name: &str, frame: f32, looping: bool) -> Vec<Mat4> {
-        self.pose_inner(model, name, frame, looping, true)
+        self.pose_inner(model, name, frame, looping, true, &[])
+    }
+    /// The pose with part animations laid over it: the bones they key take their values.
+    pub fn pose_over(
+        &self,
+        model: &Model,
+        name: &str,
+        frame: f32,
+        looping: bool,
+        overlay: &[Overlay<'_>],
+    ) -> Vec<Mat4> {
+        self.pose_inner(model, name, frame, looping, true, overlay)
     }
     pub fn pose_object(&self, model: &Model, frame: f32) -> Vec<Mat4> {
         self.pose_inner(
@@ -536,6 +665,7 @@ impl Animations {
             frame,
             self.clips.get("Object").is_some_and(|c| c.looping),
             false,
+            &[],
         )
     }
     fn pose_inner(
@@ -545,6 +675,7 @@ impl Animations {
         frame: f32,
         looping: bool,
         remove_root_motion: bool,
+        overlay: &[Overlay<'_>],
     ) -> Vec<Mat4> {
         let mut t: Vec<_> = model.joints.iter().map(|j| j.translation).collect();
         let mut r: Vec<_> = model.joints.iter().map(|j| j.rotation).collect();
@@ -574,6 +705,37 @@ impl Animations {
                     8 => s[j].x = if v.abs() < 0.001 { 0.001 } else { v },
                     9 => s[j].y = if v.abs() < 0.001 { 0.001 } else { v },
                     10 => s[j].z = if v.abs() < 0.001 { 0.001 } else { v },
+                    _ => (),
+                }
+            }
+        }
+        // ftAnim_800707B0: a bone a part animation keys stops following the main clip and
+        // shows the part animation instead, easing in over its blend frames.
+        for part in overlay {
+            let frame = if part.clip.looping {
+                part.frame.rem_euclid(part.clip.frames.max(1.))
+            } else {
+                part.frame.min(part.clip.frames)
+            };
+            for track in &part.clip.tracks {
+                let j = track.joint;
+                if j >= model.joints.len() {
+                    continue;
+                }
+                let Some(v) = track.sample(frame) else { continue };
+                let w = part.weight.clamp(0., 1.);
+                let mix = |slot: &mut f32, v: f32| *slot += (v - *slot) * w;
+                let floor = |v: f32| if v.abs() < 0.001 { 0.001 } else { v };
+                match track.channel {
+                    1 => mix(&mut r[j].x, v),
+                    2 => mix(&mut r[j].y, v),
+                    3 => mix(&mut r[j].z, v),
+                    5 => mix(&mut t[j].x, v),
+                    6 => mix(&mut t[j].y, v),
+                    7 => mix(&mut t[j].z, v),
+                    8 => mix(&mut s[j].x, floor(v)),
+                    9 => mix(&mut s[j].y, floor(v)),
+                    10 => mix(&mut s[j].z, floor(v)),
                     _ => (),
                 }
             }

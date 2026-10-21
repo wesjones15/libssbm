@@ -21,6 +21,9 @@ pub struct Presentation {
     /// frames the sim last set (`Sim::face`).
     pub face_tracks: Vec<(usize, crate::animation::Track)>,
     pub face: [f32; 8],
+    /// The fighter's part animations (hand poses, ears, mouth) and the ones the sim has playing.
+    pub part_clips: crate::animation::PartAnimations,
+    pub parts: [Option<libssbm::sim::PartPlay>; 5],
 }
 impl Presentation {
     pub fn platform(dir: &Path) -> Result<Self> {
@@ -49,6 +52,8 @@ impl Presentation {
             effect_fade: false,
             face_tracks: Vec::new(),
             face: [0.; 8],
+            part_clips: Default::default(),
+            parts: [None; 5],
         })
     }
     /// The results-screen GAME! burst: `ScInfCnt_scene_models[5]` in the shared
@@ -87,6 +92,8 @@ impl Presentation {
             effect_fade: false,
             face_tracks: Vec::new(),
             face: [0.; 8],
+            part_clips: Default::default(),
+            parts: [None; 5],
         })
     }
     pub fn effect(dir: &Path, id: u32) -> Result<Self> {
@@ -139,6 +146,8 @@ impl Presentation {
             effect_fade: true,
             face_tracks: Vec::new(),
             face: [0.; 8],
+            part_clips: Default::default(),
+            parts: [None; 5],
         })
     }
     pub fn article(dir: &Path, kind: u32, state: u32) -> Result<Self> {
@@ -179,6 +188,8 @@ impl Presentation {
             effect_fade: false,
             face_tracks: Vec::new(),
             face: [0.; 8],
+            part_clips: Default::default(),
+            parts: [None; 5],
         })
     }
     pub fn object_pose(&mut self, frame: f32) {
@@ -227,24 +238,29 @@ impl Presentation {
             effect_fade: false,
             face_tracks,
             face: [0.; 8],
+            part_clips: crate::animation::PartAnimations::load(dir, fighter)?,
+            parts: [None; 5],
         })
     }
     pub fn update(&mut self, sim: &Sim, _dt: f32) {
         let clip = sim.motion.clip;
         self.clip = clip.into();
         self.face = sim.face;
+        self.parts = sim.parts;
         self.frame = sim.motion.render_frame(sim.alpha());
         self.ball = sim.current_move == Some(Move::SpecialLw);
         self.hidden = sim
             .rebirth
             .as_ref()
             .is_some_and(|s| s.phase == libssbm::rebirth::Phase::Ko);
-        self.world = mobile_pose(
+        let overlay = self.part_overlay(sim.alpha());
+        self.world = mobile_pose_over(
             &self.model,
             &self.animations,
             sim,
             self.frame,
             self.upper_body_root,
+            &overlay,
         );
         let neutral = match clip {
             "FallF" | "FallB" => Some("Fall"),
@@ -262,6 +278,24 @@ impl Presentation {
                 *world = transform * *world;
             }
         }
+    }
+    /// The part animations to lay over this tick's pose (ftAnim_800707B0 and the animation
+    /// the joints play): each slot's chosen clip at its age, with its blend-in weight.
+    pub fn part_overlay(&self, alpha: f32) -> Vec<crate::animation::Overlay<'_>> {
+        self.parts
+            .iter()
+            .enumerate()
+            .filter_map(|(slot, play)| {
+                let play = play.as_ref()?;
+                let clip = self.part_clips.get(slot, play.index as usize)?;
+                let age = play.age + alpha.clamp(0., 1.);
+                Some(crate::animation::Overlay {
+                    clip,
+                    frame: age,
+                    weight: crate::animation::part_blend(age, play.blend as f32, clip.frames),
+                })
+            })
+            .collect()
     }
     pub fn visible(&self, batch: usize) -> bool {
         if self.hidden {
@@ -390,7 +424,18 @@ pub fn mobile_pose(
     action_frame: f32,
     upper_root: Option<usize>,
 ) -> Vec<Mat4> {
-    let mut pose = mobile_pose_layers(
+    mobile_pose_over(model, animations, sim, action_frame, upper_root, &[])
+}
+/// [`mobile_pose`] with part animations laid over the action's pose.
+pub fn mobile_pose_over(
+    model: &Model,
+    animations: &Animations,
+    sim: &Sim,
+    action_frame: f32,
+    upper_root: Option<usize>,
+    overlay: &[crate::animation::Overlay<'_>],
+) -> Vec<Mat4> {
+    let mut pose = mobile_pose_layers_over(
         model,
         animations,
         sim.motion.clip,
@@ -401,6 +446,7 @@ pub fn mobile_pose(
         sim.locomotion.looping(),
         sim.gait_layer_weight(),
         upper_root,
+        overlay,
     );
     if let (Some(root), Some((_, yaw))) = (upper_root, sim.side_special_upper_aim()) {
         aim_upper_body(model, &mut pose, root, yaw);
@@ -439,7 +485,27 @@ pub fn mobile_pose_layers(
     weight: f32,
     upper_root: Option<usize>,
 ) -> Vec<Mat4> {
-    let action = animations.pose(model, action_clip, action_frame, action_loop);
+    mobile_pose_layers_over(
+        model, animations, action_clip, action_frame, action_loop, gait_clip, gait_frame,
+        gait_loop, weight, upper_root, &[],
+    )
+}
+/// [`mobile_pose_layers`] with part animations laid over the action's pose (the gait only
+/// drives the legs, so the hands and face parts always come from the action).
+pub fn mobile_pose_layers_over(
+    model: &Model,
+    animations: &Animations,
+    action_clip: &str,
+    action_frame: f32,
+    action_loop: bool,
+    gait_clip: &str,
+    gait_frame: f32,
+    gait_loop: bool,
+    weight: f32,
+    upper_root: Option<usize>,
+    overlay: &[crate::animation::Overlay<'_>],
+) -> Vec<Mat4> {
+    let action = animations.pose_over(model, action_clip, action_frame, action_loop, overlay);
     let Some(root) = upper_root else {
         return action;
     };

@@ -174,6 +174,15 @@ impl Default for Options {
     }
 }
 
+/// A part animation in progress: which of the slot's animations, how many ticks it has
+/// played, and the blend frames its command gave.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct PartPlay {
+    pub index: u8,
+    pub age: f32,
+    pub blend: u16,
+}
+
 pub struct Sim {
     pub grabbed: bool,
     pub defense: crate::defense::Defense,
@@ -256,10 +265,15 @@ pub struct Sim {
     /// The face's texture animation frames, one per costume TObj (fp->tobj_list): what command
     /// 40 (ftAnim_800704F0) last set; zero again whenever the motion changes (ftAnim_80070654).
     pub face: [f32; 8],
+    /// The part animations scripts started (command 41, ftAnim_ApplyPartAnim), one per slot of
+    /// the fighter's part table: hands, ears, tail, mouth. They end when the motion changes.
+    pub parts: [Option<PartPlay>; 5],
     /// The glows and flashes scripts start (command 46), and the move and clip they began in.
     pub colanim: crate::colanim::ColorAnim,
     colanim_move: Option<Move>,
     colanim_clip: &'static str,
+    /// Whether the knockback eyes (`Behavior::hurt_eyes`) are showing.
+    knockback_eyes: bool,
     rng: u32,
 }
 impl Sim {
@@ -344,9 +358,11 @@ impl Sim {
             air_charge: false,
             afterimage: -1,
             face: [0.; 8],
+            parts: [None; 5],
             colanim: Default::default(),
             colanim_move: None,
             colanim_clip: "",
+            knockback_eyes: false,
             rng: 0,
         }
     }
@@ -1220,7 +1236,23 @@ impl Sim {
             self.execute_disc_commands(host, input);
             self.using_behavior(|b, s| b.after_script(s));
         }
+        if self.behavior.hurt_eyes() {
+            // Part animation 3 while in knockback (reapplied after each motion change clears
+            // it), 2 again on leaving it.
+            let hurt = self.reaction.is_some();
+            for slot in [3, 4] {
+                if hurt && self.parts[slot].is_none() {
+                    self.parts[slot] = Some(PartPlay { index: 3, age: 0., blend: 0 });
+                } else if !hurt && self.knockback_eyes {
+                    self.parts[slot] = Some(PartPlay { index: 2, age: 0., blend: 0 });
+                }
+            }
+            self.knockback_eyes = hurt;
+        }
         self.tick_colanim();
+        for part in self.parts.iter_mut().flatten() {
+            part.age += 1.;
+        }
         self.previous = input;
     }
     pub(crate) fn fire(&mut self, host: &mut dyn Host) {

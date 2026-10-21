@@ -107,6 +107,11 @@ pub trait Behavior: Send {
     fn aim_frozen(&self, _sim: &Sim) -> bool {
         false
     }
+    /// Whether the fighter's eyes change in knockback (Fighter_OnKnockbackEnter/Exit in
+    /// ftFx/ftYs start part animation 3 in the eye slots, 3 and 4, and 2 again on leaving).
+    fn hurt_eyes(&self) -> bool {
+        false
+    }
     /// A stage whose clip script must not apply hitboxes, effects or sounds.
     fn script_muted(&self, _sim: &Sim) -> bool {
         false

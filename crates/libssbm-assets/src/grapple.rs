@@ -81,5 +81,7 @@ pub fn part(dir: &Path, part: u32) -> Result<Presentation> {
         effect_fade: false,
         face_tracks: Vec::new(),
         face: [0.; 8],
+        part_clips: Default::default(),
+        parts: [None; 5],
     })
 }
