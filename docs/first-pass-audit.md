@@ -17,7 +17,7 @@ written earlier the same day; everything that has since been fixed is moved into
 | Luigi | Fireball (shared bouncing shot), Green Missile charge, Cyclone | Not re-audited | Generic grab, unplayed | Not re-audited in detail |
 | Pikachu | Thunder Shock, Skull Bash, Quick Attack, Thunder all staged | Forward smash dead | Generic grab, unplayed | Forward smash alias; Skull Bash wall rebound; cloud model |
 | Captain Falcon | Falcon Punch OK; Raptor Boost, Falcon Dive, Falcon Kick cut short | OK (no jab 3 or rapid jab) | Generic grab, unplayed | Staged specials; implausible tuning offsets |
-| Link | Spin Attack OK; **bow and boomerang do nothing**; bomb is a lob | Forward tilt and forward smash dead | Generic grab, unplayed | Staged bow, boomerang; two aliases |
+| Link | Spin Attack OK; bow, boomerang and bomb staged (2026-10-20 evening); the bomb is carried, thrown or dropped | Forward tilt and forward smash were dead until the alias fix | Generic grab, unplayed | Unplayed: arrow numbers, boomerang arc, bomb feel; no boomerang catch animation |
 | Yoshi | Egg Throw partial; **Egg Lay and Egg Roll do nothing**; Yoshi Bomb partial | OK | Generic grab, unplayed | Staged Lay, Roll; negative roll speed |
 | Donkey Kong | Headbutt and Spinning Kong OK; Giant Punch has no charge; **Hand Slap does nothing** | OK | Generic grab, unplayed | Staged Hand Slap and Giant Punch charge |
 
@@ -58,7 +58,7 @@ All commits are in the libssbm / ror2-common / ror2-samus repos; hashes are pref
    his shape rather than inventing one. What each needs, from the disc clips:
    - **Falcon.** Raptor Boost: `SpecialSStart` lunge (80 frames, inert trigger boxes on frames 15-35), on contact continue into `SpecialS` (the 7% uppercut), on a miss recover on the ground or fall with miss landing lag in the air.
      Falcon Dive: grab boxes on the rise, `SpecialHiCatch` (5% fire hit), `SpecialHiThrow` (the explosion launch), then special fall. Falcon Kick: ground travel, then `SpecialLwEnd`; air: diagonal dive, `...EndAir` on landing.
-   - **Link.** Bow: `Start` -> `Loop` while held -> `End` releases the arrow with charge-scaled damage and speed. Boomerang: `S1` throws, it flies out and returns hitting both ways, `S1Empty` while out, `S2` catches. Bomb: carried item, thrown or placed.
+   - **Link.** Done on 2026-10-20 evening (bow, boomerang flight, carried bomb); see the Link section. Still missing: the `SpecialS2` catch pose.
    - **Yoshi.** Egg Lay: tongue grab, on contact `SpecialN2` swallows and lays an egg. Egg Roll: `Start` (intangible) -> `Loop` (4% x2 at `egg_roll_speed`) -> `End`. Yoshi Bomb: add the 40-frame `SpecialLwLanding` stun. Egg Throw: a stick-moved reticle.
    - **Donkey Kong.** Giant Punch: `Start` (8) -> `Loop` (12, each loop one more windmill swing up to `MAX_ARM_SWINGS`) -> B releases `SpecialN` with damage = base + swings x `DAMAGE_PER_SWING`. Hand Slap: `Start` -> `Loop` (27 frames, two bursts of four 11% boxes at frames 5 and 16; B again repeats) -> `End` (20).
    Done when: `move_audit` shows the full clip chain, hitboxes and events for each, and a test next to `crates/libssbm-assets/tests/fox.rs` asserts them.
@@ -187,10 +187,10 @@ RT Hero's Bow, LT A attack, RB Boomerang, LB Spin Attack, B Bomb (cooldowns 0.3 
 
 | Move | Melee input | RoR2 input | Does now | Should do | Status |
 | --- | --- | --- | --- | --- | --- |
-| Hero's Bow | B | RT / Primary | Plays the 60-frame draw once (60 ticks). Holding chains `SpecialN`, `SpecialNLoop`, `SpecialN` (180 ticks). **No arrow is ever created** (no projectile event at any hold length): the arrow release command lives in `SpecialNEnd`, which the sim never plays. `LinkShot` (arrow) is therefore never spawned. | `Start` -> `Loop` while held (charge to `bow_charge_steps`) -> `End` releases the arrow; charge sets damage and speed; arrow flies along the crosshair. | BROKEN |
-| Boomerang | Side + B | RB / Utility | Plays `SpecialS1` (46 frames), no hitbox and no projectile event, ground or air. | `S1` throws (angle from stick), the boomerang flies out and **returns**, hitting both ways; `S1Empty` while it is out; `S2` catches it. The C# description says "flies out and despawns". | BROKEN |
+| Hero's Bow | B | RT / Primary | Staged (libssbm link.rs): draw SpecialN, hold SpecialNLoop at full charge, release SpecialNEnd. The charge climbs once the draw is ready (frame 18); a tap fires a weak arrow (strength 0.02 in the audit), a full hold 1.0. The arrow's speed runs from the item's min to max (6 to 10 units a tick), it flies at the crosshair and bursts on contact, range capped at 200 m. Damage 4% to 12% is a placeholder (the source authors it in code). No cooldown. | Same. | PARTIAL (unplayed; damage placeholder) |
+| Boomerang | Side + B | RB / Utility | Thrown on frame 23 of the 46-frame throw clip along the camera aim from the left hand. libssbm steps its flight with the item's numbers (decelerates, turns for Link, speeds up, is caught): out about 12 m and back in about 1.6 s with Link standing still (distances doubled for open worlds). Hits on both passes, bounces off walls, and while it is out the empty-handed clip plays and nothing is thrown. No cooldown. | The same, plus the `SpecialS2` catch pose (not played: the catch is silent). | PARTIAL (unplayed) |
 | Spin Attack | Up + B | LB / Special | Rising spin with four 15% hits (ground) / 4-6% multi-hits (air), slash effect, rises 28 above start, then lands. | Same clips; Melee follows with special fall (not modelled for any fighter). | OK |
-| Bomb | Down + B | B / C (fifth slot) | `SpecialLw` (40 frames) emits the bomb event; the C# `LinkShot` lobs a bomb that detonates on the ground. Speeds are prototype values and, if the item script has no hitbox, damage is the shared 8% / 2.5 placeholder; the clip itself has no hitbox. | Link pulls a bomb out and keeps it as a carried item that is thrown or placed and explodes on a timer (the disc has the bomb article, with its own damage). The lob is a simplification. | PARTIAL |
+| Bomb | Down + B | B / C (fifth slot) | `SpecialLw` pulls a bomb into the left hand (frame 16). It is carried: LT throws it along the camera aim, B drops it, it explodes on touching an enemy or after a 5 s fuse (adaptation; the item's timer is not read), 3.5 m blast with outward and upward force, and the blast launches Link too (bomb jumping). No second bomb while one is held. Damage is a placeholder. | Same; the source also lets him throw with the stick. | PARTIAL (unplayed; placeholders) |
 | Shield / Air Feint | Shield | B (alt) | Ground shield bubble, one air evade. | Same. | OK |
 
 ### Normals, tilts, smashes and aerials (grab, pummel and throws: see the shared section below)
@@ -218,8 +218,7 @@ tether hit rather than a capture.
 Not reachable: Jab 3 (`Attack13`), rapid jab (`Attack100Start/Loop/End`), the second hit of the forward smash
 (`AttackS41` / `AttackS42`).
 
-**Link to fix, in order:** the bow's `End` stage (and arrow), the boomerang stages and flight, jab 3 and rapid
-jab, bomb as a held item.
+**Link to fix, in order:** jab 3 and rapid jab; the boomerang catch pose (`SpecialS2`); check the arrow, boomerang and bomb numbers in game (damage, fuse and blast radius are placeholders).
 
 ---
 
