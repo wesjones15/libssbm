@@ -1,9 +1,9 @@
 //! Colour animations: the glows and flashes a fighter's scripts start with command 46
 //! (ftCo_800BFFD0 -> lb_800144C8 starts, lb_80014258 runs them each tick). A program is a
 //! small command list in PlCo.dat: generic loop and timer commands (lbcommand.c), colour
-//! and light commands (lb_013B.c), and the fighter's own GFX and sound commands. Only the
-//! colour overlay (`x2C_hex`, drawn over the whole model) is output; the light commands are
-//! interpreted so the program stays in step, but their rim light is not drawn.
+//! and light commands (lb_013B.c), and the fighter's own GFX and sound commands. Two things
+//! come out: the colour overlay (`x2C_hex`, drawn over the whole model) and the light the
+//! fighter is lit with (`x50_light_color` and its direction, see [`Light`]).
 use std::sync::Arc;
 
 /// One entry of the table at PlCo `ftLoadCommonData + 0x18`: 8 bytes, a program pointer, a
@@ -28,6 +28,20 @@ impl Table {
             .get(at..at + 4)
             .map_or(0, |b| u32::from_be_bytes([b[0], b[1], b[2], b[3]]))
     }
+}
+
+/// The light a program sets on the fighter (commands 13 to 17, ftCo_09F4.c and ftmaterial.c).
+/// With `additive` set (the light-enable bit of command 13) the light is not a lamp: the
+/// materials add `color.rgb` scaled by what the light lights of them, with `color.a` as the
+/// intensity (ftMaterial_800BF534). Without it the colour replaces a stage light.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct Light {
+    /// RGBA, 0 to 1.
+    pub color: [f32; 4],
+    /// Degrees around the fighter and up from the horizontal plane that the light comes from.
+    pub x: f32,
+    pub yz: f32,
+    pub additive: bool,
 }
 
 /// A program's side effects for the sim to apply.
@@ -57,6 +71,8 @@ struct Channel {
     light_color: [u8; 4],
     light_blend: [f32; 4],
     light_on: bool,
+    light_additive: bool,
+    light_rot: [f32; 2],
 }
 
 #[derive(Clone, Debug, Default)]
@@ -111,6 +127,19 @@ impl ColorAnim {
         events
     }
 
+    /// The light the playing programs have on (the fighter-wide channel's, else the other's).
+    pub fn light(&self) -> Option<Light> {
+        [1usize, 0].into_iter().find_map(|i| {
+            let c = self.channels[i].as_ref()?;
+            c.light_on.then(|| Light {
+                color: c.light_color.map(|v| v as f32 / 255.),
+                x: c.light_rot[0],
+                yz: c.light_rot[1],
+                additive: c.light_additive,
+            })
+        })
+    }
+
     /// The colour laid over the model (RGBA, 0 to 1): the fighter-wide channel when it is on,
     /// otherwise the other.
     pub fn overlay(&self) -> Option<[f32; 4]> {
@@ -126,6 +155,11 @@ impl ColorAnim {
             })
         })
     }
+}
+
+/// A `bits`-wide two's-complement field as a number.
+fn signed(value: u32, bits: u32) -> f32 {
+    (((value << (32 - bits)) as i32) >> (32 - bits)) as f32
 }
 
 impl Channel {
@@ -194,6 +228,9 @@ impl Channel {
                     self.pc = Some(pc + 4);
                 }
                 13 => {
+                    // lb_80013C18: the light-enable bit and the direction, then the colour.
+                    self.light_additive = word >> 25 & 1 != 0;
+                    self.light_rot = [signed(word >> 12 & 0xfff, 12), signed(word & 0xfff, 12)];
                     let c = t.word(pc + 4).to_be_bytes();
                     self.light_color = c;
                     self.light = c.map(f32::from);
@@ -216,10 +253,13 @@ impl Channel {
                     }
                     self.pc = Some(pc + 8);
                 }
-                16 | 17 => {
-                    if op == 17 {
-                        self.light_on = false;
-                    }
+                16 => {
+                    // lb_80013F78: turn the light to a new direction.
+                    self.light_rot = [signed(word >> 13 & 0x1fff, 13), signed(word & 0x1fff, 13)];
+                    self.pc = Some(pc + 4);
+                }
+                17 => {
+                    self.light_on = false;
                     self.pc = Some(pc + 4);
                 }
                 18 => {
@@ -324,6 +364,44 @@ mod tests {
         }
         assert_eq!(on, 3, "three flashes");
         assert!(!anim.active());
+    }
+
+    #[test]
+    fn a_light_has_a_direction_a_colour_and_fades() {
+        // light on: additive, x 75, yz -10, colour (255,100,0,200); fade to alpha 0 over 4
+        // frames; hold 1; light off; end.
+        let on = 13u32 << 26 | 1 << 25 | (75 & 0xfff) << 12 | ((-10i32) as u32 & 0xfff);
+        let program = [on, 0xff64_00c8, 15 << 26 | 4, 0xff64_0000, 2 << 26 | 6, 17 << 26, 0x2800_0000];
+        let mut anim = ColorAnim { table: Some(table(&program)), ..Default::default() };
+        anim.start(0, 0);
+        anim.tick();
+        let light = anim.light().expect("light on");
+        assert!(light.additive);
+        assert_eq!((light.x, light.yz), (75., -10.));
+        assert_eq!(&light.color[..3], &[1., 100. / 255., 0.]);
+        let start = light.color[3];
+        for _ in 0..3 {
+            anim.tick();
+        }
+        assert!(anim.light().unwrap().color[3] < start / 2., "the light did not fade");
+        for _ in 0..4 {
+            anim.tick();
+        }
+        assert!(anim.light().is_none(), "light off did not end it");
+    }
+
+    #[test]
+    fn a_light_rotation_command_turns_it() {
+        let on = 13u32 << 26 | (10 & 0xfff) << 12;
+        let rotate = 16u32 << 26 | ((-45i32) as u32 & 0x1fff) << 13 | (20 & 0x1fff);
+        let program = [on, 0xffff_ff80, 2 << 26 | 1, rotate, 2 << 26 | 5, 0x2800_0000];
+        let mut anim = ColorAnim { table: Some(table(&program)), ..Default::default() };
+        anim.start(0, 0);
+        anim.tick();
+        assert_eq!(anim.light().map(|l| (l.x, l.additive)), Some((10., false)));
+        anim.tick();
+        anim.tick();
+        assert_eq!(anim.light().map(|l| (l.x, l.yz)), Some((-45., 20.)));
     }
 
     #[test]

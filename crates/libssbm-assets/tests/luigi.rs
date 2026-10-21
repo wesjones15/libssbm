@@ -182,3 +182,32 @@ fn the_cyclone_announces_its_spin_and_lifts_again_on_every_tap() -> Result<()> {
     assert!(sim.current_move.is_none(), "the cyclone never ended");
     Ok(())
 }
+
+#[test]
+fn the_fireball_launch_lights_him_with_a_fading_green_rim_light() -> Result<()> {
+    use libssbm::sim::NEUTRAL_B;
+    let Some(mut sim) = luigi_at(true, None)? else { return Ok(()) };
+    sim.colanim.table = Some(libssbm_assets::params::load_colanim(&dir())?);
+    let mut host = FlatHost { events: Vec::new() };
+    for _ in 0..4 {
+        step(&mut sim, &mut host, Input::idle());
+    }
+    step(&mut sim, &mut host, input(NEUTRAL_B));
+    let mut lights = Vec::new();
+    for _ in 0..40 {
+        step(&mut sim, &mut host, Input::idle());
+        if let Some(light) = sim.colanim.light() {
+            lights.push(light);
+        }
+    }
+    assert!(!lights.is_empty(), "the fireball never lit him");
+    let first = lights[0];
+    // Colour program 88: a pale green additive light from the front that fades out.
+    assert!(first.additive && first.color[1] > first.color[0], "not a green rim light: {first:?}");
+    assert!(lights.last().unwrap().color[3] < first.color[3], "the light did not fade: {lights:?}");
+    for _ in 0..80 {
+        step(&mut sim, &mut host, Input::idle());
+    }
+    assert!(sim.colanim.light().is_none(), "the light outlived the move");
+    Ok(())
+}

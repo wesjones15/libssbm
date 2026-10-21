@@ -1687,6 +1687,34 @@ pub unsafe extern "C" fn ssbm_entry_platform_update(v: *mut View, h: *const Hand
         1
     })
 }
+/// Optional presentation extension: the light a script's colour program has on the fighter
+/// (commands 13 to 17). Writes eight floats: RGB 0 to 1, intensity 0 to 1, the light's x and
+/// yz angles in degrees, 1 when the light is additive (a rim glow) else 0, and a spare.
+/// Returns 1 when a light is on, 0 otherwise or for the null capability query.
+/// # Safety
+/// Live sim and eight writable floats, or null for a capability query (returns 0).
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn ssbm_sim_light(h: *const Handle, out: *mut f32) -> u32 {
+    if h.is_null() || out.is_null() {
+        return 0;
+    }
+    guarded(0, || unsafe {
+        let Some(light) = (*h).sim.colanim.light() else { return 0 };
+        let values = [
+            light.color[0],
+            light.color[1],
+            light.color[2],
+            light.color[3],
+            light.x,
+            light.yz,
+            f32::from(u8::from(light.additive)),
+            0.,
+        ];
+        std::ptr::copy_nonoverlapping(values.as_ptr(), out, 8);
+        1
+    })
+}
+
 /// Optional ABI-4 presentation extension. Entry colour overlay from PlCo.
 /// # Safety
 /// Live sim and four writable floats, or null for a capability query (returns 0).
