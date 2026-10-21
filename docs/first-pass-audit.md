@@ -361,3 +361,22 @@ Fit and legibility in the actual pause menu are unchecked.
 Because the sheet reuses the skill descriptions, the text is only as right as they are, and these are still wrong for the current build (fix the strings in each `*Def.cs` and they update everywhere):
 Raptor Boost ("a quick horizontal lunge"), Hand Slap ("a ground-pounding wave"), Egg Lay ("lash out with Yoshi's tongue"), Egg Roll ("roll forward as an egg"), the bow ("release to fire an arrow") and the boomerang ("throw it forward").
 Spinning Kong, Headbutt, Spin Attack, the Pikachu rows and Fox's rows are accurate.
+
+## 8. Effects and presentation (2026-10-21)
+
+An audit of what the fighters' moves ask the host to draw found most of it silently missing. State now:
+
+| Area | Before | Now |
+| --- | --- | --- |
+| Effect archives | Captain's (`invalid TLUT format`, palette format has flag bits above the format), Link's and Donkey Kong's (no particle bank at all) failed to load, so every model they own was undrawable | All load (`effects.rs`). Captain adds 17 emitters (4000..4016), Yoshi 4 (9000..9003); both are in the host particle bank now. Link (4 models) and DK (7) are model-only |
+| Cue ids | Only ids up to Pikachu's were mapped | `effect.rs::resolve` covers Donkey Kong (1222..1228), Yoshi (1229..1232) and the hit-spark ids (1005, 1029, 1046, 1053); `companion` adds second effects the source spawns with one id (Falcon Punch's second flame, Link's child slash, the ice hit); `attached` marks the effects bound to a joint, which now follow the fighter (Fox's shine and Fire Fox flames, Falcon's, Link's, Donkey Kong's, Luigi's) instead of staying where they spawned |
+| Special-move cues | The C code's effects were never issued for Captain, Link, Yoshi or Donkey Kong | Issued from the behaviors: Falcon Punch wind (1167), Raptor Boost spark and streaks (1169..1171), Falcon Kick flame (1168), Link's Spin Attack slash (1211/1212), Donkey Kong's Giant Punch streak, Spinning Kong wind, Hand Slap aura and slam bursts, Yoshi's roll dust, bonk dust and shell burst |
+| Hit sparks | None | `MeleeDriver.HitSpark(element, damage, world)` spawns Melee's spark for the hit's element (normal 1000 or the bigger 1011, fire 1002, electric 1001, slash 1004, ice 1005, dark 1046; coin has none) from every fighter's hitbox sampler and from the Fox, Link and bouncing shots. Yoshi's egg and Link's bomb explosions still use RoR2 effects |
+| Sword trail | None | `trail.rs` is the afterimage of ftafterimage.c: command 49 turns it on (0) or off (-1), the ffi samples the sword bone each step, `ssbm_sim_trail` returns the strip and `MeleeTrail` (ror2-common) draws it with the Cloud Remap see-through material. Link only |
+| Faces | Static | Command 40 sets the two face TObj frames (`Sim::face`, zero again on each new clip); the presentation picks the image from the costume's matanim track. Fox, Link, Luigi, Pikachu, Yoshi and Donkey Kong have faces; Captain and Samus have none |
+| Colour glows and flashes | Entry flash only | `colanim.rs` interprets the PlCo colour programs (command 46: Fox's Fire Fox and Reflector glows, Falcon Punch, Pikachu's electric flashes, Donkey Kong's punch charge, Yoshi's roll, dizzy and tumble flashes, Samus's charge) and `ssbm_sim_overlay` reports the overlay colour. The rim light the programs also set is interpreted but not drawn |
+| Thunder bolt | Frozen on frame 0 | Posed from the tick its segment is released |
+
+Still missing: command 41, the part animations (hand poses, Yoshi's mouth), which need the fighter data's part-animation table applied as a layer over the main pose; the programs' rim light; the egg and bomb items' own effects; the Thunder cloud model. Everything here is unplayed.
+
+Tests: `tests/fighter_effects.rs` (every archive loads and every spawned id resolves to something drawable), `tests/face.rs`, `tests/fox.rs::fire_fox_glows...`, `tests/link.rs` (trail on/off and the strip), `colanim.rs` unit tests.

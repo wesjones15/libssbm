@@ -10,6 +10,7 @@ impl Sim {
             return;
         }
         self.action.active.clear();
+        self.afterimage = -1;
         let ended = self.current_move.take();
         // Up specials do not enter helpless fall: the host lets the fighter act
         // airborne, and its i-frames survive until landing or a new attack. A
@@ -116,6 +117,8 @@ impl Sim {
         if self.action.script_clip != clip || frame < self.action.script_frame {
             self.action.cursor = 0;
             self.action.script_clip = clip;
+            // ftAnim_80070654: a new motion puts the face back to its first frame.
+            self.face = [0.; 8];
         }
         self.action.script_frame = frame;
         // A waiting stage (Thunder's cloud) replays a clip whose hitboxes, effects
@@ -281,60 +284,39 @@ impl Sim {
                             ..Default::default()
                         });
                     }
-                    if opcode == 10 {
-                        let signed = |n: u32| (n as u16 as i16) as f32 / 256.;
-                        let bone = if words[0] & (1 << 15) != 0 {
-                            usize::MAX
-                        } else {
-                            (words[0] >> 18 & 255) as usize
-                        };
-                        // ftCo_8009F834 cycles the fighter's five source bones.
-                        // Save the selection on the cue so repeated FFI queries
-                        // cannot advance it again or produce different matrices.
-                        let cycle = self.action.effect_cycle;
-                        if bone == 0x8d {
-                            self.action.effect_cycle = (cycle + 1) % 5;
+                    // ftAction_80072A5C -> ftCo_800BFFD0: start a colour animation.
+                    if opcode == 46 {
+                        let id = (words[0] >> 18 & 0xff) as usize;
+                        if self.colanim.start(id, words[0] & 0x3ffff) {
+                            self.colanim_move = self.current_move;
+                            self.colanim_clip = clip;
                         }
-                        self.action.effects.push(crate::action::GfxCue {
-                            id: words[1] >> 16,
-                            bone,
-                            common: words[0] & (1 << 17) != 0,
-                            cycle,
-                            destroy_on_change: words[0] & (1 << 16) != 0,
-                            offset: Vec3::new(
-                                signed(words[2] >> 16),
-                                signed(words[2]),
-                                signed(words[3] >> 16),
-                            ),
-                            param: (words[1] & 65535) as f32,
-                            clip,
-                            frame,
-                            origin: self.position,
-                            facing: self.facing,
-                        });
+                    }
+                    // ftAction_800726F4: set the face's texture animation frame (one or two TObjs).
+                    if opcode == 40 {
+                        let frame = (((words[0] & 0x7ff) as i32) << 21 >> 21) as f32;
+                        let idx = (words[0] >> 18 & 0x7f) as usize;
+                        let idx2 = (words[0] >> 11 & 0x7f) as usize;
+                        if idx < self.face.len() {
+                            self.face[idx] = frame;
+                        }
+                        if words[0] >> 25 & 1 != 0 && idx2 < self.face.len() {
+                            self.face[idx2] = frame;
+                        }
+                    }
+                    // ftAction_80072B3C: the sword trail on (0) or off (-1).
+                    if opcode == 49 {
+                        let raw = (words[0] & 0x01ff_ffff) as i32;
+                        self.afterimage = (raw << 7) >> 7;
+                    }
+                    if opcode == 10 {
+                        self.queue_gfx(&words, clip, frame);
                     }
                     // ftAction_80071B50: play/replace/stop a fighter sound slot.
                     // 54/55 supply the stored footstep/landing cue; world-surface
                     // substitution remains a host adaptation, using the disc cue.
                     if matches!(opcode, 17 | 54 | 55) {
-                        let behavior = if opcode == 17 {
-                            words[0] >> 18 & 255
-                        } else {
-                            0
-                        };
-                        if behavior <= 6 || (10..=15).contains(&behavior) {
-                            self.action.sounds.push(SoundCue {
-                                sound: words[1],
-                                volume: (words[2] >> 8) as u8,
-                                pan: words[2] as u8,
-                                channel: if behavior >= 10 {
-                                    behavior - 9
-                                } else {
-                                    behavior
-                                },
-                                stop: behavior >= 10,
-                            });
-                        }
+                        self.queue_sound_command(opcode, &words);
                     }
                 }
             }
@@ -356,5 +338,88 @@ impl Sim {
                 });
             }
         }
+    }
+}
+
+impl Sim {
+    /// Runs the colour animations a tick and applies their GFX and sound commands. A glow ends
+    /// with the motion it was started in, unless that motion goes on into the next clip of the
+    /// same move (Fox's Reflector, Samus's charge).
+    pub(super) fn tick_colanim(&mut self) {
+        if !self.colanim.active() {
+            return;
+        }
+        if self.motion.clip != self.colanim_clip {
+            if self.colanim_move.is_some() && self.current_move == self.colanim_move {
+                self.colanim_clip = self.motion.clip;
+            } else {
+                self.colanim.clear();
+                return;
+            }
+        }
+        for event in self.colanim.tick() {
+            match event {
+                crate::colanim::Event::Gfx(words) => {
+                    let clip = self.motion.clip;
+                    let frame = self.motion.frame;
+                    self.queue_gfx(&words, clip, frame);
+                }
+                crate::colanim::Event::Sound(words) => self.queue_sound(&words),
+            }
+        }
+    }
+}
+
+impl Sim {
+    /// ftAction_80071028: a GFX spawn command's five words become a cue.
+    fn queue_gfx(&mut self, words: &[u32], clip: &'static str, frame: f32) {
+        let signed = |n: u32| (n as u16 as i16) as f32 / 256.;
+        let bone = if words[0] & (1 << 15) != 0 {
+            usize::MAX
+        } else {
+            (words[0] >> 18 & 255) as usize
+        };
+        // ftCo_8009F834 cycles the fighter's five source bones.
+        // Save the selection on the cue so repeated FFI queries
+        // cannot advance it again or produce different matrices.
+        let cycle = self.action.effect_cycle;
+        if bone == 0x8d {
+            self.action.effect_cycle = (cycle + 1) % 5;
+        }
+        self.action.effects.push(crate::action::GfxCue {
+            id: words[1] >> 16,
+            bone,
+            common: words[0] & (1 << 17) != 0,
+            cycle,
+            destroy_on_change: words[0] & (1 << 16) != 0,
+            offset: Vec3::new(
+                signed(words[2] >> 16),
+                signed(words[2]),
+                signed(words[3] >> 16),
+            ),
+            param: (words[1] & 65535) as f32,
+            clip,
+            frame,
+            origin: self.position,
+            facing: self.facing,
+        });
+    }
+    /// ftAction_80071B50: play/replace/stop a fighter sound slot. 54/55 supply the stored
+    /// footstep/landing cue; world-surface substitution remains a host adaptation, using the
+    /// disc cue.
+    fn queue_sound_command(&mut self, opcode: u32, words: &[u32]) {
+        let behavior = if opcode == 17 { words[0] >> 18 & 255 } else { 0 };
+        if behavior <= 6 || (10..=15).contains(&behavior) {
+            self.action.sounds.push(SoundCue {
+                sound: words[1],
+                volume: (words[2] >> 8) as u8,
+                pan: words[2] as u8,
+                channel: if behavior >= 10 { behavior - 9 } else { behavior },
+                stop: behavior >= 10,
+            });
+        }
+    }
+    fn queue_sound(&mut self, words: &[u32]) {
+        self.queue_sound_command(17, words);
     }
 }

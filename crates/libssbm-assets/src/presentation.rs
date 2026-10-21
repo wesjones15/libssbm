@@ -17,6 +17,10 @@ pub struct Presentation {
     pub upper_body_root: Option<usize>,
     /// Common effect models (dust, bursts): see [`Presentation::color`].
     pub effect_fade: bool,
+    /// The face's texture animations: (batch, frame-to-image track) per costume TObj, and the
+    /// frames the sim last set (`Sim::face`).
+    pub face_tracks: Vec<(usize, crate::animation::Track)>,
+    pub face: [f32; 8],
 }
 impl Presentation {
     pub fn platform(dir: &Path) -> Result<Self> {
@@ -43,6 +47,8 @@ impl Presentation {
             object_scale: 1.,
             upper_body_root: None,
             effect_fade: false,
+            face_tracks: Vec::new(),
+            face: [0.; 8],
         })
     }
     /// The results-screen GAME! burst: `ScInfCnt_scene_models[5]` in the shared
@@ -79,6 +85,8 @@ impl Presentation {
             object_scale: 1.,
             upper_body_root: None,
             effect_fade: false,
+            face_tracks: Vec::new(),
+            face: [0.; 8],
         })
     }
     pub fn effect(dir: &Path, id: u32) -> Result<Self> {
@@ -129,6 +137,8 @@ impl Presentation {
             object_scale: 1.,
             upper_body_root: None,
             effect_fade: true,
+            face_tracks: Vec::new(),
+            face: [0.; 8],
         })
     }
     pub fn article(dir: &Path, kind: u32, state: u32) -> Result<Self> {
@@ -167,6 +177,8 @@ impl Presentation {
             object_scale,
             upper_body_root: None,
             effect_fade: false,
+            face_tracks: Vec::new(),
+            face: [0.; 8],
         })
     }
     pub fn object_pose(&mut self, frame: f32) {
@@ -190,7 +202,8 @@ impl Presentation {
         costume: usize,
         fighter: &crate::fighter::FighterAssets<'_>,
     ) -> Result<Self> {
-        let model = Model::load_for(dir, costume, fighter)?;
+        let mut model = Model::load_for(dir, costume, fighter)?;
+        let face_tracks = face_animation(dir, costume, fighter, &mut model)?;
         if fighter
             .upper_body_root
             .is_some_and(|root| root >= model.joints.len())
@@ -212,11 +225,14 @@ impl Presentation {
             object_scale: 1.,
             upper_body_root: fighter.upper_body_root,
             effect_fade: false,
+            face_tracks,
+            face: [0.; 8],
         })
     }
     pub fn update(&mut self, sim: &Sim, _dt: f32) {
         let clip = sim.motion.clip;
         self.clip = clip.into();
+        self.face = sim.face;
         self.frame = sim.motion.render_frame(sim.alpha());
         self.ball = sim.current_move == Some(Move::SpecialLw);
         self.hidden = sim
@@ -302,6 +318,11 @@ impl Presentation {
     pub fn texture_frame(&self, batch: usize) -> Option<usize> {
         let b = self.model.batches.get(batch)?;
         if b.texture_frames.is_empty() { return None; }
+        // A face TObj shows the image its track gives at the frame the script set.
+        if let Some((k, (_, track))) = self.face_tracks.iter().enumerate().find(|(_, (bi, _))| *bi == batch) {
+            let image = track.sample(self.face[k.min(self.face.len() - 1)]).unwrap_or(0.).max(0.) as usize;
+            return Some(image.min(b.texture_frames.len() - 1));
+        }
         let frame = self.material_tracks.iter().filter(|t| t.joint == b.material_dobj && t.channel == 101)
             .filter_map(|t| t.sample(self.frame)).last().unwrap_or(0.).max(0.) as usize;
         Some(frame.min(b.texture_frames.len() - 1))
@@ -465,4 +486,35 @@ pub fn blend_pose(model: &Model, a: &[Mat4], b: &[Mat4], amount: f32) -> Vec<Mat
         world.push(joint.parent.map_or(matrix, |parent| world[parent] * matrix));
     }
     world
+}
+
+/// The costume's material animation: the texture animations of the face TObjs (command 40
+/// drives them). The two eye/mouth TObjs are the model's textured DObjs that carry a frame
+/// track, in model order; fighters without a face (Captain, Samus) have none.
+fn face_animation(
+    dir: &Path,
+    costume: usize,
+    fighter: &crate::fighter::FighterAssets<'_>,
+    model: &mut Model,
+) -> Result<Vec<(usize, crate::animation::Track)>> {
+    let Some(file) = fighter.costumes.get(costume) else { return Ok(Vec::new()) };
+    let bytes = std::fs::read(dir.join(file))?;
+    let d = crate::dat::Dat::parse(&bytes)?;
+    let Some((_, at)) = d.symbols.iter().find(|(s, _)| s.ends_with("_matanim_joint")) else {
+        return Ok(Vec::new());
+    };
+    let tracks = Animations::materials(&d, Some(*at), model)?;
+    let mut faces = Vec::new();
+    for (index, batch) in model.batches.iter().enumerate() {
+        if batch.texture_frames.is_empty() {
+            continue;
+        }
+        if let Some(track) = tracks
+            .iter()
+            .find(|t| t.joint == batch.material_dobj && t.channel == 101)
+        {
+            faces.push((index, track.clone()));
+        }
+    }
+    Ok(faces)
 }

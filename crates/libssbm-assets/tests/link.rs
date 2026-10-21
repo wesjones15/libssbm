@@ -137,3 +137,44 @@ fn bomb_is_pulled_once() -> Result<()> {
     assert!(ticks < 60, "pulling the bomb took {ticks} ticks (clip is 40)");
     Ok(())
 }
+
+#[test]
+fn a_sword_swing_turns_the_trail_on_and_off_again() -> Result<()> {
+    let Some(mut sim) = link()? else { return Ok(()) };
+    let mut host = FlatHost { events: Vec::new() };
+    settle(&mut sim, &mut host);
+    assert_eq!(sim.afterimage, -1);
+    // Neutral A from standing: the jab's script switches the trail on during the swing.
+    step(&mut sim, &mut host, Input { buttons: libssbm::sim::ATTACK, aim: Vec3::X, ..Input::idle() });
+    let mut on = false;
+    for _ in 0..80 {
+        step(&mut sim, &mut host, Input::idle());
+        on |= sim.afterimage >= 0;
+    }
+    assert!(on, "the swing never turned the trail on");
+    assert_eq!(sim.afterimage, -1, "the trail stayed on after the move");
+    Ok(())
+}
+
+#[test]
+fn the_trail_strip_fades_from_the_newest_edge_to_the_oldest() -> Result<()> {
+    let dir = dir();
+    if !LINK.complete(&dir) {
+        eprintln!("SKIP: Link disc cache absent");
+        return Ok(());
+    }
+    let (params, bone) = libssbm_assets::params::load_link_trail(&dir)?;
+    assert!(bone > 0, "the trail follows a sword bone, not the root");
+    // A blade sweeping a quarter turn over three ticks.
+    let sample = |angle: f32| libssbm::trail::Sample {
+        position: Vec3::new(angle.sin() * 5., 0., 0.),
+        axis: Vec3::new(angle.cos(), angle.sin(), 0.),
+    };
+    let strip = libssbm::trail::strip(&[sample(1.2), sample(0.6), sample(0.)], &params);
+    assert!(strip.len() >= 6 && strip.len() % 2 == 0, "strip of {}", strip.len());
+    assert!(strip[0].color[3] >= strip[strip.len() - 1].color[3], "newest edge is the most opaque");
+    assert_eq!(strip[0].color[..3], params.inner_color);
+    assert_eq!(strip[1].color[..3], params.outer_color);
+    assert!(libssbm::trail::strip(&[sample(0.)], &params).is_empty(), "one sample is not a strip");
+    Ok(())
+}

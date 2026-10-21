@@ -423,6 +423,47 @@ pub fn load_captain_specials(dir: &Path) -> Result<libssbm::captain::Specials> {
 
 /// Link's `ext_attr` special tuning (ftLk_DatAttrs; the pointer is
 /// `ftDataLink + 4`, same layout as the other special attributes).
+/// Link's sword trail (`SwordAttrs` at +0x64 of ftLk_DatAttrs, ftafterimage.c) and the bone
+/// it follows (`x14`, a rig bone index).
+/// The shared colour-animation table of PlCo (`ftLoadCommonData + 0x18`, 8 bytes an entry) with the
+/// file's bytes, so programs can jump within it (lb_013B.c, ftcolanim.c).
+pub fn load_colanim(dir: &Path) -> Result<std::sync::Arc<libssbm::colanim::Table>> {
+    let bytes = std::fs::read(dir.join(crate::fighter::COMMON_DATA.file))?;
+    let d = Dat::parse(&bytes)?;
+    let table = d.required_ptr(d.root(crate::fighter::COMMON_DATA.root)? + 0x18)?;
+    let mut entries = Vec::new();
+    for id in 0..0x7b {
+        let at = table + id * 8;
+        let Ok(program) = d.ptr(at) else { break };
+        let Ok(tail) = d.bytes(at + 4, 2) else { break };
+        entries.push(libssbm::colanim::Entry { program, priority: tail[0], channel: tail[1] });
+    }
+    Ok(std::sync::Arc::new(libssbm::colanim::Table { data: d.data.to_vec(), entries }))
+}
+
+pub fn load_link_trail(dir: &Path) -> Result<(libssbm::trail::Params, usize)> {
+    let profile = &crate::fighter::LINK;
+    profile.required()?;
+    let bytes = std::fs::read(dir.join(profile.data.file))?;
+    let d = Dat::parse(&bytes)?;
+    let root = d.root(profile.data.root)?;
+    let lk = d.required_ptr(root + 4)? + 0x64;
+    let b = d.bytes(lk + 8, 9)?;
+    Ok((
+        libssbm::trail::Params {
+            inner_blend: d.f32(lk)?,
+            outer_blend: d.f32(lk + 4)?,
+            alpha_newest: b[0],
+            alpha_oldest: b[1],
+            inner_color: [b[2], b[3], b[4]],
+            outer_color: [b[6], b[7], b[8]],
+            inner_scale: d.f32(lk + 0x18)?,
+            outer_scale: d.f32(lk + 0x1c)?,
+        },
+        d.u32(lk + 0x14)? as usize,
+    ))
+}
+
 pub fn load_link_specials(dir: &Path) -> Result<libssbm::link::Specials> {
     let profile = &crate::fighter::LINK;
     profile.required()?;

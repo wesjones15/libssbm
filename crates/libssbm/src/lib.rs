@@ -10,6 +10,8 @@ pub mod entry;
 pub mod fox;
 pub mod link;
 pub mod luigi;
+pub mod trail;
+pub mod colanim;
 pub mod motion;
 pub mod params;
 pub mod pikachu;

@@ -250,6 +250,16 @@ pub struct Sim {
     pub(crate) landing_rate: f32,
     /// Set once Luigi's Cyclone has used its air lift; cleared on landing.
     pub(crate) air_charge: bool,
+    /// The sword trail's state (fp->x2100): -1 off, otherwise the script turned it on and the
+    /// host samples the blade each tick (see `trail`).
+    pub afterimage: i32,
+    /// The face's texture animation frames, one per costume TObj (fp->tobj_list): what command
+    /// 40 (ftAnim_800704F0) last set; zero again whenever the motion changes (ftAnim_80070654).
+    pub face: [f32; 8],
+    /// The glows and flashes scripts start (command 46), and the move and clip they began in.
+    pub colanim: crate::colanim::ColorAnim,
+    colanim_move: Option<Move>,
+    colanim_clip: &'static str,
     rng: u32,
 }
 impl Sim {
@@ -332,6 +342,11 @@ impl Sim {
             special_fall: None,
             landing_rate: 1.,
             air_charge: false,
+            afterimage: -1,
+            face: [0.; 8],
+            colanim: Default::default(),
+            colanim_move: None,
+            colanim_clip: "",
             rng: 0,
         }
     }
@@ -510,6 +525,8 @@ impl Sim {
         self.smash_charge = 0;
         self.up_special_invulnerable = false;
         self.special_fall = None;
+        self.afterimage = -1;
+        self.colanim.clear();
         self.set_phase(Phase::Free);
     }
     /// Host damage notification, deliberately independent of engine health types.
@@ -1203,6 +1220,7 @@ impl Sim {
             self.execute_disc_commands(host, input);
             self.using_behavior(|b, s| b.after_script(s));
         }
+        self.tick_colanim();
         self.previous = input;
     }
     pub(crate) fn fire(&mut self, host: &mut dyn Host) {

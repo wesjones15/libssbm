@@ -146,6 +146,9 @@ pub struct Handle {
     audio: libssbm_assets::audio::Mixer,
     kind: libssbm_assets::fighter::FighterKind,
     poisoned: bool,
+    /// A sword trail's tuning and bone (Link), and the last three blade samples, newest first.
+    trail: Option<(libssbm::trail::Params, usize)>,
+    trail_samples: Vec<libssbm::trail::Sample>,
 }
 struct Rig {
     grapple: Option<libssbm_assets::grapple::Tuning>,
@@ -446,6 +449,7 @@ pub unsafe extern "C" fn ssbm_sim_new_fighter(dir: *const c_char, pos: V3, kind:
             Rig,
             libssbm_assets::audio::Mixer,
             libssbm_assets::fighter::FighterKind,
+            Option<(libssbm::trail::Params, usize)>,
         )> {
             let dir = unsafe { path(dir) }?;
             let fk = libssbm_assets::fighter::FighterKind::from_u32(kind)
@@ -508,6 +512,7 @@ pub unsafe extern "C" fn ssbm_sim_new_fighter(dir: *const c_char, pos: V3, kind:
                 ),
             };
             let mut sim = Sim::with_behavior(params, behavior, pos.into());
+            sim.colanim.table = libssbm_assets::params::load_colanim(dir).ok();
             sim.defense.params = libssbm_assets::params::defense_for(dir, fighter)?;
             sim.defense.health = sim.defense.params.maximum;
             let rig = Rig::load_for(dir, fighter)?;
@@ -520,16 +525,23 @@ pub unsafe extern "C" fn ssbm_sim_new_fighter(dir: *const c_char, pos: V3, kind:
             }
             let audio =
                 libssbm_assets::audio::Mixer::new(libssbm_assets::audio::Bank::load_for(dir, fighter)?);
-            Ok((sim, rig, audio, fk))
+            let trail = if fk == libssbm_assets::fighter::FighterKind::Link {
+                libssbm_assets::params::load_link_trail(dir).ok()
+            } else {
+                None
+            };
+            Ok((sim, rig, audio, fk, trail))
         })();
         match result {
-            Ok((sim, rig, audio, kind)) if Vec3::from(pos).is_finite() => {
+            Ok((sim, rig, audio, kind, trail)) if Vec3::from(pos).is_finite() => {
                 Box::into_raw(Box::new(Handle {
                     sim,
                     rig,
                     audio,
                     kind,
                     poisoned: false,
+                    trail,
+                    trail_samples: Vec::new(),
                 }))
             }
             Ok(_) => {
@@ -1062,6 +1074,7 @@ pub unsafe extern "C" fn ssbm_sim_step(
             },
             dt,
         );
+        sample_trail(h);
         for cue in &h.sim.action.sounds {
             if cue.stop {
                 h.audio.stop(cue.channel);
@@ -1078,6 +1091,56 @@ pub unsafe extern "C" fn ssbm_sim_step(
             0
         }
     }
+}
+/// ftCo_800C2FD8: while the script has the trail on, record the blade bone's world position
+/// and axis (its matrix's first column) each step; off clears the history.
+fn sample_trail(h: &mut Handle) {
+    let Some((_, bone)) = h.trail else { return };
+    if h.sim.afterimage < 0 {
+        h.trail_samples.clear();
+        return;
+    }
+    let pose = h
+        .rig
+        .pose_for_sim(&h.sim, h.sim.motion.clip, h.sim.motion.frame);
+    let Some(joint) = pose.get(bone) else { return };
+    let world = fighter_matrix(h.sim.position, h.sim.facing) * *joint;
+    h.trail_samples.insert(
+        0,
+        libssbm::trail::Sample {
+            position: world.w_axis.truncate(),
+            axis: world.x_axis.truncate(),
+        },
+    );
+    h.trail_samples.truncate(3);
+}
+/// The sword trail's triangle strip as 7 floats a vertex (x, y, z in sim units, then rgba
+/// 0..1), inner and outer edges alternating. Returns the vertex count (0 when there is no
+/// trail). Pass a null `out` to ask how many vertices there are.
+/// # Safety
+/// Live handle; `out` is null or holds `max * 7` floats.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn ssbm_sim_trail(handle: *const Handle, out: *mut f32, max: u32) -> u32 {
+    if handle.is_null() {
+        return 0;
+    }
+    let h = unsafe { &*handle };
+    let Some((params, _)) = h.trail else { return 0 };
+    let strip = libssbm::trail::strip(&h.trail_samples, &params);
+    if out.is_null() {
+        return strip.len() as u32;
+    }
+    let n = strip.len().min(max as usize);
+    for (i, v) in strip.iter().take(n).enumerate() {
+        let at = unsafe { std::slice::from_raw_parts_mut(out.add(i * 7), 7) };
+        at[0] = v.position.x;
+        at[1] = v.position.y;
+        at[2] = v.position.z;
+        for c in 0..4 {
+            at[3 + c] = v.color[c] as f32 / 255.;
+        }
+    }
+    n as u32
 }
 /// Render stereo float PCM at 32 kHz. Call after stepping, outside host callbacks.
 /// # Safety
@@ -1635,6 +1698,11 @@ pub unsafe extern "C" fn ssbm_sim_overlay(h: *const Handle, rgba: *mut f32) -> u
     guarded(0, || unsafe {
         let h = &*h;
         if let Some(color) = h.sim.rebirth.as_ref().and_then(|s| s.overlay()) {
+            std::ptr::copy_nonoverlapping(color.as_ptr(), rgba, 4);
+            return (color[3] > 0.) as u32;
+        }
+        // A script's glow or flash (command 46).
+        if let Some(color) = h.sim.colanim.overlay() {
             std::ptr::copy_nonoverlapping(color.as_ptr(), rgba, 4);
             return (color[3] > 0.) as u32;
         }
@@ -2344,6 +2412,8 @@ mod tests {
             audio: libssbm_assets::audio::Mixer::new(libssbm_assets::audio::Bank::load(&dir)?),
             kind: libssbm_assets::fighter::FighterKind::Samus,
             poisoned: false,
+            trail: None,
+            trail_samples: Vec::new(),
         };
         let actions = libssbm_assets::action::load(&dir, &h.rig.animations)?;
         let mut tested = 0;

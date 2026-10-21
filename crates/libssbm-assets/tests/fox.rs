@@ -32,6 +32,7 @@ fn fox_at(grounded: bool) -> Result<Option<Sim>> {
             motion.looping |= action.looping;
         }
     }
+    sim.colanim.table = Some(libssbm_assets::params::load_colanim(&dir)?);
     sim.grounded = grounded;
     sim.facing = Vec3::X;
     Ok(Some(sim))
@@ -206,5 +207,28 @@ fn jump_cancels_the_reflector_on_the_ground_and_in_the_air() -> Result<()> {
         let releases = host.events.iter().filter(|e| e.kind == EventKind::Hit && e.move_id == 24 && e.strength == 2.).count();
         assert_eq!(releases, 1, "the reflect should be announced down once");
     }
+    Ok(())
+}
+
+#[test]
+fn fire_fox_glows_while_it_charges_and_the_glow_ends_with_the_move() -> Result<()> {
+    let Some(mut sim) = fox_at(true)? else { return Ok(()) };
+    let mut host = FlatHost { events: Vec::new() };
+    for _ in 0..4 {
+        step(&mut sim, &mut host, Input::idle());
+    }
+    assert!(sim.colanim.overlay().is_none());
+    step(&mut sim, &mut host, input(UP_B, Vec3::Y));
+    let mut glowed = false;
+    for _ in 0..120 {
+        step(&mut sim, &mut host, input(UP_B, Vec3::Y));
+        glowed |= sim.colanim.overlay().is_some();
+    }
+    assert!(glowed, "Fire Fox never glowed");
+    for _ in 0..200 {
+        step(&mut sim, &mut host, Input::idle());
+    }
+    assert!(sim.current_move.is_none());
+    assert!(sim.colanim.overlay().is_none(), "the glow outlived the move");
     Ok(())
 }

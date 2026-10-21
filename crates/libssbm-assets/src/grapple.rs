@@ -79,5 +79,7 @@ pub fn part(dir: &Path, part: u32) -> Result<Presentation> {
         object_scale: 1.,
         upper_body_root: None,
         effect_fade: false,
+        face_tracks: Vec::new(),
+        face: [0.; 8],
     })
 }
