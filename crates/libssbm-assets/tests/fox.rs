@@ -5,7 +5,7 @@
 use glam::Vec3;
 use libssbm::{
     fox::Fox,
-    sim::{EventKind, FlatHost, DOWN_B, NEUTRAL_B, SIDE_B, UP_B},
+    sim::{EventKind, FlatHost, DOWN_B, JUMP, NEUTRAL_B, SIDE_B, UP_B},
     Input, Sim,
 };
 use libssbm_assets::{Result, animation::Animations, fighter::FOX};
@@ -153,5 +153,58 @@ fn reflector_announces_its_burst_and_releases() -> Result<()> {
         step(&mut sim, &mut host, Input::idle());
     }
     assert!(sim.current_move.is_none(), "reflector never released");
+    Ok(())
+}
+
+#[test]
+fn reflector_event_carries_the_reflect_desc_and_ends_with_a_release() -> Result<()> {
+    let Some(mut sim) = fox_at(true)? else { return Ok(()) };
+    let mut host = FlatHost { events: Vec::new() };
+    for _ in 0..4 {
+        step(&mut sim, &mut host, Input::idle());
+    }
+    step(&mut sim, &mut host, input(DOWN_B, Vec3::X));
+    for _ in 0..40 {
+        step(&mut sim, &mut host, input(DOWN_B, Vec3::X));
+    }
+    for _ in 0..80 {
+        step(&mut sim, &mut host, Input::idle());
+    }
+    let events: Vec<_> = host.events.iter().filter(|e| e.kind == EventKind::Hit && e.move_id == 24).collect();
+    assert_eq!(events.len(), 2, "a start and a release event");
+    assert_eq!(events[0].strength, 1.);
+    assert!(events[0].direction.x > 0. && events[0].direction.y >= 1., "reflect desc {:?}", events[0].direction);
+    assert_eq!(events[1].strength, 2.);
+    Ok(())
+}
+
+#[test]
+fn jump_cancels_the_reflector_on_the_ground_and_in_the_air() -> Result<()> {
+    for grounded in [true, false] {
+        let Some(mut sim) = fox_at(grounded)? else { return Ok(()) };
+        let mut host = FlatHost { events: Vec::new() };
+        for _ in 0..4 {
+            step(&mut sim, &mut host, Input::idle());
+        }
+        step(&mut sim, &mut host, input(DOWN_B, Vec3::X));
+        for _ in 0..12 {
+            step(&mut sim, &mut host, input(DOWN_B, Vec3::X));
+        }
+        assert!(sim.current_move.is_some(), "shine ended before the jump");
+        let before = sim.velocity.y;
+        // A fresh press of jump while the button is still held.
+        step(&mut sim, &mut host, input(DOWN_B | JUMP, Vec3::X));
+        assert!(sim.current_move.is_none(), "jump did not cancel the shine (grounded {grounded})");
+        for _ in 0..12 {
+            step(&mut sim, &mut host, Input::idle());
+        }
+        if grounded {
+            assert!(sim.velocity.y > 0. || !sim.grounded, "no jump out of the shine");
+        } else {
+            assert!(sim.velocity.y > before, "no air jump out of the shine");
+        }
+        let releases = host.events.iter().filter(|e| e.kind == EventKind::Hit && e.move_id == 24 && e.strength == 2.).count();
+        assert_eq!(releases, 1, "the reflect should be announced down once");
+    }
     Ok(())
 }

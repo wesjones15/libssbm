@@ -11,7 +11,7 @@
 use crate::{
     action::{ActiveHitbox, GfxCue, Hitbox, SoundCue},
     behavior::Behavior,
-    sim::{EventKind, Host, Input, Move, Phase, Sim, DOWN_B, NEUTRAL_B, SIDE_B, UP_B},
+    sim::{EventKind, Host, Input, Move, Phase, Sim, DOWN_B, JUMP, NEUTRAL_B, SIDE_B, UP_B},
 };
 use glam::Vec3;
 
@@ -35,6 +35,11 @@ pub struct Specials {
     pub fire_fox_reverse_accel: f32,
     /// Frames before the Reflector lets gravity act in the air (xA4).
     pub reflector_gravity_delay: u32,
+    /// The Reflector's ReflectDesc (xB0): bubble size (xC4), the damage a
+    /// reflected shot is multiplied by (xC8) and its speed multiplier (xCC).
+    pub reflect_size: f32,
+    pub reflect_damage_mul: f32,
+    pub reflect_speed_mul: f32,
 }
 impl Specials {
     /// Synthetic fixture only; runtime hosts read the disc.
@@ -52,6 +57,9 @@ impl Specials {
             fire_fox_duration_end: 30.,
             fire_fox_reverse_accel: 0.3,
             reflector_gravity_delay: 5,
+            reflect_size: 12.,
+            reflect_damage_mul: 1.5,
+            reflect_speed_mul: 1.,
         }
     }
 }
@@ -315,7 +323,16 @@ impl Fox {
             }
         }
     }
-    fn tick_reflector(&self, sim: &mut Sim, input: Input) {
+    fn tick_reflector(&self, sim: &mut Sim, host: &mut dyn Host, input: Input, pressed: u32) {
+        // A jump cancels the shine at any point it is up (the combo tool of
+        // the source's ftFx_SpecialLw_*_IASA): the move ends and the Free
+        // phase that runs next in the same tick takes the jump.
+        if matches!(sim.stage, LW_START | LW_LOOP) && pressed & JUMP != 0 {
+            sim.emit(host, EventKind::Hit, Move::SpecialLw as u32, 2.);
+            Self::release_gravity(sim);
+            sim.interrupt();
+            return;
+        }
         if matches!(sim.stage, LW_START | LW_LOOP) {
             sim.stage_frame += 1;
             if input.buttons & DOWN_B == 0 {
@@ -338,6 +355,8 @@ impl Fox {
                 sim.stage = LW_END;
                 sim.stage_frame = 0;
                 Self::release_gravity(sim);
+                // The bubble is down: the host stops reflecting.
+                sim.emit(host, EventKind::Hit, Move::SpecialLw as u32, 2.);
             }
         }
     }
@@ -403,7 +422,16 @@ impl Behavior for Fox {
                 }
                 let shine = Self::cue(sim, 1161, PART_HIP_N, false);
                 sim.action.effects.push(shine);
+                // The event's direction carries the ReflectDesc (bubble size,
+                // damage multiplier, speed multiplier) for the host's reflection.
+                let aim = sim.move_aim;
+                sim.move_aim = Vec3::new(
+                    self.specials.reflect_size,
+                    self.specials.reflect_damage_mul,
+                    self.specials.reflect_speed_mul,
+                );
                 sim.emit(host, EventKind::Hit, Move::SpecialLw as u32, 1.);
+                sim.move_aim = aim;
             }
             _ => {}
         }
@@ -462,7 +490,7 @@ impl Behavior for Fox {
         }
     }
 
-    fn tick_special(&self, sim: &mut Sim, _host: &mut dyn Host, input: Input, _pressed: u32) {
+    fn tick_special(&self, sim: &mut Sim, host: &mut dyn Host, input: Input, pressed: u32) {
         let mine = matches!(
             sim.current_move,
             Some(Move::SpecialN | Move::SpecialS | Move::SpecialHi | Move::SpecialLw)
@@ -478,7 +506,7 @@ impl Behavior for Fox {
             Some(Move::SpecialN) => self.tick_blaster(sim, input),
             Some(Move::SpecialS) => self.tick_illusion(sim),
             Some(Move::SpecialHi) => self.tick_firefox(sim),
-            Some(Move::SpecialLw) => self.tick_reflector(sim, input),
+            Some(Move::SpecialLw) => self.tick_reflector(sim, host, input, pressed),
             _ => {}
         }
     }

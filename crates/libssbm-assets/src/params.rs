@@ -305,6 +305,9 @@ pub fn load_fox_specials(dir: &Path) -> Result<libssbm::fox::Specials> {
         fire_fox_duration_end: fighter.f32(fx + 0x70)?,
         fire_fox_reverse_accel: fighter.f32(fx + 0x78)?,
         reflector_gravity_delay: fighter.u32(fx + 0xa4)?,
+        reflect_size: fighter.f32(fx + 0xc4)?,
+        reflect_damage_mul: fighter.f32(fx + 0xc8)?,
+        reflect_speed_mul: fighter.f32(fx + 0xcc)?,
     })
 }
 
