@@ -24,7 +24,7 @@ fn every_costume_loads_with_the_clips_his_specials_use() -> Result<()> {
         let p = Presentation::load_for(&dir, costume, &PIKACHU)?;
         assert!((0..p.model.batches.len()).any(|i| p.visible(i)), "costume {costume} is invisible");
         for clip in [
-            "Wait", "Attack11", "AttackDash", "AttackS3S", "AttackS4", "AttackHi4", "AttackLw4",
+            "Wait", "Attack11", "AttackDash", "AttackS3S", "AttackS4S", "AttackHi4", "AttackLw4",
             "SpecialN", "SpecialAirN", "SpecialSStart", "SpecialSHold", "SpecialS", "SpecialSEnd",
             "SpecialAirSStart", "SpecialAirSHold", "SpecialAirSEnd", "SpecialHiStart",
             "SpecialHiEnd", "SpecialAirHiStart", "SpecialAirHiEnd", "SpecialLwStart",
