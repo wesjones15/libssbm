@@ -161,8 +161,9 @@ impl Effects {
     }
     pub fn parse(d: &Dat, symbol: &str) -> Result<Self> {
         let root = d.root(symbol)?;
-        let cmd = d.required_ptr(root)?;
-        let tex = d.required_ptr(root + 4)?;
+        // Link's and Donkey Kong's archives hold effect models only: both the particle
+        // command bank and its texture table are null.
+        let particles = d.ptr(root)?.zip(d.ptr(root + 4)?);
         let mut models = Vec::new();
         // Descriptor extent is implied by relocated joint pointers; do not read
         // alignment padding as another descriptor or bake in a disc asset count.
@@ -171,9 +172,10 @@ impl Effects {
             if !d.relocations.contains(&(desc + 4)) {
                 break;
             }
-            let mut model = Model::from_joint(d, d.required_ptr(desc + 4)?)?;
-            let animations = Animations::object(d, d.ptr(desc + 8)?, &model)?;
-            let material_tracks = Animations::materials(d, d.ptr(desc + 12)?, &mut model)?;
+            let context = |what: &str, e: Box<dyn std::error::Error>| format!("effect model {i} {what}: {e}");
+            let mut model = Model::from_joint(d, d.required_ptr(desc + 4)?).map_err(|e| context("joint", e))?;
+            let animations = Animations::object(d, d.ptr(desc + 8)?, &model).map_err(|e| context("animation", e))?;
+            let material_tracks = Animations::materials(d, d.ptr(desc + 12)?, &mut model).map_err(|e| context("material", e))?;
             models.push(EffectModel {
                 lifetime: d.f32(desc)?,
                 model,
@@ -181,6 +183,9 @@ impl Effects {
                 material_tracks,
             });
         }
+        let Some((cmd, tex)) = particles else {
+            return Ok(Self { models, emitters: BTreeMap::new(), textures: Vec::new() });
+        };
         let texture_count = d.u32(tex)? as usize;
         if texture_count > 256 {
             return Err("particle texture group budget exceeded".into());
@@ -197,7 +202,8 @@ impl Effects {
                 .ok_or("particle texture offset overflow")?;
             let count = d.u32(g)? as usize;
             let format = d.u32(g + 4)?;
-            let palette_format = d.u32(g + 8)?;
+            // Captain's bank sets flag bits above the format (0x01000002 is RGB5A3).
+            let palette_format = d.u32(g + 8)? & 0xff;
             let width = u16::try_from(d.u32(g + 12)?)?;
             let height = u16::try_from(d.u32(g + 16)?)?;
             let palnum = d.u16(g + 20)? as usize;

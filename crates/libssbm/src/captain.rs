@@ -103,6 +103,13 @@ impl Captain {
 
     // --- Falcon Punch --------------------------------------------------------------
     fn tick_punch(&self, sim: &mut Sim) {
+        // ftCaptain_SpecialN: the punch's wind (efSync 1167, two models) as the fist's
+        // hitbox comes up.
+        if sim.stage_vec.x == 0. && !sim.action.active.is_empty() {
+            sim.stage_vec.x = 1.;
+            let wind = crate::effect::part_cue(sim, 1167, crate::effect::part::TOP_N);
+            sim.action.effects.push(wind);
+        }
         if sim.grounded {
             // The ground punch steps forward with the clip.
             let step = self.root_step(sim, Move::SpecialN) * sim.options.speed_scale;
@@ -277,37 +284,16 @@ impl Behavior for Captain {
             // Raptor Boost: ftcaptainspecials.c::ftCa_SpecialS_Enter zeroes velocity,
             // then the lunge's root motion carries Falcon.
             sim.velocity = Vec3::ZERO;
-            sim.action.effects.push(GfxCue {
-                id: 1169, // ftCa_SpecialS_Enter head spark (efSync_Spawn)
-                bone: 0,
-                common: false,
-                cycle: 0,
-                destroy_on_change: false,
-                offset: Vec3::ZERO,
-                param: 0.,
-                clip: "SpecialSStart",
-                frame: 0.,
-                origin: sim.position,
-                facing: sim.facing,
-            });
+            // ftCa_SpecialS_Enter: the spark on his head (efSync 1169, HeadN).
+            let spark = crate::effect::part_cue(sim, 1169, crate::effect::part::HEAD_N);
+            sim.action.effects.push(spark);
         } else if m == Move::SpecialLw {
             // Falcon Kick: a dash kick with a trailing flame.
             // ftcaptainspeciallw.c::ftCa_SpecialHi_800E3EAC (efAsync 0x490).
             sim.velocity.x = 0.;
             sim.velocity.z = 0.;
-            sim.action.effects.push(GfxCue {
-                id: 1168,
-                bone: 0,
-                common: false,
-                cycle: 0,
-                destroy_on_change: false,
-                offset: Vec3::ZERO,
-                param: 0.,
-                clip: "SpecialLw",
-                frame: 0.,
-                origin: sim.position,
-                facing: sim.facing,
-            });
+            let flame = crate::effect::part_cue(sim, 1168, crate::effect::part::R_FOOT_JA);
+            sim.action.effects.push(flame);
         } else if m == Move::SpecialN {
             // Falcon Punch: a single devastating punch. The flame at the fist is
             // authored by the disc script (efasync 0x446 and 0x3FF).
@@ -394,6 +380,13 @@ impl Behavior for Captain {
             (Some(Move::SpecialS), RB_START) => {
                 sim.stage = RB_HIT;
                 sim.stage_frame = 0;
+                // ftCa_SpecialS_Anim: the boost streak on TransN once it connects.
+                let streak = crate::effect::part_cue(
+                    sim,
+                    if sim.move_started_grounded { 1170 } else { 1171 },
+                    crate::effect::part::TRANS_N,
+                );
+                sim.action.effects.push(streak);
                 sim.velocity *= self.specials.raptor_hit_mult.max(0.05);
                 if !sim.move_started_grounded {
                     sim.velocity.y = 0.;

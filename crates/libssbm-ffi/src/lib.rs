@@ -923,9 +923,16 @@ pub extern "C" fn ssbm_effect_target(id: u32) -> i32 {
 #[unsafe(no_mangle)]
 pub extern "C" fn ssbm_effect_flags(id: u32) -> u32 {
     // Attachment policy from ftCo_8009F834 and efAlt_Spawn.
-    match id {
-        1026 | 1027 | 1060 | 1086 | 1151 | 1154 | 1159 | 1214 | 1215 | 1216 | 1301 => 1,
-        _ => 0,
+    u32::from(libssbm::effect::attached(id))
+}
+/// A second effect spawned with `id` (same encoding as `ssbm_effect_target`;
+/// `i32::MIN` when there is none).
+#[unsafe(no_mangle)]
+pub extern "C" fn ssbm_effect_companion(id: u32) -> i32 {
+    match libssbm::effect::companion(id) {
+        Some(libssbm::effect::Target::Particle(id)) => id as i32,
+        Some(libssbm::effect::Target::Model(id)) => -(id as i32) - 1,
+        _ => i32::MIN,
     }
 }
 /// # Safety

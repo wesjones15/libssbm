@@ -39,15 +39,16 @@ impl Bank {
             libssbm_assets::fighter::FOX.effects,
             libssbm_assets::fighter::LUIGI.effects,
         ];
-        for archive in archives
-            .into_iter()
-            .chain(std::iter::once(libssbm_assets::fighter::PIKACHU.effects))
-        {
-            // Pikachu (7000..) is an optional bank: caches extracted before he
-            // existed keep working for the other fighters.
-            if archive.file == libssbm_assets::fighter::PIKACHU.effects.file
-                && !dir.join(archive.file).exists()
-            {
+        // Pikachu (7000..), Captain Falcon (4000..) and Yoshi (9000..) are optional banks:
+        // caches extracted before they existed keep working for the other fighters. Link's
+        // and Donkey Kong's archives hold effect models only.
+        let optional = [
+            libssbm_assets::fighter::PIKACHU.effects,
+            libssbm_assets::fighter::CAPTAIN.effects,
+            libssbm_assets::fighter::YOSHI.effects,
+        ];
+        for archive in archives.into_iter().chain(optional) {
+            if optional.iter().any(|o| o.file == archive.file) && !dir.join(archive.file).exists() {
                 continue;
             }
             let archive = Effects::load_archive(dir, archive)?;

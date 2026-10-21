@@ -15,6 +15,11 @@ pub fn resolve(id: u32) -> Target {
         1000 => Model(10),
         1001 => Particle(12),
         1002 => Particle(20),
+        1005 => Particle(80), // efasync.c 0x3ED: ice hit (a second generator, 84, is its companion)
+        1029 => Particle(44), // efasync.c 0x405
+        1046 => Particle(406), // efasync.c 0x416: dark hit
+        1053 => Model(15),    // efasync.c 0x41D
+        1145 => NoOp,         // efalt.c 0x479 spawns generator 1010, which no bank holds
         1004 => Model(8),
         1007 => Particle(66), // efasync.c 0x3EF/0x3F0: ground dust
         1008 => Particle(66),
@@ -85,6 +90,22 @@ pub fn resolve(id: u32) -> Target {
         // Green Missile launch flash.
         1289 => Model(2001),
         1290 => Particle(95),
+        // Donkey Kong's own effects (efsync.c 0x4C6..0x4CC): one model each from his
+        // effect archive (ids 8000..8006), for the Giant Punch swing (1224 ground, 1225
+        // air), Spinning Kong (1226), the Hand Slap (1222, 1223, 1227, 1228).
+        1222 => Model(2000),
+        1223 => Model(2001),
+        1224 => Model(2002),
+        1225 => Model(2003),
+        1226 => Model(2004),
+        1227 => Model(2005),
+        1228 => Model(2006),
+        // Yoshi's own effects (efsync.c 0x4CD/0x4CE): the egg model (9000) and its
+        // generator (9000), plus the shell bits of 0x4CF/0x4D0 (common models 30 and 28).
+        1229 => Model(2000),
+        1230 => Particle(9000),
+        1231 => Model(30),
+        1232 => Model(28),
         // Pikachu's own effects (efsync.c 0x4BD..0x4C5; EfPkData emitters
         // 7000..7009 = generator ids 0x1B58..) plus the common spark
         // (efasync.c 0x412 -> common generator 0x13) its move scripts emit.
@@ -105,6 +126,67 @@ pub fn resolve(id: u32) -> Target {
         _ => Unknown,
     }
 }
+/// A second effect the source spawns with `id` in the same call (a `next` link of the
+/// first): Falcon Punch's second flame and the child slash of Link's Spin Attack.
+pub fn companion(id: u32) -> Option<Target> {
+    Some(match id {
+        1005 => Target::Particle(84),
+        1167 => Target::Model(2001), // efalt.c 0x48F: 4000 and 4001
+        1211 => Target::Model(2002), // efsync.c 0x4BB: 6000 and 6002
+        1212 => Target::Model(2003), // efsync.c 0x4BC: 6001 and 6003
+        _ => return None,
+    })
+}
+
+/// Effects the source attaches to a joint (efLib_Create_Attach*, hsd_8039EFAC), which then
+/// follow it; the rest are placed once at a position (Attach_Pos, generators).
+pub fn attached(id: u32) -> bool {
+    matches!(
+        id,
+        1026 | 1027 | 1060 | 1086 | 1151 | 1154 | 1159 | 1214 | 1215 | 1216 | 1301
+            // Fox 0x488..0x48C, Captain 0x48F..0x493, Link 0x4BB/0x4BC, Donkey 0x4C6..0x4CB,
+            // Yoshi 0x4CD, Luigi 0x509/0x50A.
+            | 1160..=1164
+            | 1167..=1171
+            | 1211
+            | 1212
+            | 1222..=1227
+            | 1229
+            | 1289
+            | 1290
+    )
+}
+
+/// FtPart indices (ft/forward.h) the fighters' effects attach to.
+pub mod part {
+    pub const TOP_N: usize = 0;
+    pub const TRANS_N: usize = 1;
+    pub const HIP_N: usize = 4;
+    pub const L_FOOT_JA: usize = 9;
+    pub const R_FOOT_JA: usize = 14;
+    pub const HEAD_N: usize = 34;
+    pub const L_2ND_NA: usize = 24;
+    pub const R_3RD_NA: usize = 44;
+}
+
+/// A cue for effect `id` on a common bone of the fighter, as `efSync_Spawn(id, gobj,
+/// parts[bone].joint)` does.
+pub fn part_cue(sim: &crate::sim::Sim, id: u32, bone: usize) -> crate::action::GfxCue {
+    crate::action::GfxCue {
+        id,
+        bone,
+        common: true,
+        cycle: 0,
+        destroy_on_change: false,
+        offset: glam::Vec3::ZERO,
+        param: 0.,
+        clip: sim.motion.clip,
+        frame: sim.motion.frame,
+        origin: sim.position,
+        facing: sim.facing,
+    }
+}
+
 pub fn article_cues(
     kind: u32,
     state: u32,

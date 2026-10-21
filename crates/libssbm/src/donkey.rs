@@ -124,6 +124,10 @@ impl Donkey {
                 // (ftDk_SpecialN_Anim: x10 + swings * x30).
                 if sim.stage_value < 1. && sim.motion.frame >= 19. && !sim.action.active.is_empty() {
                     sim.stage_value = 1.;
+                    // ftDk_SpecialN_Anim: the swing's streak (efSync 1224 ground, 1225 air).
+                    let id = if sim.grounded { 1224 } else { 1225 };
+                    let streak = crate::effect::part_cue(sim, id, crate::effect::part::TOP_N);
+                    sim.action.effects.push(streak);
                     let swings = sim.stage_len as f32;
                     for active in sim.action.active.values_mut() {
                         active.hitbox.damage += swings * self.specials.damage_per_swing;
@@ -153,6 +157,10 @@ impl Donkey {
             let last = sim.stage_value;
             for (mark, strength) in [(SLAP_FIRST, 1.), (SLAP_SECOND, 2.)] {
                 if last < mark && frame >= mark {
+                    // ftDk_SpecialLw_8010E0CC / 8010E148: the slam's burst on TransN.
+                    let id = if sim.grounded { 1222 } else { 1223 };
+                    let burst = crate::effect::part_cue(sim, id, crate::effect::part::TRANS_N);
+                    sim.action.effects.push(burst);
                     sim.emit(host, EventKind::Hit, Move::SpecialLw as u32, strength);
                 }
             }
@@ -210,6 +218,9 @@ impl Behavior for Donkey {
                 sim.velocity.z = aim.z * self.specials.spin_horizontal * sim.options.speed_scale;
             }
             sim.jumps_used = sim.params.jumps + sim.options.extra_jumps;
+            // ftDk_SpecialHi_Enter: the spin's wind (efSync 1226, TopN).
+            let wind = crate::effect::part_cue(sim, 1226, crate::effect::part::TOP_N);
+            sim.action.effects.push(wind);
         } else if m == Move::SpecialS {
             // Headbutt: he stays where he is on the ground; in the air the momentum is
             // divided down and the fall waits for the strike
@@ -235,8 +246,10 @@ impl Behavior for Donkey {
                 self.begin_release(sim);
             }
         } else if m == Move::SpecialLw {
-            // Hand Slap: he plants himself.
+            // Hand Slap: he plants himself (efAsync 1228 on TopN while it lasts).
             sim.velocity = Vec3::ZERO;
+            let aura = crate::effect::part_cue(sim, 1228, crate::effect::part::TOP_N);
+            sim.action.effects.push(aura);
         }
     }
     fn aimable(&self, m: Move) -> bool {

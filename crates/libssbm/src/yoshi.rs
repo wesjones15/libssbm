@@ -73,6 +73,9 @@ const BOMB_LAND: u32 = 2;
 const ROLL_TURN: f32 = 0.14;
 /// Ticks before another wall bounce can register.
 const ROLL_BOUNCE_COOLDOWN: u32 = 12;
+/// Ticks between the rolling egg's dust puffs (host choice; the source's interval is a
+/// disc attribute not read here).
+const ROLL_DUST_TICKS: u32 = 6;
 /// The roll cannot be ended by a second press before this many ticks.
 const ROLL_MIN_TICKS: u32 = 20;
 /// The slam's hitbox follows Yoshi down (the AirLw clip's 14% at its last frame,
@@ -169,11 +172,19 @@ impl Yoshi {
                         speed *= self.specials.egg_roll_wall_bounce.abs().max(0.3);
                         sim.velocity.y = self.specials.egg_roll_hop * 0.35;
                         sim.stage_len = ROLL_BOUNCE_COOLDOWN;
+                        // The bonk dust against the wall (efSync 0x406).
+                        let bonk = crate::effect::part_cue(sim, 1030, crate::effect::part::TOP_N);
+                        sim.action.effects.push(bonk);
                     }
                 }
                 sim.stage_vec = sim.position;
                 sim.stage_value = speed;
                 sim.facing = sim.stage_dir;
+                // ftYs_SpecialS_8012F0DC: the rolling dust (efSync 0x3FF) at intervals on the ground.
+                if sim.grounded && sim.stage_frame % ROLL_DUST_TICKS == 0 {
+                    let dust = crate::effect::part_cue(sim, 1023, crate::effect::part::TOP_N);
+                    sim.action.effects.push(dust);
+                }
                 sim.velocity.x = sim.stage_dir.x * speed * scale;
                 sim.velocity.z = sim.stage_dir.z * speed * scale;
                 let gravity = if sim.grounded { 0. } else { sim.params.gravity };
@@ -185,6 +196,11 @@ impl Yoshi {
                     sim.stage = ROLL_END;
                     sim.stage_frame = 0;
                     sim.action.active.clear();
+                    // The egg breaks: shell bits from the hip (efSync 0x4CF).
+                    for _ in 0..3 {
+                        let shell = crate::effect::part_cue(sim, 1231, crate::effect::part::HIP_N);
+                        sim.action.effects.push(shell);
+                    }
                 }
             }
             _ => {
