@@ -3,6 +3,17 @@
 Pikachu, Captain Falcon, Link, Yoshi and Donkey Kong, move by move, for release `release-20261020` (Melee 0.3.0).
 Written 2026-10-20.
 
+## Update, later on 2026-10-20
+
+Fixed since this audit was written (commits c6104b8 in libssbm, 9ec21d4 in ror2-common, c9adcc0 in ror2-samus):
+
+- Finding 2, the doubled neutral special: `Behavior::fire_replays` lets a single-pass neutral special end after one pass; Fox, Luigi, Pikachu, Falcon, Donkey Kong and Yoshi use it (Link keeps the old path until his bow is staged).
+- Finding 4, grabs: every Melee fighter except Samus now captures enemies with its disc grab hitboxes and runs the authored pummel and throws (`MeleeDriver`). Not yet played in game.
+- Finding 6 and the sheet rows below: all eight pause sheets are generated from each fighter's own skill layout by `ror2-common/src/MeleeSheet.cs`.
+- Fox, which this audit did not cover, has staged Blaster, Illusion, Fire Fox and Reflector now (`tests/fox.rs`).
+
+Still open: findings 1 (staged specials for Falcon, Link, Yoshi, Donkey Kong), 3 (dead clip aliases), 5, 8, 9, and the per-move rows below, which describe the state before these fixes.
+
 ## How to read this
 
 - **"Does now"** was measured, not guessed: `crates/libssbm-assets/examples/move_audit.rs` builds each fighter on your
