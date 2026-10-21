@@ -453,8 +453,12 @@ pub fn load_donkey_specials(dir: &Path) -> Result<libssbm::donkey::Specials> {
     let root = fighter.root(profile.data.root)?;
     let dk = fighter.required_ptr(root + 4)?;
     Ok(libssbm::donkey::Specials {
+        // Giant Punch: the swings it stores (x2C), the damage each adds (x30) and the
+        // air momentum (x34). Headbutt: the air momentum divisor (x3C).
+        max_swings: fighter.u32(dk + 0x2c)?,
+        damage_per_swing: fighter.u32(dk + 0x30)? as f32,
         punch_velocity: fighter.f32(dk + 0x34)?,
-        headbutt_velocity: fighter.f32(dk + 0x3c)?,
+        headbutt_divisor: fighter.f32(dk + 0x3c)?,
         spin_rise_velocity: fighter.f32(dk + 0x4c)?,
         spin_horizontal: fighter.f32(dk + 0x54)?,
     })

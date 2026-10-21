@@ -16,10 +16,10 @@ written earlier the same day; everything that has since been fixed is moved into
 | Fox | All four staged and tested | Not re-audited | Generic grab, unplayed | Gun model placement, knockback feel: unseen |
 | Luigi | Fireball (shared bouncing shot), Green Missile charge, Cyclone | Not re-audited | Generic grab, unplayed | Not re-audited in detail |
 | Pikachu | Thunder Shock, Skull Bash, Quick Attack, Thunder all staged | Forward smash dead | Generic grab, unplayed | Forward smash alias; Skull Bash wall rebound; cloud model |
-| Captain Falcon | Falcon Punch OK; Raptor Boost, Falcon Dive, Falcon Kick cut short | OK (no jab 3 or rapid jab) | Generic grab, unplayed | Staged specials; implausible tuning offsets |
+| Captain Falcon | Falcon Punch, Raptor Boost (uppercut or spike), Falcon Dive (catch, explosion, rebound) and Falcon Kick all staged (2026-10-20 evening) | OK (no jab 3 or rapid jab) | Generic grab, unplayed | Unplayed: travel distances, Dive grab reach, force multipliers |
 | Link | Spin Attack OK; bow, boomerang and bomb staged (2026-10-20 evening); the bomb is carried, thrown or dropped | Forward tilt and forward smash were dead until the alias fix | Generic grab, unplayed | Unplayed: arrow numbers, boomerang arc, bomb feel; no boomerang catch animation |
 | Yoshi | Flutter jump, Egg Lay, Egg Roll, Egg Throw and Yoshi Bomb all staged (2026-10-20 evening) | OK | Generic grab, unplayed | Unplayed: the egg model size, tongue reach, roll feel; the tongue has no model |
-| Donkey Kong | Headbutt and Spinning Kong OK; Giant Punch has no charge; **Hand Slap does nothing** | OK | Generic grab, unplayed | Staged Hand Slap and Giant Punch charge |
+| Donkey Kong | Giant Punch (stored swings), Headbutt (buries, spikes), Spinning Kong (steerable) and Hand Slap (infinite, shockwaves, stunlock) all staged (2026-10-20 evening) | OK | Generic grab, unplayed | Unplayed: burial look, shockwave reach, force multipliers; no cargo carry |
 
 ## 2. What changed since the first version of this audit
 
@@ -54,14 +54,7 @@ All commits are in the libssbm / ror2-common / ror2-samus repos; hashes are pref
 
 ## 3. Still open, in the order to do it
 
-1. **Stage the specials of Falcon, Link, Yoshi and Donkey Kong.** Four fighters still play only the first clip of a multi-clip special. Fox is the template (section 6): copy
-   his shape rather than inventing one. What each needs, from the disc clips:
-   - **Falcon.** Raptor Boost: `SpecialSStart` lunge (80 frames, inert trigger boxes on frames 15-35), on contact continue into `SpecialS` (the 7% uppercut), on a miss recover on the ground or fall with miss landing lag in the air.
-     Falcon Dive: grab boxes on the rise, `SpecialHiCatch` (5% fire hit), `SpecialHiThrow` (the explosion launch), then special fall. Falcon Kick: ground travel, then `SpecialLwEnd`; air: diagonal dive, `...EndAir` on landing.
-   - **Link.** Done on 2026-10-20 evening (bow, boomerang flight, carried bomb); see the Link section. Still missing: the `SpecialS2` catch pose.
-   - **Yoshi.** Done on 2026-10-20 evening (flutter jump, Egg Lay, Egg Roll, Egg Throw arcs, Yoshi Bomb with stars); see the Yoshi section.
-   - **Donkey Kong.** Giant Punch: `Start` (8) -> `Loop` (12, each loop one more windmill swing up to `MAX_ARM_SWINGS`) -> B releases `SpecialN` with damage = base + swings x `DAMAGE_PER_SWING`. Hand Slap: `Start` -> `Loop` (27 frames, two bursts of four 11% boxes at frames 5 and 16; B again repeats) -> `End` (20).
-   Done when: `move_audit` shows the full clip chain, hitboxes and events for each, and a test next to `crates/libssbm-assets/tests/fox.rs` asserts them.
+1. ~~**Stage the specials of Falcon, Link, Yoshi and Donkey Kong.**~~ **DONE** on the evening of 2026-10-20, each following Fox's pattern (section 6): Link in d9ca615, Yoshi in 877277f, Falcon in 8ced907 and Donkey Kong in the commit after it. What each does is in its section below; the unfinished edges are the Link to fix / Falcon to fix / Yoshi to fix / Donkey Kong to fix lines.
 2. ~~**Dead clip aliases**~~ **DONE** (`337dbf7`): Pikachu `AttackS4S` -> `AttackS4`; Link `AttackS3S` -> `AttackS3` and `AttackS4S` -> `AttackS41`.
 3. **Angled and extra attacks are unreachable:** angled tilts and smashes (`AttackS3Hi/Lw`, `AttackS4Hi/Lw`), Jab 3 (`Attack13`, Falcon and Link), rapid jab (`Attack100Start/Loop/End`, Falcon and Link), Link's second smash hit (`AttackS41`/`AttackS42`).
    The picker knows one forward tilt and one forward smash.
@@ -71,7 +64,7 @@ All commits are in the libssbm / ror2-common / ror2-samus repos; hashes are pref
    (The Pikachu/Captain `sortPosition` 105 collision is fixed, `8828157`.)
 6. **Skill and pause text promises things that do not happen yet.** See section 7.
 7. **Not modelled for any fighter:** the helpless special fall after an up special, wall rebounds, Pikachu's body tilt toward a Quick Attack zip, a helpless fall after an aerial Quick Attack.
-8. **Play-test list (all unverified):** Fox gun model position and rotation, Illusion distance, Fire Fox travel and damage, Reflector knockback; generic grab feel (capture reach, hold position, throw launch force 1800); model scaling against hitboxes;
+8. **Play-test list (all unverified):** Falcon's travel scale, Dive grab reach and force multipliers; DK's shockwave reach, burial and force multipliers; Link's arrow, boomerang and bomb numbers; Yoshi's egg size and tongue reach; Fox gun model position and rotation, Illusion distance, Fire Fox travel and damage, Reflector knockback; generic grab feel (capture reach, hold position, throw launch force 1800); model scaling against hitboxes;
    upper-body walk split for the seven fighters; `SpeedScale` feel; pause window fit.
 
 ## 4. How to reproduce and check
@@ -146,10 +139,10 @@ RT Falcon Punch, LT A attack, RB Raptor Boost, LB Falcon Dive, B Falcon Kick (co
 
 | Move | Melee input | RoR2 input | Does now | Should do | Status |
 | --- | --- | --- | --- | --- | --- |
-| Falcon Punch | B | RT / Primary | Ground: the 100-frame `SpecialN` plays once (100 ticks, 1.7 s) with one hit window (fire 27% / 25% / 23%, sets enemies alight); the fist flame effect resolves now (bfc71fc). Air: `SpecialAirN` (78 ticks) with its own 27% / 25% / 23% boxes, then on landing it continues into the ground clip, which opens a second hit window in the harness (179 ticks in all). Whether Melee continues the ground clip after an aerial landing is unchecked. | One pass, one hit window; aerial keeps its momentum. | PARTIAL |
-| Raptor Boost | Side + B | RB / Utility | Plays only `SpecialS`, the 25-frame hit follow-up: one 7% upward hit, **no lunge** (travel 0.1: the speed it applies on entry is read from the disc as 0.18, far too small to move him), no grab. | `SpecialSStart` (80 frames): lunge forward with 0% inert trigger hitboxes active on frames 15-35. On contact the move continues into `SpecialS` (the 7% uppercut); on a miss he recovers (ground) or falls with miss landing lag (air). Needs the `Start` -> `S` stage hand-off on hit. | BROKEN |
-| Falcon Dive | Up + B | LB / Special | Rises to the host jump apex (37 above start) with two 1% grab-element boxes at frame 13, then drops into landing. `SpecialHiCatch` and `SpecialHiThrow` never play, so there is no catch, no 5% fire hit and no throw. | Grab on contact, `Catch` (fire hit), `Throw` (the explosion launch), then special fall. | PARTIAL |
-| Falcon Kick | Down + B | B / C (fifth slot) | Plays `SpecialLw` (40 frames): fire hits 15% / 12% / 9% at frames 14, 17 and 25; **no forward travel** on the ground (0.1; it reuses Raptor Boost's 0.18 entry speed) and no end lag stage. | Ground: travels forward through the kick, then `SpecialLwEnd` (ground lag, scaled by `speciallw_ground_lag_mul`); air: dives diagonally downward, `...EndAir` on landing. | PARTIAL |
+| Falcon Punch | B | RT / Primary | Ground: the 100-tick clip with its root motion (12.7 units forward), one hit window on frame 52 (fire 27% / 25% / 23%), a force multiplier of 10 for the host. Facing follows the camera until frame 48, so turning around during the wind-up reverses the punch; it then commits. Air: at frame 50 he launches along the camera pitch (within 30 degrees) at the disc's 1.95. No cooldown. | Same. | PARTIAL (unplayed) |
+| Raptor Boost | Side + B | RB / Utility | Staged: `SpecialSStart` lunges 60 units (x1.5 here) by the clip's root motion with the disc's inert trigger boxes live on frames 15-35. The host reports a trigger touching an enemy; the move becomes `SpecialS`: the 7% uppercut on the ground (angle 90) and the downward spike in the air (angle 270), force x5, with the speed cut by the disc's 0.18 factor. A miss simply ends. The old "speed 0.18" was this factor, not a speed. | The same; the source adds miss landing lag. | PARTIAL (unplayed) |
+| Falcon Dive | Up + B | LB / Special | Staged: the leap rises to the jump apex with the disc's grab boxes (frames 13-34). A grab takes hold of the enemy, **bosses included** (an ordinary enemy is held in front of him; a boss cannot be moved, so he clings to the spot he hit). `SpecialHiCatch` explodes (5% fire, 7.8 radius), then `SpecialHiThrow` launches the victim (6500 N up and away) while he rebounds backward by the clip's root motion. A miss is a plain leap. | The same; special fall afterwards is not modelled. | PARTIAL (unplayed) |
+| Falcon Kick | Down + B | B / C (fifth slot) | Staged: `SpecialLw` travels 80 units (x1.5 here) by the clip's root motion with the 15% / 12% / 9% fire hits, then `SpecialLwEnd`. In the air it dives diagonally (as far down as forward) and goes into the recovery on touchdown. Force x6. | The same; the on-hit speed modifier is not applied. | PARTIAL (unplayed) |
 | Shield / Air Feint | Shield | B (alt) | Ground shield bubble, one air evade. | Same. | OK |
 
 ### Normals, tilts, smashes and aerials (grab, pummel and throws: see the shared section below)
@@ -174,8 +167,7 @@ RT Falcon Punch, LT A attack, RB Raptor Boost, LB Falcon Dive, B Falcon Kick (co
 Not reachable: angled tilts (`AttackS3Hi`, `AttackS3Lw` and their `...S` forms), angled smashes (`AttackS4Hi`,
 `AttackS4Lw`), Jab 3 (`Attack13`) and rapid jab (`Attack100Start/Loop/End`).
 
-**Falcon to fix, in order:** Raptor Boost stages and lunge, Falcon Kick travel and end stages, Falcon Dive
-catch/throw, jab 3 and rapid jab; check the aerial Falcon Punch landing.
+**Falcon to fix, in order:** jab 3 and rapid jab; the aerial Falcon Punch landing; play-test the travel scale, the Dive's grab reach and the force multipliers.
 
 ---
 
@@ -269,10 +261,10 @@ RT Giant Punch, LT A attack, RB Headbutt, LB Spinning Kong, B Hand Slap (cooldow
 
 | Move | Melee input | RoR2 input | Does now | Should do | Status |
 | --- | --- | --- | --- | --- | --- |
-| Giant Punch | B | RT / Primary | Plays only the release clip `SpecialN` once (45 ticks): one hit window, top hit 30%. No wind-up, no charge, no windmill swings. | `SpecialNStart` (8) -> `SpecialNLoop` (12, looping; each loop is one more swing up to `MAX_ARM_SWINGS`, auto-release at max into the full-charge clip) -> B releases `SpecialN` with damage = base + swings x `DAMAGE_PER_SWING`; shield cancels. Needs a B-hold charge move like Samus's. | PARTIAL (no charge) |
-| Headbutt | Side + B | RB / Utility | `SpecialS` 59 frames: three 5% hits (element 9, buries grounded enemies), travels 13 forward. Air version 10% x2, travels 54 and drops. | Same clips. | OK |
-| Spinning Kong | Up + B | LB / Special | 12% / 12% / 8% multi-hit, travels 18 sideways, rises 36 above start; air version 10% / 10% / 4%. | Same clips, steered by stick. | OK |
-| Hand Slap | Down + B | B / C (fifth slot) | Plays only `SpecialLwStart` (14 frames): no hitbox, no event. **Does nothing.** | `Start` -> `Loop` (27 frames, two bursts of four 11% boxes at frames 5 and 16; pressing B again repeats the loop) -> `End` (20). | BROKEN |
+| Giant Punch | B | RT / Primary | Staged: hold RT to wind up (`SpecialNStart` then `SpecialNLoop`, one stored swing per 12 ticks up to the disc's 10); letting go releases `SpecialN`, whose hit gains the disc's 2% a swing and extra knockback; ten swings let go by themselves. Shield cancels with the swings kept (they persist between uses, as in the source). Force x10. No cooldown. | The same; the source toggles on a second press and has a `Full` state. | PARTIAL (unplayed) |
+| Headbutt | Side + B | RB / Utility | He stays where he is (no lunge). The ground hit (element 9) **buries** what it hits for three seconds (held helpless), bosses included; the air version's hit points straight down, a spike. Force x6. The buried look (sinking into the floor) is not done. | Same. | PARTIAL (unplayed) |
+| Spinning Kong | Up + B | LB / Special | The disc's multi-hit spin (a 12% first hit, force x4), a limited rise (the host jump apex) and horizontal travel the move stick steers. | Same. | OK (unplayed) |
+| Hand Slap | Down + B | B / C (fifth slot) | Staged: `SpecialLw`, then `SpecialLwLoop` repeating for as long as B is held (two slams a pass, frames 5 and 16), then `SpecialLwEnd`. He is planted throughout. Every slam sends a 9 m shockwave along the ground that hits grounded enemies (3.5 coefficient) and holds them for 0.5 s; the next slam renews it, so a held slap locks an enemy, **Mithrix included**, with no falloff. No cooldown. | Same. | PARTIAL (unplayed) |
 | Shield / Air Feint | Shield | B (alt) | Ground shield, one air evade. | Same. | OK |
 
 ### Normals, tilts, smashes and aerials (grab, pummel and throws: see the shared section below)
@@ -297,8 +289,7 @@ RT Giant Punch, LT A attack, RB Headbutt, LB Spinning Kong, B Hand Slap (cooldow
 His forward-throw cargo carry (`ThrowFF`, `ThrowFB`, `ThrowFHi`, `ThrowFLw`, `ThrowFTurn`, `ThrowFWait`, `ThrowFWalk*`) has
 animation data on the disc but nothing uses it. Not reachable: angled forward tilts (`AttackS3Hi/Lw`).
 
-**Donkey Kong to fix, in order:** Hand Slap stages, Giant Punch charge, the forward-throw
-cargo carry.
+**Donkey Kong to fix, in order:** the forward-throw cargo carry; the buried look; play-test the shockwave reach and the force multipliers.
 
 ---
 
@@ -319,10 +310,10 @@ Clip lengths in ticks (60 per second) from the audit tool:
 | Fighter | Grab | Dash grab | Pummel (hit) | Forward throw | Back throw | Up throw | Down throw |
 | --- | --- | --- | --- | --- | --- | --- | --- |
 | Pikachu | 31 | 41 | 25 (3%, electric) | 45 | 51 | 45 | 49 |
-| Captain Falcon | 31 | 41 | 25 (3%) | 41 | 51 | 45 | 41 |
+| Captain Falcon | Falcon Punch, Raptor Boost (uppercut or spike), Falcon Dive (catch, explosion, rebound) and Falcon Kick all staged (2026-10-20 evening) | OK (no jab 3 or rapid jab) | Generic grab, unplayed | Unplayed: travel distances, Dive grab reach, force multipliers |
 | Link | 86 | 96 | 26 (3%) | 41 | 41 | 51 | 51 |
 | Yoshi | 80 | 71 | 25 (3%) | 41 | 45 | 45 | 45 |
-| Donkey Kong | 31 | 51 | 25 (3%) | 21 | 41 | 45 | 61 |
+| Donkey Kong | Giant Punch (stored swings), Headbutt (buries, spikes), Spinning Kong (steerable) and Hand Slap (infinite, shockwaves, stunlock) all staged (2026-10-20 evening) | OK | Generic grab, unplayed | Unplayed: burial look, shockwave reach, force multipliers; no cargo carry |
 
 Donkey Kong's forward-throw cargo carry (`ThrowFF`, `ThrowFB`, `ThrowFHi`, `ThrowFLw`, `ThrowFTurn`, `ThrowFWait`, `ThrowFWalk*`) has animation data on the disc and nothing uses it.
 
