@@ -1,71 +1,99 @@
-# Melee first-pass fighters: move audit
+# Melee fighters: move audit and handoff
 
-Pikachu, Captain Falcon, Link, Yoshi and Donkey Kong, move by move, for release `release-20261020` (Melee 0.3.0).
-Written 2026-10-20.
+State as of the evening of 2026-10-20: libssbm `d8df243`, ror2-common `2b2e2c5`, ror2-samus `16f49c9`.
+Pikachu, Captain Falcon, Link, Yoshi and Donkey Kong are audited move by move below. Fox is the reference
+implementation for the work still open, so his section says what he does now. This file replaces the first version
+written earlier the same day; everything that has since been fixed is moved into "What changed" instead of left in the tables.
 
-## Update, later on 2026-10-20
+**Nothing in this document was played in game.** "Does now" is measured from the Rust sim on the extracted disc (below). The RoR2 side
+(damage coefficient = disc % / 3, knockback, cooldowns, projectiles, camera aim) is read from the C# source.
 
-Fixed since this audit was written (commits c6104b8 in libssbm, 9ec21d4 in ror2-common, c9adcc0 in ror2-samus):
+## 1. Where each fighter stands
 
-- Finding 2, the doubled neutral special: `Behavior::fire_replays` lets a single-pass neutral special end after one pass; Fox, Luigi, Pikachu, Falcon, Donkey Kong and Yoshi use it (Link keeps the old path until his bow is staged).
-- Finding 4, grabs: every Melee fighter except Samus now captures enemies with its disc grab hitboxes and runs the authored pummel and throws (`MeleeDriver`). Not yet played in game.
-- Finding 6 and the sheet rows below: all eight pause sheets are generated from each fighter's own skill layout by `ror2-common/src/MeleeSheet.cs`.
-- Fox, which this audit did not cover, has staged Blaster, Illusion, Fire Fox and Reflector now (`tests/fox.rs`).
+| Fighter | Specials | Normals | Grab, pummel, throws | Biggest gaps |
+| --- | --- | --- | --- | --- |
+| Samus | The most complete fighter | OK | Her own grapple | n/a |
+| Fox | All four staged and tested | Not re-audited | Generic grab, unplayed | Gun model placement, knockback feel: unseen |
+| Luigi | Fireball (shared bouncing shot), Green Missile charge, Cyclone | Not re-audited | Generic grab, unplayed | Not re-audited in detail |
+| Pikachu | Thunder Shock, Skull Bash, Quick Attack, Thunder all staged | Forward smash dead | Generic grab, unplayed | Forward smash alias; Skull Bash wall rebound; cloud model |
+| Captain Falcon | Falcon Punch OK; Raptor Boost, Falcon Dive, Falcon Kick cut short | OK (no jab 3 or rapid jab) | Generic grab, unplayed | Staged specials; implausible tuning offsets |
+| Link | Spin Attack OK; **bow and boomerang do nothing**; bomb is a lob | Forward tilt and forward smash dead | Generic grab, unplayed | Staged bow, boomerang; two aliases |
+| Yoshi | Egg Throw partial; **Egg Lay and Egg Roll do nothing**; Yoshi Bomb partial | OK | Generic grab, unplayed | Staged Lay, Roll; negative roll speed |
+| Donkey Kong | Headbutt and Spinning Kong OK; Giant Punch has no charge; **Hand Slap does nothing** | OK | Generic grab, unplayed | Staged Hand Slap and Giant Punch charge |
 
-Still open: findings 1 (staged specials for Falcon, Link, Yoshi, Donkey Kong), 3 (dead clip aliases), 5, 8, 9, and the per-move rows below, which describe the state before these fixes.
+## 2. What changed since the first version of this audit
 
-## How to read this
+All commits are in the libssbm / ror2-common / ror2-samus repos; hashes are prefixed with the repo where it is not obvious.
 
-- **"Does now"** was measured, not guessed: `crates/libssbm-assets/examples/move_audit.rs` builds each fighter on your
-  extracted disc, starts every move and records the clip chain, length, hitboxes and events the sim produces
-  (`cargo run --release -p libssbm-assets --example move_audit [fighter]`; `... -- script <fighter> <clip>` dumps a
-  clip's authored commands). It runs the Rust sim only. **Nothing here was played in game**, and the RoR2 side (damage
-  coefficient = disc % / 3, knockback, cooldowns, projectiles) is read from the C# source, not observed.
-- **"Should do"** comes from the Melee decompilation (`melee-master/.../ft/kinds/ft<Name>/`) and the clip lists and
-  scripts in each fighter's disc data.
-- Input columns: Melee button first, then the RoR2 pad binding and the keyboard/mouse binding. The five skills are
-  RT / LT / RB / LB / B on a pad and Primary / Secondary / Utility / Special / C on keyboard and mouse.
+- **Fox rewritten** (libssbm `c6104b8`, ror2-samus `c9adcc0`). Blaster, Illusion, Fire Fox and Reflector are staged specials; see section 6.
+  This was never a regression of the Pikachu work: the first audit run on the old Fox commit gave the same result, because his specials had
+  always ended after their first clip.
+- **Neutral specials play once** (libssbm `c6104b8`, then made the default in `bfc71fc`). `Behavior::fire_replays` now defaults to `false`;
+  only Samus's charge shot opts back in. Measured now: Falcon Punch 100 ticks (was 200), Giant Punch 45 (was 90), Egg Lay 40 (was 80),
+  Thunder Shock 58 (was 116), the bow 60 (was 120). The per-fighter overrides in `fox/luigi/pikachu/captain/donkey/yoshi.rs` are now redundant.
+- **Generic grab for every fighter except Samus** (ror2-common `9ec21d4`, `MeleeDriver`). See section 5.
+- **Pause sheets are generated from each fighter's skills** (ror2-common `MeleeSheet.cs`, ror2-samus `MeleeSheets.cs`). No "Move" row for walking.
+- **Falcon Punch fist flame resolves** (`bfc71fc`: effect 0x446 -> particle 27; the manual 1167 cue was dropped).
+- **Projectiles without a script hitbox now spawn** (`bfc71fc`, `ssbm_projectile_new`). Before, the call failed for every article whose hitbox is authored in
+  item C code, so only Luigi's fireball and Pikachu's jolt ever existed. A shared **placeholder of 8% damage, radius 2.5** stands in. Treat the
+  damage of Link's arrow and bomb, and of Yoshi's egg, as placeholders until each is checked against the decomp.
+- **One surface-contact budget** (`bfc71fc`, ror2-common `3f1e54c`). A wall or ceiling reflect spends the same budget as a ground bounce, so Thunder Shock
+  arcs ten surface contacts in all. Luigi's Fireball bounces ten times at a constant height and now rides the shared `MeleeBouncingShot` (ror2-samus `65747b8`).
+  Shots despawn at a 200 m straight-line range.
+- **Mobile attacks keep the walk cycle in the legs for every fighter** (libssbm `ef10651`): each fighter now has an `upper_body_root` (Fox 21, Luigi 5, Pikachu 5,
+  Captain 18, Link 17, Yoshi 22, Donkey 25). Only Samus had one before. Unverified in game for the seven.
+- **Model sizes are normalized by the disc's `model_scaling`** (libssbm `d8df243`): Luigi and Link grow, Samus and Pikachu shrink. It scales the
+  joint skeleton and vertices only. **Not checked:** whether hitbox offsets and radii follow the scaled skeleton, which they must for hits to line up with limbs.
+- **`SpeedScale` config, default 1.37** (ror2-common `2b2e2c5`, ror2-samus `a10a7e5`): lifts the slowest walker to Commando's pace and keeps relative speeds.
+- **The native build gate works again** (ror2-samus `16f49c9`). After `bfc71fc` the C# boundary check still expected ten ground bounces plus a wall reflect, failed with
+  "Thunder Shock bounced 9 times", and `build.ps1 -Deploy` refused to stage anything. The check now expects ten surface contacts in all. The build passes
+  (18 checks) and is staged at `pikmin-main/target/BepInEx/plugins/Melee/`.
+
+## 3. Still open, in the order to do it
+
+1. **Stage the specials of Falcon, Link, Yoshi and Donkey Kong.** Four fighters still play only the first clip of a multi-clip special. Fox is the template (section 6): copy
+   his shape rather than inventing one. What each needs, from the disc clips:
+   - **Falcon.** Raptor Boost: `SpecialSStart` lunge (80 frames, inert trigger boxes on frames 15-35), on contact continue into `SpecialS` (the 7% uppercut), on a miss recover on the ground or fall with miss landing lag in the air.
+     Falcon Dive: grab boxes on the rise, `SpecialHiCatch` (5% fire hit), `SpecialHiThrow` (the explosion launch), then special fall. Falcon Kick: ground travel, then `SpecialLwEnd`; air: diagonal dive, `...EndAir` on landing.
+   - **Link.** Bow: `Start` -> `Loop` while held -> `End` releases the arrow with charge-scaled damage and speed. Boomerang: `S1` throws, it flies out and returns hitting both ways, `S1Empty` while out, `S2` catches. Bomb: carried item, thrown or placed.
+   - **Yoshi.** Egg Lay: tongue grab, on contact `SpecialN2` swallows and lays an egg. Egg Roll: `Start` (intangible) -> `Loop` (4% x2 at `egg_roll_speed`) -> `End`. Yoshi Bomb: add the 40-frame `SpecialLwLanding` stun. Egg Throw: a stick-moved reticle.
+   - **Donkey Kong.** Giant Punch: `Start` (8) -> `Loop` (12, each loop one more windmill swing up to `MAX_ARM_SWINGS`) -> B releases `SpecialN` with damage = base + swings x `DAMAGE_PER_SWING`. Hand Slap: `Start` -> `Loop` (27 frames, two bursts of four 11% boxes at frames 5 and 16; B again repeats) -> `End` (20).
+   Done when: `move_audit` shows the full clip chain, hitboxes and events for each, and a test next to `crates/libssbm-assets/tests/fox.rs` asserts them.
+2. **Dead clip aliases** (one line each in `crates/libssbm-assets/src/fighter.rs`): Pikachu `AttackS4S` -> `AttackS4`; Link `AttackS3S` -> `AttackS3` and `AttackS4S` -> `AttackS41`. Without them Pikachu's forward smash and Link's forward tilt and
+   forward smash end in 4 ticks with no hitbox.
+3. **Angled and extra attacks are unreachable:** angled tilts and smashes (`AttackS3Hi/Lw`, `AttackS4Hi/Lw`), Jab 3 (`Attack13`, Falcon and Link), rapid jab (`Attack100Start/Loop/End`, Falcon and Link), Link's second smash hit (`AttackS41`/`AttackS42`).
+   The picker knows one forward tilt and one forward smash.
+4. **Implausible tuning, read from guessed offsets in `crates/libssbm-assets/src/params.rs`:** Falcon `raptor_velocity` 0.18 (so neither Raptor Boost nor Falcon Kick lunges: travel 0.1),
+   Yoshi `egg_roll_speed` -0.2 (negative), Donkey Kong Giant Punch momentum 0.12, Spinning Kong rise 0.675 and Falcon Dive 0.85 (the last two are replaced by the host jump height, so they do not show). Pikachu's values are sensible. Check each offset against the decomp's `DatAttrs` struct before fixing.
+5. **Copied code that should be shared.** Seven `HitTracker` classes (`Combat.cs` for Samus, and Fox, Luigi, Captain, Link, Yoshi, Donkey `*Combat.cs`) duplicate `ror2-common/MeleeHitTracker.cs`, which only Pikachu uses. `LinkShot` and `Egg` are hand-written projectile hosts next to `MeleeBouncingShot`.
+   Pikachu and Captain Falcon both have `sortPosition = 105` on the select screen.
+6. **Skill and pause text promises things that do not happen yet.** See section 7.
+7. **Not modelled for any fighter:** the helpless special fall after an up special, wall rebounds, Pikachu's body tilt toward a Quick Attack zip, a helpless fall after an aerial Quick Attack.
+8. **Play-test list (all unverified):** Fox gun model position and rotation, Illusion distance, Fire Fox travel and damage, Reflector knockback; generic grab feel (capture reach, hold position, throw launch force 1800); model scaling against hitboxes;
+   upper-body walk split for the seven fighters; `SpeedScale` feel; pause window fit.
+
+## 4. How to reproduce and check
+
+```
+# per-move table for one fighter (needs the extracted disc in libssbm/assets); writes nothing
+cargo run --release -p libssbm-assets --example move_audit pikachu   # captain link yoshi donkey fox luigi
+cargo run --release -p libssbm-assets --example move_audit -- script link SpecialN   # one clip's authored commands
+cargo test --release                                  # 100 tests at d8df243, all passing; disc tests print SKIP without the cache
+powershell -ExecutionPolicy Bypass -File ror2-samus/build.ps1 -Deploy   # C# boundary checks, then stage under pikmin-main/target/BepInEx/plugins/Melee/
+```
+
+`move_audit` builds a fresh sim per move (a move that leaves the sim non-Free would corrupt the next run), sets the host jump height to the disc full hop, and lists the clip chain, ticks, travel, hitboxes, events and hit windows. It runs the Rust sim only.
+
+Ground rules for whoever continues (from the project files): no Nintendo or FromSoftware data in git or in packages (assets come from the player's own disc into the ignored `libssbm/assets`); offline only;
+stage builds under `pikmin-main/target/BepInEx/plugins/Melee/` and never into a live game folder; use shared implementations (`ror2-common`) wherever possible; do not use `gc2ror2-mcp` (`AGENTS.md`);
+the libssbm working tree is shared with other agents, so commit only your own files by explicit path; commit every working increment; PowerShell 5.1 only (`pwsh` is blocked). `ror2-samus/CLAUDE.md` still says to stage under `MeleeSamus`; the folder is `Melee`.
+
+### How to read the tables
+
+- Input columns give the Melee button first, then the RoR2 pad binding and the keyboard/mouse binding. The five skills are RT / LT / RB / LB / B on a pad and Primary / Secondary / Utility / Special / C on keyboard and mouse.
   Pikachu is the only fighter whose specials are shuffled (RB is Thunder, LB is Quick Attack, B is Skull Bash).
-- Status: **OK** does what the disc says, **PARTIAL** runs but is missing stages or effects, **BROKEN** does not do its
-  job, **ANIMATION ONLY** plays but has no effect, **UNREACHABLE** cannot be triggered.
-
-## Findings that cut across all five
-
-1. **Four fighters have specials that stop after their first clip.** Melee builds most specials from several
-   animation states (start, loop, end; catch, throw). The sim only continues into the next stage when a fighter
-   implements `Behavior::next_stage`, and only Pikachu does. Captain Falcon, Link, Yoshi and Donkey Kong play just the
-   first clip, so Raptor Boost, Falcon Dive, the bow's arrow, the boomerang, Egg Lay, Egg Roll, Giant Punch's charge and
-   Hand Slap are cut short (details below). This is the single biggest gap.
-2. **A neutral special plays its whole clip twice.** Every neutral special took exactly 2x its clip length in the harness
-   (Falcon Punch 100 frames -> 200 ticks, Giant Punch 45 -> 90, Egg Lay 40 -> 80, Thunder Shock 58 -> 116, bow 60 -> 120).
-   `Sim::fire` restarts the clip in the Recovery phase. Falcon Punch and Giant Punch open their hit window twice
-   (`hit windows 2`), so one punch may be able to hit the same enemy twice, and the lockout is 3.3 s / 1.5 s. Luigi's
-   Fireball (47-frame clip, 94 ticks) and Fox's Blaster (7 frames, 14 ticks) show the same doubling, so it is generic and
-   not specific to these five.
-3. **Two fighters are missing animation aliases, so a move is dead.** Pikachu's forward smash and Link's forward tilt and
-   forward smash ask for `AttackS4S` / `AttackS3S`, which their disc data names `AttackS4` / `AttackS3` / `AttackS41`.
-   Each is a one-line `clip_aliases` entry in `fighter.rs` (Fox already has the `AttackS4S` one).
-4. **Grabs capture nothing.** `GrabAttached` / `GrabHolding` are hard-wired `false` for all five, and the disc grab
-   hitboxes have 0 damage, which the shared hit tracker skips. X plays the grab animation and that is all; pummel and
-   the four throws cannot be reached. Samus's tether is the only capture code. Link's Z-air tether is the one aerial grab
-   that has a damaging hitbox (6%).
-5. **Only the first of several angled variants is reachable.** The attack picker knows one forward tilt and one forward
-   smash, so angled tilts and smashes (`AttackS3Hi/Lw`, `AttackS4Hi/Lw`), Jab 3 (`Attack13`, Falcon and Link) and rapid
-   jab (`Attack100*`, Falcon and Link) never play.
-6. **The pause window shows only the five skill buttons.** See the last section.
-7. **Skill and pause text promises things that do not happen yet** (Raptor Boost "a quick horizontal lunge", Hand Slap
-   "a ground-pounding wave", Egg Lay "lash out with Yoshi's tongue", the bow "release to fire an arrow").
-8. **Code that should be shared is copied per fighter.** Seven `HitTracker` copies exist (Samus, Fox, Luigi, Captain
-   Falcon, Link, Yoshi, Donkey Kong), each the same sampler that `ror2-common/MeleeHitTracker.cs` provides, and `LinkShot` /
-   `Egg` are two more hand-written projectile hosts next to `MeleeBouncingShot`. Only Pikachu uses the shared ones. The
-   four audited here (Falcon, Link, Yoshi, Donkey Kong) would shrink to a few lines each.
-9. **Some special-move tuning is read from guessed disc offsets and gives implausible values.** Loaded in the harness:
-   Falcon `raptor_velocity` 0.18 (used for both Raptor Boost and Falcon Kick, so neither lunges), Yoshi `egg_roll_speed`
-   -0.2 (negative), Donkey Kong Giant Punch momentum 0.12 and Spinning Kong rise 0.675 (the rise is replaced by the host's
-   jump height, so it does not show), Falcon `dive_velocity` 0.85 (also replaced by the host jump height). Pikachu's values
-   (charge 90, zip 5 frames, strike 19 frames...) are sensible. `params.rs` comments cite the decomp fields, but the offsets
-   were not checked against the data for these fighters.
-10. Small: Pikachu and Captain Falcon both use `sortPosition = 105` on the character select screen.
+- Status: **OK** does what the disc says, **PARTIAL** runs but is missing stages or effects, **BROKEN** does not do its job, **ANIMATION ONLY** plays but has no effect.
+- "Should do" comes from the Melee decompilation (`melee-master/.../ft/kinds/ft<Name>/`) and the clip lists and scripts in each fighter's disc data.
 
 ---
 
@@ -77,13 +105,13 @@ RT Thunder Shock, LT A attack, RB Thunder, LB Quick Attack, B Skull Bash (all co
 
 | Move | Melee input | RoR2 input | Does now | Should do | Status |
 | --- | --- | --- | --- | --- | --- |
-| Thunder Shock | B | RT / Primary | Fires an electric orb along the crosshair that bounces off every surface and ends after 10 ground bounces (10% in flight, 6% after a bounce). The 58-frame `SpecialN` clip plays twice (116 ticks, about 1.9 s) before control returns, which hides the 0.25 s cooldown. | One pass of the clip (the shot already fires once, on the first pass). The crosshair-aimed bounce is your spec; particles for bounce and fizzle are guesses. | PARTIAL |
+| Thunder Shock | B | RT / Primary | Fires an electric orb along the crosshair (10% in flight, 6% after a bounce). It reflects off walls and ceilings and bounces off the ground, ten surface contacts in all (bfc71fc), and despawns at 200 m. The 58-frame clip now plays once (58 ticks). | Same. Particles for bounce and fizzle are guesses. | PARTIAL |
 | Skull Bash | Side + B | B / C (fifth slot) | Hold to charge up to 90 frames, release to lunge. Travel 81 uncharged, 132 charged; damage and distance grow with the charge; stops on what it hits. Start, hold, lunge, end clips all chain. | Same, plus the wall rebound (Melee bounces him back off walls); stage clips match the disc. | PARTIAL |
 | Quick Attack | Up + B | LB / Special | Two zips to the lock-on (nearest the crosshair, prefer in front, up to 25 m), or along stick and camera with no target; arrives in two zips at any distance, never rubber-bands; 2% hits at the start and end. | Body tilt toward the zip direction (not done); Melee ends in a helpless fall when used in the air (not modelled for any fighter here). | OK |
 | Thunder | Down + B | RB / Utility | A cloud and four bolt segments drop on him, the bolt shocks its column (events 1), then the strike (17%, event 2) electrifies the area around him; 83 ticks. | Same sequence; the cloud has no model yet. | PARTIAL |
 | Shield / Air Feint | Shield (L/R) | B, when chosen in the loadout's fifth row | Ground shield bubble, one air evade. | Same. | OK |
 
-### Everything else
+### Normals, tilts, smashes and aerials (grab, pummel and throws: see the shared section below)
 
 | Move | Melee input | RoR2 input (pad / keys) | Does now | Status |
 | --- | --- | --- | --- | --- |
@@ -101,19 +129,11 @@ RT Thunder Shock, LT A attack, RB Thunder, LB Quick Attack, B Skull Bash (all co
 | Back air | Back + A in the air | LS away from the camera heading + LT | `AttackAirB`, 61 ticks, top hit 12%. | OK |
 | Up air | Up + A in the air | LS held, camera 20 deg or more up, + LT | `AttackAirHi`, 29 ticks, top hit 4%. | OK |
 | Down air | Down + A in the air | LS held, camera 50 deg or more down, + LT | `AttackAirLw`, 59 ticks, top hit 12%. | OK |
-| Grab | Z, or R + A | X (not while an interact prompt is up) / Interact | Plays `Catch` (31 ticks). Its hitboxes are 0% grab boxes, so no enemy is ever captured. | ANIMATION ONLY |
-| Dash grab | Z while dashing | Sprint + X | Plays `CatchDash` (41 ticks). Its hitboxes are 0% grab boxes, so no enemy is ever captured. | ANIMATION ONLY |
-| Pummel | A while holding an enemy | LT / RT while holding (no capture exists) | Unreachable: needs a captured enemy (`CatchAttack` would play 25 ticks). | UNREACHABLE |
-| Forward throw | Forward while holding | LS right + LT/RT while holding | Unreachable: needs a captured enemy (`ThrowF` would play 45 ticks). | UNREACHABLE |
-| Back throw | Back while holding | LS left + LT/RT while holding | Unreachable: needs a captured enemy (`ThrowB` would play 51 ticks). | UNREACHABLE |
-| Up throw | Up while holding | LS up + LT/RT while holding | Unreachable: needs a captured enemy (`ThrowHi` would play 45 ticks). | UNREACHABLE |
-| Down throw | Down while holding | LS down + LT/RT while holding | Unreachable: needs a captured enemy (`ThrowLw` would play 49 ticks). | UNREACHABLE |
 
 Not reachable from the generic attack picker: angled forward tilts (`AttackS3Hi`, `AttackS3Lw`). Pikachu's forward smash is
 `AttackS4` on the disc.
 
-**Pikachu to fix, in order:** the forward smash alias, the doubled Thunder Shock clip, the Skull Bash wall rebound, the
-cloud model, grab capture (shared).
+**Pikachu to fix, in order:** the forward smash alias (`AttackS4S` -> `AttackS4`), the Skull Bash wall rebound, the cloud model.
 
 ---
 
@@ -125,13 +145,13 @@ RT Falcon Punch, LT A attack, RB Raptor Boost, LB Falcon Dive, B Falcon Kick (co
 
 | Move | Melee input | RoR2 input | Does now | Should do | Status |
 | --- | --- | --- | --- | --- | --- |
-| Falcon Punch | B | RT / Primary | Plays the 100-frame `SpecialN` twice (200 ticks, 3.3 s). Fire hitboxes 27% / 25% / 23% open in **both** passes (`hit windows 2`), so it can hit an enemy twice; sets enemies alight. Aerial version adds forward momentum and falls to a landing. | One pass, one hit window, about 1.7 s; aerial keeps momentum. | PARTIAL (double play) |
+| Falcon Punch | B | RT / Primary | Ground: the 100-frame `SpecialN` plays once (100 ticks, 1.7 s) with one hit window (fire 27% / 25% / 23%, sets enemies alight); the fist flame effect resolves now (bfc71fc). Air: `SpecialAirN` (78 ticks) with its own 27% / 25% / 23% boxes, then on landing it continues into the ground clip, which opens a second hit window in the harness (179 ticks in all). Whether Melee continues the ground clip after an aerial landing is unchecked. | One pass, one hit window; aerial keeps its momentum. | PARTIAL |
 | Raptor Boost | Side + B | RB / Utility | Plays only `SpecialS`, the 25-frame hit follow-up: one 7% upward hit, **no lunge** (travel 0.1: the speed it applies on entry is read from the disc as 0.18, far too small to move him), no grab. | `SpecialSStart` (80 frames): lunge forward with 0% inert trigger hitboxes active on frames 15-35. On contact the move continues into `SpecialS` (the 7% uppercut); on a miss he recovers (ground) or falls with miss landing lag (air). Needs the `Start` -> `S` stage hand-off on hit. | BROKEN |
 | Falcon Dive | Up + B | LB / Special | Rises to the host jump apex (37 above start) with two 1% grab-element boxes at frame 13, then drops into landing. `SpecialHiCatch` and `SpecialHiThrow` never play, so there is no catch, no 5% fire hit and no throw. | Grab on contact, `Catch` (fire hit), `Throw` (the explosion launch), then special fall. | PARTIAL |
 | Falcon Kick | Down + B | B / C (fifth slot) | Plays `SpecialLw` (40 frames): fire hits 15% / 12% / 9% at frames 14, 17 and 25; **no forward travel** on the ground (0.1; it reuses Raptor Boost's 0.18 entry speed) and no end lag stage. | Ground: travels forward through the kick, then `SpecialLwEnd` (ground lag, scaled by `speciallw_ground_lag_mul`); air: dives diagonally downward, `...EndAir` on landing. | PARTIAL |
 | Shield / Air Feint | Shield | B (alt) | Ground shield bubble, one air evade. | Same. | OK |
 
-### Everything else
+### Normals, tilts, smashes and aerials (grab, pummel and throws: see the shared section below)
 
 | Move | Melee input | RoR2 input (pad / keys) | Does now | Status |
 | --- | --- | --- | --- | --- |
@@ -149,19 +169,12 @@ RT Falcon Punch, LT A attack, RB Raptor Boost, LB Falcon Dive, B Falcon Kick (co
 | Back air | Back + A in the air | LS away from the camera heading + LT | `AttackAirB`, 37 ticks, top hit 14%. | OK |
 | Up air | Up + A in the air | LS held, camera 20 deg or more up, + LT | `AttackAirHi`, 35 ticks, top hit 13%. | OK |
 | Down air | Down + A in the air | LS held, camera 50 deg or more down, + LT | `AttackAirLw`, 46 ticks, top hit 16%. | OK |
-| Grab | Z, or R + A | X (not while an interact prompt is up) / Interact | Plays `Catch` (31 ticks). Its hitboxes are 0% grab boxes, so no enemy is ever captured. | ANIMATION ONLY |
-| Dash grab | Z while dashing | Sprint + X | Plays `CatchDash` (41 ticks). Its hitboxes are 0% grab boxes, so no enemy is ever captured. | ANIMATION ONLY |
-| Pummel | A while holding an enemy | LT / RT while holding (no capture exists) | Unreachable: needs a captured enemy (`CatchAttack` would play 25 ticks). | UNREACHABLE |
-| Forward throw | Forward while holding | LS right + LT/RT while holding | Unreachable: needs a captured enemy (`ThrowF` would play 41 ticks). | UNREACHABLE |
-| Back throw | Back while holding | LS left + LT/RT while holding | Unreachable: needs a captured enemy (`ThrowB` would play 51 ticks). | UNREACHABLE |
-| Up throw | Up while holding | LS up + LT/RT while holding | Unreachable: needs a captured enemy (`ThrowHi` would play 45 ticks). | UNREACHABLE |
-| Down throw | Down while holding | LS down + LT/RT while holding | Unreachable: needs a captured enemy (`ThrowLw` would play 41 ticks). | UNREACHABLE |
 
 Not reachable: angled tilts (`AttackS3Hi`, `AttackS3Lw` and their `...S` forms), angled smashes (`AttackS4Hi`,
 `AttackS4Lw`), Jab 3 (`Attack13`) and rapid jab (`Attack100Start/Loop/End`).
 
-**Falcon to fix, in order:** neutral-special double play, Raptor Boost stages and lunge, Falcon Kick travel and end stages,
-Falcon Dive catch/throw, jab 3 and rapid jab, grab capture.
+**Falcon to fix, in order:** Raptor Boost stages and lunge, Falcon Kick travel and end stages, Falcon Dive
+catch/throw, jab 3 and rapid jab; check the aerial Falcon Punch landing.
 
 ---
 
@@ -173,13 +186,13 @@ RT Hero's Bow, LT A attack, RB Boomerang, LB Spin Attack, B Bomb (cooldowns 0.3 
 
 | Move | Melee input | RoR2 input | Does now | Should do | Status |
 | --- | --- | --- | --- | --- | --- |
-| Hero's Bow | B | RT / Primary | Plays the 60-frame draw (`SpecialN`, the `Start` clip) twice; holding 60+ ticks reaches the `Loop` charge clip. **No arrow is ever created**: the arrow release command lives in `SpecialNEnd`, which the sim never plays, so tap, short hold and full charge all emit no projectile event. `LinkShot` (arrow) is therefore never spawned. | `Start` -> `Loop` while held (charge to `bow_charge_steps`) -> `End` releases the arrow; charge sets damage and speed; arrow flies along the crosshair. | BROKEN |
+| Hero's Bow | B | RT / Primary | Plays the 60-frame draw once (60 ticks). Holding chains `SpecialN`, `SpecialNLoop`, `SpecialN` (180 ticks). **No arrow is ever created** (no projectile event at any hold length): the arrow release command lives in `SpecialNEnd`, which the sim never plays. `LinkShot` (arrow) is therefore never spawned. | `Start` -> `Loop` while held (charge to `bow_charge_steps`) -> `End` releases the arrow; charge sets damage and speed; arrow flies along the crosshair. | BROKEN |
 | Boomerang | Side + B | RB / Utility | Plays `SpecialS1` (46 frames), no hitbox and no projectile event, ground or air. | `S1` throws (angle from stick), the boomerang flies out and **returns**, hitting both ways; `S1Empty` while it is out; `S2` catches it. The C# description says "flies out and despawns". | BROKEN |
 | Spin Attack | Up + B | LB / Special | Rising spin with four 15% hits (ground) / 4-6% multi-hits (air), slash effect, rises 28 above start, then lands. | Same clips; Melee follows with special fall (not modelled for any fighter). | OK |
-| Bomb | Down + B | B / C (fifth slot) | `SpecialLw` (40 frames) emits the bomb event; the C# `LinkShot` lobs a bomb that detonates on the ground. Speeds are prototype values; the clip itself has no hitbox. | Link pulls a bomb out and keeps it as a carried item that is thrown or placed and explodes on a timer (the disc has the bomb article, with its own damage). The lob is a simplification. | PARTIAL |
+| Bomb | Down + B | B / C (fifth slot) | `SpecialLw` (40 frames) emits the bomb event; the C# `LinkShot` lobs a bomb that detonates on the ground. Speeds are prototype values and, if the item script has no hitbox, damage is the shared 8% / 2.5 placeholder; the clip itself has no hitbox. | Link pulls a bomb out and keeps it as a carried item that is thrown or placed and explodes on a timer (the disc has the bomb article, with its own damage). The lob is a simplification. | PARTIAL |
 | Shield / Air Feint | Shield | B (alt) | Ground shield bubble, one air evade. | Same. | OK |
 
-### Everything else
+### Normals, tilts, smashes and aerials (grab, pummel and throws: see the shared section below)
 
 | Move | Melee input | RoR2 input (pad / keys) | Does now | Status |
 | --- | --- | --- | --- | --- |
@@ -197,13 +210,6 @@ RT Hero's Bow, LT A attack, RB Boomerang, LB Spin Attack, B Bomb (cooldowns 0.3 
 | Back air | Back + A in the air | LS away from the camera heading + LT | `AttackAirB`, 41 ticks, top hit 7%. | OK |
 | Up air | Up + A in the air | LS held, camera 20 deg or more up, + LT | `AttackAirHi`, 71 ticks, top hit 16%. | OK |
 | Down air | Down + A in the air | LS held, camera 50 deg or more down, + LT | `AttackAirLw`, 91 ticks, top hit 22%. | OK |
-| Grab | Z, or R + A | X (not while an interact prompt is up) / Interact | Plays `Catch` (86 ticks). Its hitboxes are 0% grab boxes, so no enemy is ever captured. | ANIMATION ONLY |
-| Dash grab | Z while dashing | Sprint + X | Plays `CatchDash` (96 ticks). Its hitboxes are 0% grab boxes, so no enemy is ever captured. | ANIMATION ONLY |
-| Pummel | A while holding an enemy | LT / RT while holding (no capture exists) | Unreachable: needs a captured enemy (`CatchAttack` would play 26 ticks). | UNREACHABLE |
-| Forward throw | Forward while holding | LS right + LT/RT while holding | Unreachable: needs a captured enemy (`ThrowF` would play 41 ticks). | UNREACHABLE |
-| Back throw | Back while holding | LS left + LT/RT while holding | Unreachable: needs a captured enemy (`ThrowB` would play 41 ticks). | UNREACHABLE |
-| Up throw | Up while holding | LS up + LT/RT while holding | Unreachable: needs a captured enemy (`ThrowHi` would play 51 ticks). | UNREACHABLE |
-| Down throw | Down while holding | LS down + LT/RT while holding | Unreachable: needs a captured enemy (`ThrowLw` would play 51 ticks). | UNREACHABLE |
 
 Link's Z-air (air grab) is the one that does damage in the disc: `AirCatch` carries 6% boxes, so in the air X acts as a short
 tether hit rather than a capture.
@@ -212,8 +218,8 @@ Not reachable: Jab 3 (`Attack13`), rapid jab (`Attack100Start/Loop/End`), the se
 (`AttackS41` / `AttackS42`).
 
 **Link to fix, in order:** the bow's `End` stage (and arrow), the boomerang stages and flight, forward-tilt and
-forward-smash aliases (`AttackS3S` -> `AttackS3`, `AttackS4S` -> `AttackS41`), neutral-special double play, jab 3 and rapid
-jab, bomb as a held item, grab capture.
+forward-smash aliases (`AttackS3S` -> `AttackS3`, `AttackS4S` -> `AttackS41`), jab 3 and rapid
+jab, bomb as a held item.
 
 ---
 
@@ -225,13 +231,13 @@ RT Egg Lay, LT A attack, RB Egg Roll, LB Egg Throw, B Yoshi Bomb (cooldowns 0.5 
 
 | Move | Melee input | RoR2 input | Does now | Should do | Status |
 | --- | --- | --- | --- | --- | --- |
-| Egg Lay | B | RT / Primary | Plays `SpecialN1` (40 frames) twice. No hitbox, no event, no capture: the tongue does nothing. `SpecialN2` never plays. | The tongue is a grab; on contact the victim is swallowed (`SpecialN2`) and Yoshi lays an egg containing it (the disc's Egg Lay article). | BROKEN |
+| Egg Lay | B | RT / Primary | Plays the 40-frame tongue clip once. No hitbox, no event, no capture: the tongue does nothing. `SpecialN2` never plays. | The tongue is a grab; on contact the victim is swallowed (`SpecialN2`) and Yoshi lays an egg containing it (the disc's Egg Lay article). | BROKEN |
 | Egg Roll | Side + B | RB / Utility | Plays only `SpecialSStart` (20 frames): no roll, no hitbox. The roll speed read from the disc is -0.2 (negative), which looks like a wrong field. `SpecialSLoop` (60 frames, two 4% boxes) and `SpecialSEnd` (40) are never reached. | Start (intangible), then roll along the ground at `egg_roll_speed` hitting for 4%, then End. | BROKEN |
-| Egg Throw | Up + B | LB / Special | Emits the egg event and hops (33 above start). The C# `Egg` article arcs along the crosshair, bounces off the ground and bursts on contact, damage from the article. | Melee: Yoshi hops, a reticle moves under stick control, the egg flies in an arc and bursts on contact. Aim here is the camera ray. | PARTIAL |
+| Egg Throw | Up + B | LB / Special | Emits the egg event and hops (33 above start). The C# `Egg` article arcs along the crosshair, bounces off the ground and bursts on contact, damage from the article, or the shared 8% placeholder when the item script has none. | Melee: Yoshi hops, a reticle moves under stick control, the egg flies in an arc and bursts on contact. Aim here is the camera ray. | PARTIAL |
 | Yoshi Bomb | Down + B | B / C (fifth slot) | Ground: 16% at frame 27 of a 28-frame clip. Air: a quick 14% plunge. `SpecialLwLanding` (40-frame landing stun) never plays. | Stall, plunge, shockwave on landing, then the landing stun. | PARTIAL |
 | Shield / Air Feint | Shield | B (alt) | Ground shield, one air evade. | Same (Yoshi's disc shield clips are `GuardOn`/`GuardOff` only). | OK |
 
-### Everything else
+### Normals, tilts, smashes and aerials (grab, pummel and throws: see the shared section below)
 
 | Move | Melee input | RoR2 input (pad / keys) | Does now | Status |
 | --- | --- | --- | --- | --- |
@@ -249,18 +255,11 @@ RT Egg Lay, LT A attack, RB Egg Roll, LB Egg Throw, B Yoshi Bomb (cooldowns 0.5 
 | Back air | Back + A in the air | LS away from the camera heading + LT | `AttackAirB`, 41 ticks, top hit 7%. | OK |
 | Up air | Up + A in the air | LS held, camera 20 deg or more up, + LT | `AttackAirHi`, 41 ticks, top hit 13%. | OK |
 | Down air | Down + A in the air | LS held, camera 50 deg or more down, + LT | `AttackAirLw`, 61 ticks, top hit 4%. | OK |
-| Grab | Z, or R + A | X (not while an interact prompt is up) / Interact | Plays `Catch` (80 ticks). Its hitboxes are 0% grab boxes, so no enemy is ever captured. | ANIMATION ONLY |
-| Dash grab | Z while dashing | Sprint + X | Plays `CatchDash` (71 ticks). Its hitboxes are 0% grab boxes, so no enemy is ever captured. | ANIMATION ONLY |
-| Pummel | A while holding an enemy | LT / RT while holding (no capture exists) | Unreachable: needs a captured enemy (`CatchAttack` would play 25 ticks). | UNREACHABLE |
-| Forward throw | Forward while holding | LS right + LT/RT while holding | Unreachable: needs a captured enemy (`ThrowF` would play 41 ticks). | UNREACHABLE |
-| Back throw | Back while holding | LS left + LT/RT while holding | Unreachable: needs a captured enemy (`ThrowB` would play 45 ticks). | UNREACHABLE |
-| Up throw | Up while holding | LS up + LT/RT while holding | Unreachable: needs a captured enemy (`ThrowHi` would play 45 ticks). | UNREACHABLE |
-| Down throw | Down while holding | LS down + LT/RT while holding | Unreachable: needs a captured enemy (`ThrowLw` would play 45 ticks). | UNREACHABLE |
 
 Not reachable: angled tilts (`AttackS3Hi/Lw` and `...S` forms) and angled smashes (`AttackS4Hi/Lw`).
 
-**Yoshi to fix, in order:** Egg Roll stages, Egg Lay (grab, swallow, egg), neutral-special double play, Yoshi Bomb landing,
-the reticle for Egg Throw, grab capture.
+**Yoshi to fix, in order:** Egg Roll stages, Egg Lay (grab, swallow, egg), Yoshi Bomb landing,
+the reticle for Egg Throw.
 
 ---
 
@@ -272,13 +271,13 @@ RT Giant Punch, LT A attack, RB Headbutt, LB Spinning Kong, B Hand Slap (cooldow
 
 | Move | Melee input | RoR2 input | Does now | Should do | Status |
 | --- | --- | --- | --- | --- | --- |
-| Giant Punch | B | RT / Primary | Plays only the release clip `SpecialN` (45 frames) twice (90 ticks): hits 18% then 30% in each pass (`hit windows 2`). No wind-up, no charge, no windmill swings. | `SpecialNStart` (8) -> `SpecialNLoop` (12, looping; each loop is one more swing up to `MAX_ARM_SWINGS`, auto-release at max into the full-charge clip) -> B releases `SpecialN` with damage = base + swings x `DAMAGE_PER_SWING`; shield cancels. Needs a B-hold charge move like Samus's. | PARTIAL (no charge, double play) |
+| Giant Punch | B | RT / Primary | Plays only the release clip `SpecialN` once (45 ticks): one hit window, top hit 30%. No wind-up, no charge, no windmill swings. | `SpecialNStart` (8) -> `SpecialNLoop` (12, looping; each loop is one more swing up to `MAX_ARM_SWINGS`, auto-release at max into the full-charge clip) -> B releases `SpecialN` with damage = base + swings x `DAMAGE_PER_SWING`; shield cancels. Needs a B-hold charge move like Samus's. | PARTIAL (no charge) |
 | Headbutt | Side + B | RB / Utility | `SpecialS` 59 frames: three 5% hits (element 9, buries grounded enemies), travels 13 forward. Air version 10% x2, travels 54 and drops. | Same clips. | OK |
 | Spinning Kong | Up + B | LB / Special | 12% / 12% / 8% multi-hit, travels 18 sideways, rises 36 above start; air version 10% / 10% / 4%. | Same clips, steered by stick. | OK |
 | Hand Slap | Down + B | B / C (fifth slot) | Plays only `SpecialLwStart` (14 frames): no hitbox, no event. **Does nothing.** | `Start` -> `Loop` (27 frames, two bursts of four 11% boxes at frames 5 and 16; pressing B again repeats the loop) -> `End` (20). | BROKEN |
 | Shield / Air Feint | Shield | B (alt) | Ground shield, one air evade. | Same. | OK |
 
-### Everything else
+### Normals, tilts, smashes and aerials (grab, pummel and throws: see the shared section below)
 
 | Move | Melee input | RoR2 input (pad / keys) | Does now | Status |
 | --- | --- | --- | --- | --- |
@@ -296,48 +295,65 @@ RT Giant Punch, LT A attack, RB Headbutt, LB Spinning Kong, B Hand Slap (cooldow
 | Back air | Back + A in the air | LS away from the camera heading + LT | `AttackAirB`, 41 ticks, top hit 13%. | OK |
 | Up air | Up + A in the air | LS held, camera 20 deg or more up, + LT | `AttackAirHi`, 46 ticks, top hit 14%. | OK |
 | Down air | Down + A in the air | LS held, camera 50 deg or more down, + LT | `AttackAirLw`, 56 ticks, top hit 16%. | OK |
-| Grab | Z, or R + A | X (not while an interact prompt is up) / Interact | Plays `Catch` (31 ticks). Its hitboxes are 0% grab boxes, so no enemy is ever captured. | ANIMATION ONLY |
-| Dash grab | Z while dashing | Sprint + X | Plays `CatchDash` (51 ticks). Its hitboxes are 0% grab boxes, so no enemy is ever captured. | ANIMATION ONLY |
-| Pummel | A while holding an enemy | LT / RT while holding (no capture exists) | Unreachable: needs a captured enemy (`CatchAttack` would play 25 ticks). | UNREACHABLE |
-| Forward throw | Forward while holding | LS right + LT/RT while holding | Unreachable: needs a captured enemy (`ThrowF` would play 21 ticks). | UNREACHABLE |
-| Back throw | Back while holding | LS left + LT/RT while holding | Unreachable: needs a captured enemy (`ThrowB` would play 41 ticks). | UNREACHABLE |
-| Up throw | Up while holding | LS up + LT/RT while holding | Unreachable: needs a captured enemy (`ThrowHi` would play 45 ticks). | UNREACHABLE |
-| Down throw | Down while holding | LS down + LT/RT while holding | Unreachable: needs a captured enemy (`ThrowLw` would play 61 ticks). | UNREACHABLE |
 
 His forward-throw cargo carry (`ThrowFF`, `ThrowFB`, `ThrowFHi`, `ThrowFLw`, `ThrowFTurn`, `ThrowFWait`, `ThrowFWalk*`) has
 animation data on the disc but nothing uses it. Not reachable: angled forward tilts (`AttackS3Hi/Lw`).
 
-**Donkey Kong to fix, in order:** Hand Slap stages, Giant Punch charge, neutral-special double play, grab capture and
+**Donkey Kong to fix, in order:** Hand Slap stages, Giant Punch charge, the forward-throw
 cargo carry.
 
 ---
 
-## Pause-menu controls window
+---
 
-All eight Melee sheets (`ror2-samus/Samus/MeleeSheets.cs`) are hand-written copies. Samus's has three sections (Moving,
-Attacks, Captured enemies). The five first-pass fighters have two (Moving, Attacks), and Fox and Luigi are the same, so the
-generic Melee control scheme is not written down for them anywhere in game.
+## 5. Grab, pummel and throws (all five, and Fox and Luigi)
 
-What a Melee fighter's window should say and currently does not (for the five):
+Before `9ec21d4` the disc grab boxes (0% damage, which the hit tracker skips) captured nothing and X only played the animation. Now `MeleeDriver` runs a generic capture for every fighter except Samus
+(`GenericGrab`, overridden to `false` in `SamusDriver`):
 
-| Missing from the window | What the player needs to know |
-| --- | --- |
-| A attacks | LT is jab (and jab combo), LS + LT is a tilt, Sprint + LS + LT is the dash attack, a quick LS flick + LT is a smash and holding LT charges it, in the air LT is neutral air and LS toward/away from the camera is forward/back air. |
-| Camera pitch | With LS held, the camera 20 deg above level makes it an up attack and 50 deg below makes it a down attack (tilts, smashes and aerials). |
-| Grab | X grabs (Sprint + X dash grab, in the air X is Link's tether), unless an interact prompt is up. Today it grabs nothing, so the line should say so until capture exists. |
-| Shield / Air Feint | The loadout's fifth row swaps B to a shield (hold) and a once-per-airtime evade; the sheet only says "or the Shield / Air Feint alternate". |
-| Jump | A, with a double jump; the sheet lists "Jump" but not the double jump. |
-| Keyboard | Interact is the grab key; the keyboard section has no Interact row for these fighters. |
-| Stage inputs | Pikachu's second Quick Attack zip (turn the stick 38 deg or press LB again) is only in the skill tooltip, not the window. |
+- Native moves 25-27 are the three grabs (standing, dash, air), 28 the pummel, 29-32 the four throws, 33 the hold.
+- While a grab move is active, `ScanGrab` samples the live 0% boxes and the first living enemy of another team inside one is captured (`EnemyCapture`). The captured enemy is held in front of the fighter, not on the hand bone.
+- The sim then runs the authored pummel (`CatchAttack`) and throws; each pummel hit and the throw's damage and launch (force 1800 along the throw direction) are dealt from the driver.
+- **Not played, and no automated check exercises a live enemy.** Link's air grab (`AirCatch`, 6% boxes) is a short tether hit and not a capture.
 
-And the opposite problem, text that does not match the current build: Raptor Boost ("a quick horizontal lunge"), Hand Slap
-("a ground-pounding wave"), Egg Lay ("lash out with Yoshi's tongue"), Egg Roll ("roll forward as an egg"), the bow
-("release to fire") and the boomerang ("throw it forward"). Spinning Kong, Headbutt, Spin Attack and the Pikachu rows are
-accurate. The same strings are reused in the SkillDef descriptions (`*Def.cs`) shown in the loadout and HUD, so they need
-the same correction.
+Clip lengths in ticks (60 per second) from the audit tool:
 
-**Suggested fix.** Add one builder to `ror2-common` (for example `MeleeSheet.Generic(fighterSubtitle, specials, footer)`)
-that emits the Moving / A attacks / Grab / Shield sections once, and have each fighter pass only its four special rows and
-any extras (Samus adds her grapple sections, Pikachu its Quick Attack and Skull Bash notes). That removes the eight copies
-and means a fix to the generic text lands everywhere. The button-to-slot mapping already is generic
-(`MeleeControlLayout`), so only the sheet text is duplicated.
+| Fighter | Grab | Dash grab | Pummel (hit) | Forward throw | Back throw | Up throw | Down throw |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| Pikachu | 31 | 41 | 25 (3%, electric) | 45 | 51 | 45 | 49 |
+| Captain Falcon | 31 | 41 | 25 (3%) | 41 | 51 | 45 | 41 |
+| Link | 86 | 96 | 26 (3%) | 41 | 41 | 51 | 51 |
+| Yoshi | 80 | 71 | 25 (3%) | 41 | 45 | 45 | 45 |
+| Donkey Kong | 31 | 51 | 25 (3%) | 21 | 41 | 45 | 61 |
+
+Donkey Kong's forward-throw cargo carry (`ThrowFF`, `ThrowFB`, `ThrowFHi`, `ThrowFLw`, `ThrowFTurn`, `ThrowFWait`, `ThrowFWalk*`) has animation data on the disc and nothing uses it.
+
+Pause-sheet text for the grab is generic ("Grab (Sprint + X while running). Then LT to pummel, LS + LT to throw").
+
+## 6. Fox, the reference for staged specials
+
+Fox and Luigi were not part of the first audit; Fox now has the pattern the other four fighters need. His four specials are in `crates/libssbm/src/fox.rs` and tested in `crates/libssbm-assets/tests/fox.rs`.
+
+| Move | Melee input | RoR2 input | Does now |
+| --- | --- | --- | --- |
+| Blaster | B | RT / Primary | `Start` 7 + `Loop` 10 + `End` 24 frames, one pass. One laser per tap, repeating while RT is held (the test sees at least five shots in 90 ticks). The gun model (article 1) is drawn on the right thumb bone. Placement and rotation unseen. |
+| Illusion | Side + B | RB / Utility | A blue streak and dash of about 96 units over 6 frames (about 10 m). The disc's 7% slash hitbox rides the dash, each enemy in the path hit once. |
+| Fire Fox | Up + B | LB / Special | Stage one: he holds position in space for about 43 frames with the flame charge. Stage two: he launches along the camera aim in a fire ball, 20% hits (the host scales the disc damage by 1.4 and the radius to 9), travelling 100+ units. The select-screen intro aims up so it plays. The far travel, size and damage are RoR2 adaptation, not disc values. |
+| Reflector | Down + B | B / C (fifth slot) | Centred on the hips, not the floor. One burst event at the start of the held shine; the C# side deals AOE damage in a 2.8 m sphere with outward force 4500, upward 2200, coefficient 3.5. Holding B keeps the shine up; release plays `End`. |
+
+The shape to copy, all in `Behavior` (`crates/libssbm/src/behavior.rs`): `enter_special` sets up the move; `tick_special` runs every tick and drives velocity, gravity ownership (`owns_gravity` / `pad_gravity`) and stage changes;
+`next_stage` is called when a clip finishes and returns true after moving to the next stage (the behavior's `clip` then names the next clip) or false to end the move; `aim_frozen`, `facing_locked_now` and `script_muted` change per stage;
+`projectile_variable` names the cmd-var whose rising edge fires the article; `on_connect` reports a hit; `fire_replays` is `false`. Clip names go through `FighterAssets.clip_aliases`, and a missing clip is a one-frame no-op,
+which is how a mis-named alias hides: check with `move_audit`.
+
+Luigi: Fireball (ten bounces on the shared shot), chargeable Green Missile and Cyclone are in place. Not re-audited here.
+
+## 7. Pause-menu controls window
+
+Done. `ror2-common/src/MeleeSheet.cs` builds the sheet for any Melee fighter from its `MeleeSkillLayout` (the names and descriptions the loadout and HUD already show) plus the generic scheme: Special moves, A attacks
+(including camera up/down), Grab, Moving, and a fighter's own extras (Samus's captured-enemy section, Pikachu's Quick Attack footer). `ror2-samus/Samus/MeleeSheets.cs` is now a handful of lines per fighter. The controls label auto-sizes between 13 and 21 so a long list still fits.
+Fit and legibility in the actual pause menu are unchecked.
+
+Because the sheet reuses the skill descriptions, the text is only as right as they are, and these are still wrong for the current build (fix the strings in each `*Def.cs` and they update everywhere):
+Raptor Boost ("a quick horizontal lunge"), Hand Slap ("a ground-pounding wave"), Egg Lay ("lash out with Yoshi's tongue"), Egg Roll ("roll forward as an egg"), the bow ("release to fire an arrow") and the boomerang ("throw it forward").
+Spinning Kong, Headbutt, Spin Attack, the Pikachu rows and Fox's rows are accurate.
