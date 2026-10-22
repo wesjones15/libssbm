@@ -66,6 +66,16 @@ impl Specials {
 
 // Blaster: SpecialNStart, SpecialNLoop (a shot at frame 5, repeating while the
 // button is held), SpecialNEnd.
+//
+// Repeat rule (host adaptation of ftfoxspecialn.c). In the source a shot repeats only
+// when B is pressed while the Start or Loop clip's input window is open
+// (ftFox_SpecialN_CheckLoopInput sets isBlasterLoop); the Loop clip, 10 frames, then plays
+// again (ftFx_SpecialNLoop_Anim) and releases the next shot at its frame 5. Here:
+//  * Held: the button keeps isBlasterLoop set, so the Loop clip replays back to back, one
+//    shot per clip length (10 ticks, 1/6 s). This is the source's own cadence.
+//  * Tapped: every press owes one shot. It leaves as soon as the minimum gap allows,
+//    by replaying the Loop clip from its frame 0 early (or from the End clip), so fast
+//    clicking fires faster than holding. Shots are never closer than BLASTER_MIN_GAP.
 const N_START: u32 = 0;
 const N_LOOP: u32 = 1;
 const N_END: u32 = 2;
@@ -104,6 +114,13 @@ const ILLUSION_GROUP: u32 = 3;
 const FIREFOX_HOST_SCALE: f32 = 2.0;
 const FIREFOX_DAMAGE_SCALE: f32 = 1.4;
 const FIREFOX_RADIUS: f32 = 9.;
+/// Ticks from replaying the Loop clip to the shot leaving: the clip releases it at frame 5
+/// (its cmd_vars[2] script command), and the restart tick already plays frame 1.
+const BLASTER_FIRE_DELAY: f32 = 4.;
+/// The least time between two Blaster shots when tapping, in ticks: 0.12 s is 7.2 ticks and
+/// shots land on whole ticks, so 7 (0.117 s) keeps a 0.12 s tap rhythm firing every press
+/// (host design, not a source value).
+const BLASTER_MIN_GAP: f32 = 7.;
 /// Blaster fire sound (ftfoxspecialn.c::foxSFX[0], facing-forward id).
 const BLASTER_SOUND: u32 = 110103;
 
@@ -249,14 +266,36 @@ impl Fox {
     }
 
     // --- Per-move ticks ---------------------------------------------------------
-    fn tick_blaster(&self, sim: &mut Sim, input: Input) {
+    /// `stage_len` counts ticks since the last shot (zeroed in `fire_strength`);
+    /// `stage_frame` is 1 while a tap's shot is still owed; `stage_value` is the source's
+    /// isBlasterLoop (replay the Loop clip when this pass ends).
+    fn tick_blaster(&self, sim: &mut Sim, input: Input, pressed: u32) {
         if sim.grounded {
             sim.velocity.x = 0.;
             sim.velocity.z = 0.;
         }
-        // isBlasterLoop: a held (or re-pressed) button keeps firing.
+        sim.stage_len = sim.stage_len.saturating_add(1);
+        // isBlasterLoop: a held button keeps the Loop clip replaying at its own length.
         if sim.stage == N_LOOP && input.buttons & NEUTRAL_B != 0 {
             sim.stage_value = 1.;
+        }
+        // A pass whose shot has not left yet (Start, or Loop before its fire frame) cannot
+        // restart; once the shot is out, an owed tap replays the Loop clip as soon as the new
+        // shot (BLASTER_FIRE_DELAY ticks later) keeps the minimum gap. This runs before this
+        // tick's press is recorded, so a press never merges into the tap it follows.
+        let shot_out = sim.stage != N_START && sim.action.projectile_fired;
+        if sim.stage_frame == 1
+            && shot_out
+            && sim.stage_len as f32 + BLASTER_FIRE_DELAY >= BLASTER_MIN_GAP
+        {
+            sim.stage = N_LOOP;
+            sim.stage_frame = 0;
+            sim.stage_value = 0.;
+            sim.motion.frame = 0.;
+            sim.action.projectile_fired = false;
+        }
+        if pressed & NEUTRAL_B != 0 {
+            sim.stage_frame = 1;
         }
     }
     fn tick_illusion(&self, sim: &mut Sim) {
@@ -472,6 +511,7 @@ impl Behavior for Fox {
     }
     fn fire_strength(&self, sim: &mut Sim, m: Move) -> f32 {
         if m == Move::SpecialN {
+            sim.stage_len = 0; // ticks since the last shot (see tick_blaster)
             sim.action.sounds.push(SoundCue {
                 sound: BLASTER_SOUND,
                 volume: 127,
@@ -506,7 +546,7 @@ impl Behavior for Fox {
             return;
         }
         match sim.current_move {
-            Some(Move::SpecialN) => self.tick_blaster(sim, input),
+            Some(Move::SpecialN) => self.tick_blaster(sim, input, pressed),
             Some(Move::SpecialS) => self.tick_illusion(sim),
             Some(Move::SpecialHi) => self.tick_firefox(sim),
             Some(Move::SpecialLw) => self.tick_reflector(sim, host, input, pressed),
@@ -516,8 +556,8 @@ impl Behavior for Fox {
     fn next_stage(&self, sim: &mut Sim, _host: &mut dyn Host, m: Move, _input: Input) -> bool {
         match (m, sim.stage) {
             (Move::SpecialN, N_START) => {
+                // stage_frame (a tap owed during the Start clip) carries into the Loop.
                 sim.stage = N_LOOP;
-                sim.stage_frame = 0;
                 sim.action.projectile_fired = false;
                 true
             }
@@ -529,7 +569,6 @@ impl Behavior for Fox {
                     sim.action.projectile_fired = false;
                 } else {
                     sim.stage = N_END;
-                    sim.stage_frame = 0;
                 }
                 true
             }

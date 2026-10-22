@@ -329,7 +329,7 @@ Fox and Luigi were not part of the first audit; Fox now has the pattern the othe
 
 | Move | Melee input | RoR2 input | Does now |
 | --- | --- | --- | --- |
-| Blaster | B | RT / Primary | `Start` 7 + `Loop` 10 + `End` 24 frames, one pass. One laser per tap, repeating while RT is held (the test sees at least five shots in 90 ticks). The gun model (article 1) is drawn on the right thumb bone. Placement and rotation unseen. |
+| Blaster | B | RT / Primary | `Start` 7 + `Loop` 10 + `End` 24 frames, one pass. Every tap fires, at most one shot per 0.12 s (7 ticks; a tap replays the Loop clip early); holding replays the 10-tick Loop clip, one shot per 1/6 s (ftfoxspecialn.c). Headless-tested, not played. The laser keeps its authored damage and radius after impact (it has no explosion). The gun model (article 1) is drawn on the right thumb bone. Placement and rotation unseen. |
 | Illusion | Side + B | RB / Utility | A blue streak and dash of about 96 units over 6 frames (about 10 m). The disc's 7% slash hitbox rides the dash, each enemy in the path hit once. |
 | Fire Fox | Up + B | LB / Special | Stage one: he holds position in space for about 43 frames with the flame charge. Stage two: he launches along the camera aim in a fire ball, 20% hits (the host scales the disc damage by 1.4 and the radius to 9), travelling 100+ units. The select-screen intro aims up so it plays. The far travel, size and damage are RoR2 adaptation, not disc values. |
 | Reflector | Down + B | B / C (fifth slot) | Centred on the hips, not the floor. One burst event at the start of the held shine; the C# side deals AOE damage in a 2.8 m sphere with outward force 4500, upward 2200, coefficient 3.5. Holding B keeps the shine up; release plays `End`. |

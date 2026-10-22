@@ -11,9 +11,6 @@ pub struct Handle {
     element: u32,
     notified: bool,
     explosion: Vec<libssbm::action::TimedCommand>,
-    /// Link's arrow bursts on impact but keeps its authored damage; Samus's bomb
-    /// (also article kind 0) takes its damage from the explosion animation instead.
-    keep_damage: bool,
 }
 #[repr(C)]
 #[derive(Clone, Copy, Default)]
@@ -275,7 +272,6 @@ pub unsafe extern "C" fn ssbm_projectile_new(
                 element,
                 notified: false,
                 explosion: explosion_commands,
-                keep_damage: fighter_kind == 5,
             })
         })();
         match result {
@@ -330,7 +326,11 @@ pub unsafe extern "C" fn ssbm_projectile_state(h: *const Handle, out: *mut State
         } else {
             s.params.radius
         };
-        if s.params.kind == 0 && s.impacted && !h.keep_damage {
+        // An impacted kind-0 article that has explosion commands (Samus's bomb) takes
+        // its damage and radius from them. One without (Fox's laser, Link's arrow,
+        // Yoshi's egg) has no explosion animation to supply any, so it keeps the
+        // damage and radius it was authored with.
+        if s.params.kind == 0 && s.impacted && !h.explosion.is_empty() {
             damage = 0.;
             for cue in h
                 .explosion
@@ -505,6 +505,63 @@ mod tests {
     }
     fn v(x: f32, y: f32, z: f32) -> V3 {
         V3 { x, y, z }
+    }
+
+    /// State of a freshly made article right after `impact` and again `later` ticks on
+    /// (the explosion cues are timed by the article's animation). `None` when the fighter's
+    /// disc cache is absent.
+    fn after_impact(fighter: &libssbm_assets::fighter::FighterAssets, kind: u32, article: u32, state: u32, charge: f32, later: usize) -> Option<(State, State)> {
+        let dir = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../assets");
+        if !fighter.complete(&dir) {
+            eprintln!("SKIP: fighter {kind} disc cache absent");
+            return None;
+        }
+        let c = CString::new(dir.to_str().unwrap()).unwrap();
+        unsafe {
+            let h = ssbm_projectile_new(c.as_ptr(), kind, article, state, charge, v(0., 0., 1.));
+            assert!(!h.is_null(), "fighter {kind} article {article} did not spawn");
+            let mut first = State::default();
+            let mut then = State::default();
+            ssbm_projectile_impact(h, std::ptr::null_mut());
+            assert_eq!(ssbm_projectile_state(h, &mut first), 1);
+            for _ in 0..later {
+                ssbm_projectile_step(h, 1. / 60., v(0., 0., 0.), 0);
+            }
+            assert_eq!(ssbm_projectile_state(h, &mut then), 1);
+            ssbm_projectile_free(h);
+            Some((first, then))
+        }
+    }
+
+    #[test]
+    fn fox_laser_keeps_its_damage_and_radius_after_impact() {
+        let Some((first, then)) = after_impact(&libssbm_assets::fighter::FOX, 1, 0, 0, 0., 5) else { return };
+        eprintln!("fox laser after impact: damage {} radius {} (+5 ticks: {} {})", first.damage, first.radius, then.damage, then.radius);
+        assert!(first.damage > 0. && first.radius > 0., "{} {}", first.damage, first.radius);
+        assert!(then.damage > 0. && then.radius > 0.);
+    }
+
+    #[test]
+    fn samus_bomb_still_takes_its_damage_from_the_explosion() {
+        let Some((first, then)) = after_impact(&libssbm_assets::fighter::SAMUS, 0, 0, 0, 0., 8) else { return };
+        eprintln!("samus bomb after impact: damage {} radius {} (+8 ticks: {} {})", first.damage, first.radius, then.damage, then.radius);
+        // The explosion script opens its hitbox a few frames in, with its own damage and radius.
+        assert!(then.damage > 0. && then.radius > 0., "{} {}", then.damage, then.radius);
+        // And they are the explosion article's own hitbox, not the bomb's defaults.
+        let dir = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../assets");
+        let explosion = Article::load_for(&dir, 0, 1, &libssbm_assets::fighter::SAMUS).unwrap();
+        let hit = explosion.commands.iter().find_map(|c| match &c.command {
+            Command::Hitbox(h) => Some((h.damage, h.radius)),
+            _ => None,
+        }).expect("explosion hitbox");
+        assert_eq!((then.damage, then.radius), hit);
+    }
+
+    #[test]
+    fn yoshi_egg_burst_keeps_its_damage() {
+        let Some((first, _)) = after_impact(&libssbm_assets::fighter::YOSHI, 6, 0, 0, 0., 0) else { return };
+        eprintln!("yoshi egg after impact: damage {} radius {}", first.damage, first.radius);
+        assert!(first.damage > 0. && first.radius > 0.);
     }
 
     #[test]

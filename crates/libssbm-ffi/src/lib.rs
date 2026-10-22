@@ -2196,6 +2196,79 @@ mod tests {
         assert!(!sim.motion.clip.is_empty());
         Ok(())
     }
+    /// Ticks (60 Hz) at which Fox's Blaster fires for a scripted neutral-B button track, and the
+    /// Loop clip's length in ticks. `None` when the Fox disc cache is absent.
+    fn fox_blaster_shots(frames: usize, button: impl Fn(usize) -> bool) -> libssbm_assets::Result<Option<(Vec<usize>, f32)>> {
+        let dir = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../assets");
+        let fox = &libssbm_assets::fighter::FOX;
+        if !fox.complete(&dir) {
+            eprintln!("SKIP: Fox disc cache absent");
+            return Ok(None);
+        }
+        let params = libssbm_assets::params::load_common(&dir, fox)?;
+        let behavior: Box<dyn libssbm::behavior::Behavior> = Box::new(libssbm::fox::Fox::new(
+            libssbm_assets::params::load_fox_specials(&dir)?,
+        ));
+        let mut sim = Sim::with_behavior(params, behavior, Vec3::ZERO);
+        sim.defense.params = libssbm_assets::params::defense_for(&dir, fox)?;
+        sim.defense.health = sim.defense.params.maximum;
+        let rig = Rig::load_for(&dir, fox)?;
+        sim.motion.definitions = rig.animations.motion_definitions();
+        sim.action.definitions = libssbm_assets::action::load_for(&dir, &rig.animations, fox)?;
+        for (name, action) in &sim.action.definitions {
+            if let Some(motion) = sim.motion.definitions.get_mut(name) {
+                motion.looping |= action.looping;
+            }
+        }
+        let loop_len = sim.motion.length("SpecialNLoop");
+        let mut host = libssbm::sim::FlatHost { events: Vec::new() };
+        let mut shots = Vec::new();
+        for tick in 0..frames {
+            let mut input = Input::idle();
+            if button(tick) {
+                input.buttons = libssbm::sim::NEUTRAL_B;
+            }
+            sim.advance(&mut host, input, 1. / 60.);
+            for e in host.events.drain(..) {
+                if e.kind == libssbm::sim::EventKind::Hit && e.move_id == libssbm::sim::Move::SpecialN as u32 {
+                    shots.push(tick);
+                }
+            }
+        }
+        Ok(Some((shots, loop_len)))
+    }
+    /// ftfoxspecialn.c: a held button replays the 10-frame SpecialNLoop clip, one shot each.
+    #[test]
+    fn fox_blaster_held_fires_at_the_loop_clip_cadence() -> libssbm_assets::Result<()> {
+        let Some((shots, loop_len)) = fox_blaster_shots(240, |_| true)? else { return Ok(()) };
+        assert!(shots.len() >= 20, "held fire: {shots:?}");
+        for pair in shots.windows(2) {
+            assert_eq!((pair[1] - pair[0]) as f32, loop_len, "held fire gaps: {shots:?}");
+        }
+        Ok(())
+    }
+    /// Every tap fires, even at a 0.12 s rhythm (7.2 ticks), and a tap rhythm is faster than holding.
+    #[test]
+    fn fox_blaster_taps_each_fire_with_a_minimum_gap() -> libssbm_assets::Result<()> {
+        let presses: Vec<usize> = (0..12).map(|i| (i as f32 * 7.2).round() as usize).collect();
+        let Some((shots, loop_len)) = fox_blaster_shots(presses[11] + 90, |t| presses.contains(&t))? else { return Ok(()) };
+        assert_eq!(shots.len(), presses.len(), "taps {presses:?} -> shots {shots:?}");
+        let gaps: Vec<usize> = shots.windows(2).map(|p| p[1] - p[0]).collect();
+        assert!(gaps.iter().all(|g| *g as f32 >= 0.1), "gaps {gaps:?}");
+        assert!(gaps.iter().all(|g| *g >= 7), "a gap under 0.12 s (7 ticks): {gaps:?}");
+        assert!(gaps.iter().all(|g| (*g as f32) < loop_len), "taps no faster than holding: {gaps:?}");
+        Ok(())
+    }
+    /// Mashing faster than 0.12 s never fires closer than the minimum gap.
+    #[test]
+    fn fox_blaster_mashing_keeps_the_minimum_gap() -> libssbm_assets::Result<()> {
+        let Some((shots, _)) = fox_blaster_shots(240, |t| t % 3 == 0)? else { return Ok(()) };
+        assert!(shots.len() > 10, "mashing: {shots:?}");
+        for pair in shots.windows(2) {
+            assert!(pair[1] - pair[0] >= 7, "gap under 0.12 s: {shots:?}");
+        }
+        Ok(())
+    }
     #[test]
     fn luigi_assets_load_and_sim_steps() -> libssbm_assets::Result<()> {
         let dir = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../assets");
