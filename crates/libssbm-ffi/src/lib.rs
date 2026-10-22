@@ -4,10 +4,12 @@
 use glam::Vec3;
 use libssbm::{Contact, Event, Host, Input, Sim};
 use libssbm_assets::presentation::Presentation;
+mod moves;
 mod particles;
 mod projectile;
 mod replay;
 pub use replay::{ssbm_sim_ops_take, ssbm_sim_record, ssbm_sim_replay};
+pub use moves::{MoveEntry, ssbm_sim_moves};
 use replay::{NetLog, Op};
 use std::{
     cell::RefCell,
