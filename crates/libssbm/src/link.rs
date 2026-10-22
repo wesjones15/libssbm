@@ -164,7 +164,7 @@ impl Behavior for Link {
             sim.jumps_used = sim.params.jumps + sim.options.extra_jumps;
             // Spin Attack slash (efsync.c 0x4BB ground / 0x4BC air).
             let id = if sim.move_started_grounded { 1211 } else { 1212 };
-            let slash = crate::effect::part_cue(sim, id, crate::effect::part::TRANS_N);
+            let slash = crate::effect::part_cue_bound(sim, id, crate::effect::part::TRANS_N); // x2219_b0 set (ftlinkspecialhi.c:42)
             sim.action.effects.push(slash);
         } else if m == Move::SpecialS {
             // Boomerang: with one already out the empty-handed clip plays

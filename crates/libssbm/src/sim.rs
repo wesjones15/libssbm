@@ -234,6 +234,10 @@ pub struct Sim {
     pub facing: Vec3,
     host_facing: Option<Vec3>,
     pub host_jump_height: Option<f32>,
+    /// Show the disc's own move where the host otherwise adapts it for an open world: a recovery
+    /// special that only hops for the host (Yoshi's Egg Throw, which on the ground the source keeps
+    /// on the ground, ftYs_SpecialHi_Phys) does not. The select-screen preview sets it.
+    pub source_recovery: bool,
     accumulator: f64,
     pub fall_blend: f32,
     suppress_initial_landing: bool,
@@ -243,6 +247,8 @@ pub struct Sim {
     released: u32,
     /// Sounds queued between steps (a hurt voice), played at the start of the next one.
     queued_sounds: Vec<crate::action::SoundCue>,
+    /// Effect cues made between two advances (a host-side interruption ends the fighter's effects).
+    queued_effects: Vec<crate::action::GfxCue>,
     voice_rng: u32,
     pub(crate) jab: JabChain,
     buffered_attack: u32,
@@ -354,6 +360,7 @@ impl Sim {
             facing: Vec3::X,
             host_facing: None,
             host_jump_height: None,
+            source_recovery: false,
             accumulator: 0.,
             fall_blend: 0.,
             suppress_initial_landing: true,
@@ -362,6 +369,7 @@ impl Sim {
             pending_released: 0,
             released: 0,
             queued_sounds: Vec::new(),
+            queued_effects: Vec::new(),
             voice_rng: 0x9e37_79b9,
             jab: JabChain::default(),
             buffered_attack: 0,
@@ -477,6 +485,7 @@ impl Sim {
         self.action.sounds.clear();
         self.action.sounds.append(&mut self.queued_sounds);
         self.action.effects.clear();
+        self.action.effects.append(&mut self.queued_effects);
         if !dt.is_finite() || dt < 0. || !input.movement.is_finite() || !input.aim.is_finite() {
             return 0;
         }
@@ -582,6 +591,13 @@ impl Sim {
         self.jab = JabChain::default();
         self.set_phase(Phase::Free);
     }
+    /// Whatever the fighter's move bound to it ends with the move: a hit, a stun or a grab reaches
+    /// efLib_DestroyAll in the source (the take_dmg callbacks and the state change). Queued for the
+    /// next advance so the host reads it with that step's cues.
+    pub fn end_effects(&mut self) {
+        let end = crate::effect::destroy_all_cue(self);
+        self.queued_effects.push(end);
+    }
     /// Host damage notification, deliberately independent of engine health types.
     pub fn hurt(&mut self) {
         self.hurt_scaled(0.);
@@ -596,6 +612,7 @@ impl Sim {
         if self.entry.is_some() || self.rebirth.is_some() {
             return;
         }
+        self.end_effects();
         self.interrupt();
         let stage = if self.grounded {
             crate::reaction::Stage::GroundHit

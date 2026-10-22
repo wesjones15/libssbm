@@ -337,7 +337,12 @@ impl Behavior for Yoshi {
         })
     }
     fn enter_special(&self, sim: &mut Sim, _host: &mut dyn Host, m: Move, _input: Input) {
-        if m == Move::SpecialHi {
+        if m == Move::SpecialHi && sim.source_recovery && sim.grounded {
+            // The disc's grounded Egg Throw stays on the ground (ftYs_SpecialHi_Enter sets no
+            // velocity; ftYs_SpecialHi_Phys is ground physics): the hop below is the host's.
+            sim.velocity.x = 0.;
+            sim.velocity.z = 0.;
+        } else if m == Move::SpecialHi {
             // Egg Throw hops to the host's standard jump apex, like every other
             // recovery; the egg itself spawns through the projectile path.
             // ftyoshispecialhi.c::ftYs_SpecialHi_Enter.

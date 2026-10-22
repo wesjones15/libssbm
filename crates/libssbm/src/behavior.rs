@@ -112,6 +112,10 @@ pub trait Behavior: Send {
     fn hurt_eyes(&self) -> bool {
         false
     }
+    /// The clip script raised the move's throw flag (ThrowFlag, `fp->x2210.x0.throw_flags_b1`).
+    /// A few fighters use it as a toggle in their Anim callback: Falcon Kick's flame
+    /// (`ftCa_SpecialHi_800E3EAC`) is made on the first flag and destroyed on the second.
+    fn script_flag(&self, _sim: &mut Sim) {}
     /// A stage whose clip script must not apply hitboxes, effects or sounds.
     fn script_muted(&self, _sim: &Sim) -> bool {
         false

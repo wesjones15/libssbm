@@ -157,6 +157,40 @@ pub fn attached(id: u32) -> bool {
     )
 }
 
+/// A lifetime in frames the spawn code gives its effects in place of the descriptor's
+/// (`cur->lifetime = ...` after efLib_Create): the Yoshi shell bits (efsync.c 0x4CF/0x4D0, 12 pieces
+/// of 50 frames). The descriptor's lifetime of 0 would mean they never end.
+pub fn lifetime_override(id: u32) -> Option<u32> {
+    match id {
+        1231 | 1232 => Some(0x32),
+        _ => None,
+    }
+}
+
+/// The cue id that stands for `efLib_DestroyAll(gobj)`: every effect the fighter owns that is
+/// bound to a joint (or to its move) ends at once. The source calls it from
+/// `Fighter_ChangeMotionState` when the motion changes without `Ft_MF_KeepGfx` while
+/// `x2219_b0` is set (ft/fighter.c), from a fighter's own toggle (Falcon Kick's flame,
+/// `ftCa_SpecialHi_800E3EAC`) and when the fighter is hit (`take_dmg_cb`). The host never
+/// spawns it: it ends the effects.
+pub const DESTROY_ALL: u32 = 0xFFFF;
+
+/// How an attached effect is oriented. `efLib_Create_Attach*` puts a position constraint on
+/// the effect (`lb_8000C1C0`, RObj flags 0x90000001): it follows the joint's *position*, and its
+/// rotation is set by its update callback from the fighter's facing (`efLib_Cb_SetRotY_FromFighterDir`
+/// and relatives) or left at the effect's own axes. Only `efLib_Create_AttachChild*`
+/// (`lb_8000C290`, flags 0x90000004) also takes the joint's orientation, and Fox's Fire Fox flame
+/// (`efLib_Cb_SetRotYZ_FromFighter`) leans with the flight angle, which his XRotN joint carries.
+/// Returns (the effect's own target follows the joint's orientation, its companion does).
+pub fn follows_orientation(id: u32) -> (bool, bool) {
+    match id {
+        1159 => (true, false), // efalt.c 0x487: Samus, AttachChild_Scale
+        1164 => (true, false), // efalt.c 0x48C: Fire Fox flame, SetRotYZ_FromFighter
+        1211 | 1212 => (false, true), // efsync.c 0x4BB/0x4BC: the child slash, AttachChild_Scale
+        _ => (false, false),
+    }
+}
+
 /// FtPart indices (ft/forward.h) the fighters' effects attach to.
 pub mod part {
     pub const TOP_N: usize = 0;
@@ -185,6 +219,18 @@ pub fn part_cue(sim: &crate::sim::Sim, id: u32, bone: usize) -> crate::action::G
         origin: sim.position,
         facing: sim.facing,
     }
+}
+
+/// Like [`part_cue`], for an effect the source tags with `x2219_b0`: it is destroyed when the
+/// motion next changes (`Fighter_ChangeMotionState`), which is the end of the clip the move is
+/// in. The host ends it on the motion serial (`ssbm_sim_motion_serial`).
+pub fn part_cue_bound(sim: &crate::sim::Sim, id: u32, bone: usize) -> crate::action::GfxCue {
+    crate::action::GfxCue { destroy_on_change: true, ..part_cue(sim, id, bone) }
+}
+
+/// `efLib_DestroyAll(gobj)`: ends every effect the fighter owns that is bound to a joint or a move.
+pub fn destroy_all_cue(sim: &crate::sim::Sim) -> crate::action::GfxCue {
+    crate::action::GfxCue { destroy_on_change: false, ..part_cue(sim, DESTROY_ALL, crate::effect::part::TOP_N) }
 }
 
 pub fn article_cues(

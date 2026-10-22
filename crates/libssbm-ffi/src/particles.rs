@@ -186,6 +186,26 @@ pub unsafe extern "C" fn ssbm_particles_stop(handle: *mut Particles, key: u64) {
         guarded((), || unsafe { &mut *handle }.system.stop(key));
     }
 }
+/// A projectile's trail: its generators run until `ssbm_particles_stop(key)`, not for their own
+/// life, so the trail lasts exactly as long as the projectile (call after the spawn).
+/// # Safety
+/// Unique handle, or null.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn ssbm_particles_sustain(handle: *mut Particles, key: u64) {
+    if !handle.is_null() {
+        guarded((), || unsafe { &mut *handle }.system.sustain(key));
+    }
+}
+/// Whether a generator or particle is still attached to `key`.
+/// # Safety
+/// Live handle, or null.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn ssbm_particles_running(handle: *const Particles, key: u64) -> u32 {
+    if handle.is_null() {
+        return 0;
+    }
+    guarded(0, || unsafe { &*handle }.system.running(key) as u32)
+}
 /// # Safety
 /// Unique live handle. dt is seconds; fixed stepping retains fractional ticks.
 #[unsafe(no_mangle)]
