@@ -247,3 +247,27 @@ fn dash_attack_and_dash_grab_commit_their_travel() -> Result<()> {
     }
     Ok(())
 }
+
+// Thunder Jolt plays the grounded clip (the source's down-diagonal throw) for a level or
+// downward aim and the airborne clip when it is fired from the air or aimed upward.
+#[test]
+fn thunder_jolt_uses_the_airborne_clip_when_aimed_up_or_fired_from_the_air() -> Result<()> {
+    for (grounded, aim_y, expected) in [
+        (true, 0.0, "SpecialN"),
+        (true, -0.5, "SpecialN"),
+        (true, 0.6, "SpecialAirN"),
+        (false, 0.0, "SpecialAirN"),
+        (false, 0.6, "SpecialAirN"),
+    ] {
+        let Some(mut sim) = pikachu_at(Vec3::new(0., if grounded { 0. } else { 10. }, 0.), grounded)? else { return Ok(()) };
+        let mut host = FlatHost { events: Vec::new() };
+        let input = Input { aim: Vec3::new(1., aim_y, 0.).normalize(), ..Input::idle() };
+        assert!(sim.start_move(&mut host, Move::SpecialN, input));
+        for _ in 0..4 {
+            // The aim keeps moving after the move starts; the clip must not change.
+            step(&mut sim, &mut host, Input { aim: Vec3::new(1., -aim_y, 0.).normalize(), ..Input::idle() });
+            assert_eq!(sim.motion.clip, expected, "grounded {grounded}, aim.y {aim_y}");
+        }
+    }
+    Ok(())
+}

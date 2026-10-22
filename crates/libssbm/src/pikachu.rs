@@ -112,6 +112,12 @@ const ZIP_DECISION_TICKS: u32 = 4;
 const BASH_LATE_FRAME: f32 = 30.;
 /// Thunder Shock sound (ftpikachuspecialn.c: ft_PlaySFX 240076 for Pikachu).
 const SHOCK_SOUND: u32 = 240076;
+/// Host adaptation: a Thunder Jolt aimed above this pitch (sine of the angle, about 11
+/// degrees) from the ground plays the airborne clip. The grounded `SpecialN` clip is the
+/// source's down-diagonal throw (ftPk_SpecialN_Anim); `SpecialAirN` (ftPk_SpecialAirN_Anim)
+/// has the level throw, which fits a crosshair-aimed shot. Latched on entry in
+/// `Sim::stage_value` so the clip cannot change while the aim moves.
+const JOLT_UP_AIM: f32 = 0.2;
 
 pub struct Pikachu {
     specials: Specials,
@@ -467,6 +473,9 @@ impl Behavior for Pikachu {
                 sim.velocity = Vec3::ZERO;
                 Self::hold_gravity(sim, 0.);
             }
+            Move::SpecialN => {
+                sim.stage_value = if sim.move_aim.y > JOLT_UP_AIM { 1. } else { 0. };
+            }
             Move::SpecialS => {
                 // ftPk_SpecialS_Enter: gr_vel /= x30 (start friction), no air lift.
                 sim.velocity.x /= 1.25;
@@ -625,7 +634,7 @@ impl Behavior for Pikachu {
         let now = sim.grounded;
         match (m, sim.stage) {
             (Move::SpecialN, _) => {
-                if started { "SpecialN" } else { "SpecialAirN" }
+                if started && sim.stage_value == 0. { "SpecialN" } else { "SpecialAirN" }
             }
             (Move::SpecialS, BASH_START) => {
                 if now { "SpecialSStart" } else { "SpecialAirSStart" }
