@@ -211,11 +211,10 @@ pub const LUIGI: FighterAssets<'static> = FighterAssets {
         grid_joint: 17, // ICONJOINT_LUIGI (mn/types.h)
     },
     announce_sound: 0x7C844, // CKind_Luigi -> gm_1601.c::gm_80168C5C case 7
-    clip_aliases: &[
-        ("Wait", "Wait1"),
-        ("AttackHi4", "AttackS4Hi"),
-        ("AttackLw4", "AttackS4Lw"),
-    ],
+    // PlLgAJ.dat has its own AttackHi4 / AttackLw4 (up and down smash); the
+    // AttackS4Hi / AttackS4Lw clips are the angled forward smashes, so they must
+    // not be aliased onto the up/down smash names.
+    clip_aliases: &[("Wait", "Wait1")],
 };
 /// Pikachu's asset profile. Articles follow ftDataPikachu.x48_items order
 /// (ft/types.h item table): Thunder, Thunder Jolt (travelling orb) and the
@@ -461,14 +460,10 @@ pub const DONKEY: FighterAssets<'static> = FighterAssets {
         grid_joint: 21,  // ICONJOINT_DONKEY (mn/types.h)
     },
     announce_sound: 0x7C831, // CKind_Donkey -> gm_1601.c::gm_80168C5C case 1
-    // DK's idle/walk are the "heavy" variants; Hand Slap is Start/Loop/End.
-    clip_aliases: &[
-        ("Wait", "HeavyWait"),
-        ("WalkSlow", "HeavyWalkSlow"),
-        ("WalkMiddle", "HeavyWalkMiddle"),
-        ("WalkFast", "HeavyWalkFast"),
-        ("SpecialLw", "SpecialLwStart"),
-    ],
+    // DK's PlDkAJ.dat has its own Wait and Walk* clips, so they must not be
+    // aliased onto HeavyWait/HeavyWalk* (the carry pose; grabs use ThrowFWait /
+    // ThrowFWalk*). Only Hand Slap is split into Start/Loop/End.
+    clip_aliases: &[("SpecialLw", "SpecialLwStart")],
 };
 /// The FFI's fighter selector. Adding a fighter means adding a variant here, a
 /// `FighterAssets` definition, and returning it from [`FighterKind::assets`].

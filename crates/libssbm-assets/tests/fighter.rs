@@ -106,3 +106,57 @@ fn renamed_profile_loads_without_any_canonical_samus_asset_names() -> Result<()>
     assert!(effect.world.iter().all(|m| m.is_finite()));
     Ok(())
 }
+
+/// A clip alias (canonical -> actual) renames the disc clip `actual` to
+/// `canonical`. If the fighter's own archive already has a clip called
+/// `canonical`, two clips compete for one name (DK idled in his HeavyWait pose
+/// because `Wait` was aliased to `HeavyWait` although PlDkAJ.dat has `Wait`).
+#[test]
+fn no_clip_alias_renames_onto_a_clip_the_disc_already_has() -> Result<()> {
+    use libssbm_assets::{animation::Animations, fighter::FighterKind};
+    let source = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../assets");
+    let mut bad = Vec::new();
+    let mut checked = 0;
+    for kind in 0..8 {
+        let kind = FighterKind::from_u32(kind).unwrap();
+        let fighter = kind.assets().unwrap();
+        // Alias tables must not collide with each other, with or without a disc.
+        for (i, (canonical, actual)) in fighter.clip_aliases.iter().enumerate() {
+            for (other, other_actual) in &fighter.clip_aliases[i + 1..] {
+                if canonical == other || actual == other_actual {
+                    bad.push(format!(
+                        "{}: duplicate alias {canonical}<-{actual} / {other}<-{other_actual}",
+                        kind.name()
+                    ));
+                }
+            }
+        }
+        let path = source.join(fighter.animations);
+        let Ok(bytes) = std::fs::read(&path) else {
+            eprintln!("SKIP: {} ({}) animations not in the asset cache", kind.name(), fighter.animations);
+            continue;
+        };
+        // Parse without aliases to see the clip names exactly as the disc has them.
+        let raw = Animations::parse(&bytes, &[])?;
+        checked += 1;
+        for (canonical, actual) in fighter.clip_aliases {
+            if raw.clips.contains_key(*canonical) {
+                bad.push(format!(
+                    "{}: alias {canonical}<-{actual} shadows the disc's own {canonical} clip",
+                    kind.name()
+                ));
+            }
+            if !raw.clips.contains_key(*actual) {
+                bad.push(format!(
+                    "{}: alias {canonical}<-{actual} names a clip the disc does not have",
+                    kind.name()
+                ));
+            }
+        }
+    }
+    if checked == 0 {
+        eprintln!("SKIP: real-disc cache absent");
+    }
+    assert!(bad.is_empty(), "clip alias problems:\n{}", bad.join("\n"));
+    Ok(())
+}
