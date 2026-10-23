@@ -178,6 +178,36 @@ pub fn extract_for(disc_path: &Path, out: &Path, fighter: &FighterAssets<'_>) ->
     Ok(())
 }
 
+/// The common item archive (the Super Scope and its beam are in it). Optional: a fighter's asset set is complete
+/// without it, and an item that needs it is simply unavailable until it is extracted.
+pub const ITEM_ASSETS: [&str; 1] = ["ItCo.dat"];
+
+/// Whether the items archive has been extracted into `dir`.
+pub fn items_present(dir: &Path) -> bool {
+    ITEM_ASSETS.iter().all(|name| {
+        fs::read(dir.join(name)).ok().is_some_and(|bytes| crate::dat::Dat::parse(&bytes).is_ok())
+    })
+}
+
+/// Extracts [`ITEM_ASSETS`] from the player's disc into the git-ignored `out`, leaving everything else as it is.
+pub fn extract_items(disc_path: &Path, out: &Path) -> Result<()> {
+    guard_output(out)?;
+    let mut disc = Disc::open(disc_path)?;
+    let mut blobs = Vec::new();
+    for name in ITEM_ASSETS {
+        let bytes = disc.file(name)?;
+        crate::dat::Dat::parse(&bytes)?;
+        blobs.push((name, bytes));
+    }
+    fs::create_dir_all(out)?;
+    for (name, bytes) in blobs {
+        let target = out.join(name);
+        guard_output(&target)?;
+        fs::write(target, bytes)?;
+    }
+    Ok(())
+}
+
 fn guard_output(out: &Path) -> Result<()> {
     let absolute = std::path::absolute(out)?;
     for ancestor in absolute.ancestors() {

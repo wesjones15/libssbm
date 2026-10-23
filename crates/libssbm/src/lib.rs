@@ -20,6 +20,7 @@ pub mod projectile;
 pub mod reaction;
 pub mod rebirth;
 pub mod samus;
+pub mod scope;
 pub mod yoshi;
 pub use params::Params;
 pub mod sim;

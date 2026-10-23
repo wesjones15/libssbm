@@ -570,3 +570,70 @@ pub fn load_donkey_specials(dir: &Path) -> Result<libssbm::donkey::Specials> {
         spin_horizontal: fighter.f32(dk + 0x54)?,
     })
 }
+
+/// The Super Scope's tuning: the item's own attributes (ItCo.dat, `itSScopeAttributes`) and the two words of
+/// `ftCommonData` the fighter's scope states read (PlCo.dat: x5B8 the longest hold, x5BC the taps of a burst).
+pub fn load_scope(dir: &Path) -> Result<libssbm::scope::ScopeParams> {
+    let article = crate::article::Article::load_item(dir, crate::article::Item::SuperScope, 0)?;
+    // The first three words are integers (ammo and two charge limits), then ten costs, then the muzzle.
+    let int = |i: usize| article.special[i].to_bits();
+    let common_bytes = std::fs::read(dir.join("PlCo.dat"))?;
+    let common = Dat::parse(&common_bytes)?;
+    let global = common.required_ptr(common.root("ftLoadCommonData")?)?;
+    let mut costs = [0u32; libssbm::scope::LEVELS];
+    for (level, cost) in costs.iter_mut().enumerate() {
+        *cost = article.special[3 + level].round().max(0.) as u32;
+    }
+    let params = libssbm::scope::ScopeParams {
+        ammo: int(0),
+        charge_floor: int(1),
+        charge_levels: int(2),
+        costs,
+        muzzle: glam::Vec3::new(article.special[13], article.special[14], article.special[15]),
+        hold_max: common.f32(global + 0x5B8)?,
+        rapid_shots: common.u32(global + 0x5BC)?,
+    };
+    if params.ammo == 0 || params.ammo > 1000 || params.charge_levels == 0 || params.charge_levels > 64 {
+        return Err("the Super Scope's attributes are not the disc's".into());
+    }
+    Ok(params)
+}
+
+/// One level of the Super Scope's beam (`ScopeBeamAttrs` and the level's hitbox script).
+#[derive(Clone, Copy, Debug)]
+pub struct ScopeBeam {
+    /// Melee units a tick (`floats[level].velocity`).
+    pub velocity: f32,
+    /// The beam model and its hitbox grow by this (`floats[level].scale`).
+    pub scale: f32,
+    /// Ticks it flies (`floats[level].lifetime`).
+    pub lifetime: f32,
+    /// The hitbox's damage, radius and element in this level's state script.
+    pub damage: f32,
+    pub radius: f32,
+    pub element: u32,
+}
+
+/// The ten levels of the beam.
+pub fn load_scope_beams(dir: &Path) -> Result<[ScopeBeam; libssbm::scope::LEVELS]> {
+    use crate::article::{Article, Item};
+    use libssbm::action::Command;
+    let mut beams = [ScopeBeam { velocity: 0., scale: 1., lifetime: 0., damage: 0., radius: 0., element: 0 }; libssbm::scope::LEVELS];
+    for (level, beam) in beams.iter_mut().enumerate() {
+        let article = Article::load_item(dir, Item::SuperScopeBeam, level as u32)?;
+        let hit = article.commands.iter().find_map(|c| match &c.command {
+            Command::Hitbox(h) => Some(h.clone()),
+            _ => None,
+        });
+        let f = |i: usize| article.special[level * 3 + i];
+        *beam = ScopeBeam {
+            velocity: f(0),
+            scale: f(1),
+            lifetime: f(2),
+            damage: hit.as_ref().map_or(0., |h| h.damage),
+            radius: hit.as_ref().map_or(0., |h| h.radius),
+            element: hit.as_ref().map_or(0, |h| h.element),
+        };
+    }
+    Ok(beams)
+}
