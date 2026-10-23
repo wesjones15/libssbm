@@ -423,6 +423,10 @@ pub unsafe extern "C" fn ssbm_assets_complete(dir: *const c_char, kind: u32) -> 
 pub unsafe extern "C" fn ssbm_extract(disc: *const c_char, dir: *const c_char, kind: u32) -> u32 {
     guarded(0, || {
         let result = (|| -> libssbm_assets::Result<()> {
+            // 100: the common item archive (the Super Scope), which no fighter's set includes.
+            if kind == 100 {
+                return libssbm_assets::disc::extract_items(unsafe { path(disc) }?, unsafe { path(dir) }?);
+            }
             let fighter = fighter_assets(kind)?;
             libssbm_assets::disc::extract_for(
                 unsafe { path(disc) }?,
