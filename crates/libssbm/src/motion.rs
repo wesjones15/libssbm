@@ -132,6 +132,7 @@ pub fn select(s: &Sim, input: Input) -> (&'static str, f32) {
                 1 => "Attack100Loop",
                 _ => "Attack100End",
             },
+            Move::SuperScope => s.scope_clip(),
             Move::BackAir => "AttackAirB",
             Move::SideTilt => "AttackS3S",
             Move::UpTilt => "AttackHi3",

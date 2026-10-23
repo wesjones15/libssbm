@@ -5,6 +5,7 @@
 use crate::{behavior::Behavior, Params};
 use glam::Vec3;
 mod actions;
+mod scope_move;
 
 pub const TICK_HZ: f64 = 60.;
 pub const JUMP: u32 = 1;
@@ -102,6 +103,8 @@ pub enum Move {
     /// The third jab (Attack13) and the rapid jab (Attack100Start, Loop, End).
     Jab3 = 15,
     RapidJab = 16,
+    /// The Super Scope held and fired (a host-selected alternate of a fighter's neutral special; see `scope`).
+    SuperScope = 17,
     // Special-move slots 20..24 are fighter-neutral: each fighter's `Behavior`
     // maps its own specials here (neutral, side, side-strong, up, down).
     SpecialN = 20,
@@ -245,6 +248,8 @@ pub struct Sim {
     queued_sounds: Vec<crate::action::SoundCue>,
     voice_rng: u32,
     pub(crate) jab: JabChain,
+    /// The Super Scope in hand, if the host gave the fighter one (`Sim::set_scope`).
+    pub scope: Option<crate::scope::Scope>,
     buffered_attack: u32,
     pub(crate) knockdown_grace: u32,
     previous: Input,
@@ -364,6 +369,7 @@ impl Sim {
             queued_sounds: Vec::new(),
             voice_rng: 0x9e37_79b9,
             jab: JabChain::default(),
+            scope: None,
             buffered_attack: 0,
             knockdown_grace: 0,
             previous: Input::idle(),

@@ -413,7 +413,7 @@ impl Luigi {
 impl Behavior for Luigi {
     fn slot(&self, m: Move) -> u32 {
         match m {
-            Move::SpecialN => 0,
+            Move::SpecialN | Move::SuperScope => 0,
             Move::SpecialS | Move::SpecialS2 => 2,
             Move::SpecialHi => 3,
             Move::SpecialLw => 4,
@@ -430,7 +430,11 @@ impl Behavior for Luigi {
         m == Move::SpecialHi
     }
 
-    fn select_special(&self, _sim: &Sim, input: Input, movement: Vec3) -> Option<Move> {
+    fn select_special(&self, sim: &Sim, input: Input, movement: Vec3) -> Option<Move> {
+        // The host swapped the Fireball for the Super Scope (an alternate neutral special).
+        if sim.scope.is_some() && input.buttons & NEUTRAL_B != 0 {
+            return Some(Move::SuperScope);
+        }
         Some(if input.buttons & NEUTRAL_B != 0 {
             Move::SpecialN
         } else if input.buttons & UP_B != 0 {
@@ -446,6 +450,7 @@ impl Behavior for Luigi {
     fn enter_special(&self, sim: &mut Sim, _host: &mut dyn Host, m: Move, _input: Input) {
         let s = &self.specials;
         match m {
+            Move::SuperScope => sim.scope_begin(),
             Move::SpecialS => {
                 // ftLg_SpecialS_SetVars / _Enter: a smash input starts pre-charged, one launch in
                 // x44 misfires, and the wind-up slows him by x18.
@@ -494,7 +499,7 @@ impl Behavior for Luigi {
         // Fireball (SpecialN) spawns through the projectile path; no body sound.
     }
     fn aimable(&self, m: Move) -> bool {
-        matches!(m, Move::SpecialN | Move::SpecialS)
+        matches!(m, Move::SpecialN | Move::SpecialS | Move::SuperScope)
     }
     fn aim_frozen(&self, sim: &Sim) -> bool {
         sim.current_move == Some(Move::SpecialS) && sim.stage >= S_LAUNCH
@@ -642,8 +647,13 @@ impl Behavior for Luigi {
     fn side_special_upper_aim(&self, _sim: &Sim) -> Option<(f32, f32)> {
         None
     }
-    fn hit_attachment(&self, _sim: &Sim, _m: Move) -> (Option<usize>, Vec3) {
-        (None, Vec3::ZERO)
+    fn hit_attachment(&self, _sim: &Sim, m: Move) -> (Option<usize>, Vec3) {
+        // The scope's beam leaves from the right hand holding it (FtPart_RThumbNb, through the common bone table).
+        if m == Move::SuperScope {
+            (Some(0x1_0000 + 49), Vec3::ZERO)
+        } else {
+            (None, Vec3::ZERO)
+        }
     }
     fn projectile_move(&self, m: Move) -> bool {
         m == Move::SpecialN

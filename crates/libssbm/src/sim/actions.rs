@@ -9,7 +9,7 @@ const HURT_LIGHT: f32 = 0.05;
 const HURT_HEAVY: f32 = 0.2;
 
 impl Sim {
-    fn finish_disc_action(&mut self) {
+    pub(super) fn finish_disc_action(&mut self) {
         if self.grabbed {
             self.set_grabbed(true);
             return;
@@ -55,6 +55,10 @@ impl Sim {
                 };
                 self.start(host, m, input);
             }
+            return;
+        }
+        if m == Move::SuperScope {
+            self.update_scope(host, input, pressed);
             return;
         }
         if matches!(m, Move::Jab | Move::Jab2 | Move::Jab3) && self.jab_chain(host, input, pressed) {
@@ -282,6 +286,10 @@ impl Sim {
                     }
                 }
                 Command::ThrowFlag(_) => {
+                    // ftCo_ItemScopeFire / Rapid: the clip's throw flag is the shot.
+                    if self.current_move == Some(Move::SuperScope) {
+                        self.scope_shoot(host);
+                    }
                     // ftCo_Attack100Loop_Anim: the loop's beat. With no press or release since
                     // the last one, the rapid jab ends; otherwise it goes round again.
                     if self.current_move == Some(Move::RapidJab)

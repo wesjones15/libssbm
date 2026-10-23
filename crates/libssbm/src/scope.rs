@@ -95,6 +95,13 @@ pub enum ScopeStage {
     End,
 }
 
+/// A fighter's Super Scope: the disc's tuning and the state of its magazine and use.
+#[derive(Clone, Debug)]
+pub struct Scope {
+    pub params: ScopeParams,
+    pub state: ScopeState,
+}
+
 /// The scope's state across ticks: its ammo, and the hold being built up.
 #[derive(Clone, Debug, Default)]
 pub struct ScopeState {
@@ -108,6 +115,9 @@ pub struct ScopeState {
     pub level: Option<u32>,
     /// Rapid taps left (`mv.co.common.x0` in the rapid state).
     pub shots_left: u32,
+    /// The Rapid clip's frame last tick, to see it come round (the disc marks the clip as looping, or the sim
+    /// restarts it).
+    pub last_frame: f32,
     /// Ticks since a shot was last fired (for the host's slow refill).
     pub idle: u32,
     /// Fractional ammo refilled so far.
