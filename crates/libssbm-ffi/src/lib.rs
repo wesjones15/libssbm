@@ -2306,6 +2306,106 @@ mod tests {
         assert!(!sim.motion.clip.is_empty());
         Ok(())
     }
+    /// What the host feeds the sim in play (sticks, aims, buttons, the walking pace, the facing), for every
+    /// fighter and every move: the posed model never has a vertex that is not finite (Unity's "abnormal
+    /// mesh bounds": a NaN mesh).
+    #[test]
+    fn every_fighters_posed_model_stays_finite_under_play_inputs() -> libssbm_assets::Result<()> {
+        let dir = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../assets");
+        let buttons = [
+            0u32, 2u32, 2u32 | 8u32, 2u32 | 16u32, 4u32, 4u32 | 8u32,
+            4u32 | 16u32, 128 /* grab */, 1 /* jump */, 32 /* sprint */ | 2u32, 4096 /* defend */,
+            256, 512, 1024, 2048,
+        ];
+        let sticks = [(0., 0.), (1., 0.), (-1., 0.), (0., 1.), (0., -1.), (0.6, 0.6), (0.2, 0.)];
+        let aims = [(0., 0., 1.), (1., 0., 0.), (0., 1., 0.), (0., -1., 0.), (0.6, -0.5, 0.6), (0., 0., 0.)];
+        for kind in 0u32..8 {
+            let fighter = libssbm_assets::fighter::FighterKind::from_u32(kind).unwrap();
+            if !fighter.assets().unwrap().complete(&dir) {
+                eprintln!("SKIP: {kind} disc cache absent");
+                continue;
+            }
+            let cdir = std::ffi::CString::new(dir.to_str().unwrap()).unwrap();
+            let sim = unsafe { ssbm_sim_new_fighter(cdir.as_ptr(), V3::default(), kind) };
+            assert!(!sim.is_null());
+            let view = unsafe { ssbm_view_new(cdir.as_ptr(), kind, 0) };
+            assert!(!view.is_null());
+            let mut host = HostTable { collide: None, event: None, user: std::ptr::null_mut() };
+            let mut bad = None;
+            'run: for step in 0..3000u32 {
+                let phase = step / 24;
+                let pick = |n: usize, salt: u32| ((phase.wrapping_mul(2654435761).wrapping_add(salt) >> 7) as usize) % n;
+                let (sx, sz) = sticks[pick(sticks.len(), 1)];
+                let a = aims[pick(aims.len(), 2)];
+                let pad = Pad {
+                    movement: V3 { x: sx, y: 0., z: sz },
+                    aim: V3 { x: a.0, y: a.1, z: a.2 },
+                    buttons: if step % 24 < 3 { buttons[pick(buttons.len(), 3)] } else { 0 },
+                    allowed: 0x1f,
+                };
+                // The host's fixed step (50 Hz in RoR2) and its frame time (34 fps on a weaker PC) are not the sim's 60.
+                let (fixed, frame) = [(1. / 60., 1. / 60.), (0.02, 0.029), (1. / 30., 0.012), (0.02, 0.0083), (0.02, 0.05)][phase as usize % 5];
+                unsafe {
+                    ssbm_sim_facing(sim, V3 { x: a.0, y: 0., z: a.2 });
+                    ssbm_sim_step(sim, &mut host, &pad, fixed);
+                    assert_eq!(ssbm_view_update(view, sim, frame), 1);
+                    let v = &*view;
+                    if let Some(i) = v.positions.iter().position(|p| !(p.x.is_finite() && p.y.is_finite() && p.z.is_finite())) {
+                        bad = Some((step, i, pad.buttons, (sx, sz), a));
+                        break 'run;
+                    }
+                }
+            }
+            unsafe { ssbm_view_free(view) };
+            unsafe { ssbm_sim_free(sim) };
+            assert!(bad.is_none(), "fighter {kind}: a non-finite vertex {bad:?}");
+        }
+        Ok(())
+    }
+    /// Every common and fighter effect model, posed at every frame it lasts (and a few past it) facing cameras
+    /// from every side: no vertex that is not finite.
+    #[test]
+    fn every_effect_models_pose_stays_finite() -> libssbm_assets::Result<()> {
+        let dir = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../assets");
+        let cameras = [(0., 0., 1.), (0., 0., -1.), (1., 0.5, 0.), (0., 1., 0.), (0., -1., 0.), (0., 0., 0.), (30., 4., -80.)];
+        let (mut checked, mut report) = (0, Vec::new());
+        for kind in 0u32..8 {
+            let fighter = libssbm_assets::fighter::FighterKind::from_u32(kind).unwrap();
+            if !fighter.assets().unwrap().complete(&dir) {
+                eprintln!("SKIP: {kind} disc cache absent");
+                continue;
+            }
+            let cdir = std::ffi::CString::new(dir.to_str().unwrap()).unwrap();
+            for model in 0u32..64 {
+                let view = unsafe { ssbm_effect_new(cdir.as_ptr(), kind, model) };
+                if view.is_null() {
+                    continue;
+                }
+                let duration = unsafe { ssbm_object_duration(view) };
+                let last = if duration.is_finite() && duration > 0. { duration.ceil() as u32 + 6 } else { 120 };
+                'model: for frame in 0..=last {
+                    for (i, c) in cameras.iter().enumerate() {
+                        unsafe {
+                            if ssbm_object_update(view, frame as f32) != 1 {
+                                break 'model;
+                            }
+                            ssbm_object_camera(view, V3 { x: c.0, y: c.1, z: c.2 });
+                            let v = &*view;
+                            checked += 1;
+                            if v.positions.iter().any(|p| !(p.x.is_finite() && p.y.is_finite() && p.z.is_finite())) {
+                                report.push(format!("fighter {kind} effect model {model}: frame {frame}, camera #{i}"));
+                                break 'model;
+                            }
+                        }
+                    }
+                }
+                unsafe { ssbm_view_free(view) };
+            }
+        }
+        eprintln!("{checked} effect poses checked");
+        assert!(report.is_empty(), "non-finite effect vertices: {report:#?}");
+        Ok(())
+    }
     #[test]
     fn captain_and_link_assets_load_and_sim_steps() -> libssbm_assets::Result<()> {
         let dir = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../assets");

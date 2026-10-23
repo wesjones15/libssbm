@@ -1,6 +1,6 @@
 //! Poses every clip of a fighter at every frame on costume 0 and reports any skinned vertex that is not finite
 //! (a NaN there is Unity's "abnormal mesh bounds"). `cargo run --release -p libssbm-assets --example finite_audit -- <assets> [kind]`
-use libssbm_assets::{animation::Animations, fighter, model::Model};
+use libssbm_assets::{animation::Animations, fighter, model::Model, presentation::{blend_pose, splice_pose}};
 use std::path::PathBuf;
 
 fn main() {
@@ -34,5 +34,28 @@ fn main() {
             println!("NON-FINITE clip {name} at frame {frame} (pose finite: {pose_ok})");
         }
     }
-    println!("{} clips, {checked} poses checked, {bad} clips with non-finite output", animations.clips.len());
+    // The mobile-attack layering: each clip as the action over a walking gait, spliced and blended.
+    let mut layered_bad = 0;
+    if let Some(root) = f.upper_body_root {
+        let gaits: Vec<&String> = animations.clips.keys().filter(|k| k.starts_with("Walk") || *k == "Run").collect();
+        for (name, clip) in &animations.clips {
+            let frames = clip.frames.ceil() as usize;
+            'clip: for frame in (0..=frames).step_by(2) {
+                let action = animations.pose(&model, name, frame as f32, false);
+                for gait in &gaits {
+                    let lower = animations.pose(&model, gait, 5., true);
+                    let combined = splice_pose(&model, &lower, &action, root);
+                    let mixed = blend_pose(&model, &action, &combined, 0.7);
+                    let finite = |pose: &[glam::Mat4]| (0..model.batches.len())
+                        .all(|i| model.skin(i, pose).iter().all(|(p, n)| p.is_finite() && n.is_finite()));
+                    if !finite(&combined) || !finite(&mixed) {
+                        layered_bad += 1;
+                        println!("NON-FINITE layered: action {name} frame {frame} over {gait} (splice finite: {})", finite(&combined));
+                        break 'clip;
+                    }
+                }
+            }
+        }
+    }
+    println!("{} clips, {checked} poses checked, {bad} clips with non-finite output, {layered_bad} clips non-finite when layered over a gait", animations.clips.len());
 }
