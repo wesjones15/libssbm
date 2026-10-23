@@ -60,8 +60,6 @@ struct Generator {
     life: u32,
     count: f32,
     kind: Option<u32>,
-    /// Made by `spawn`, not by another generator or particle.
-    root: bool,
 }
 enum Child {
     Particle(u32, Vec3, Vec3, bool),
@@ -74,14 +72,10 @@ pub struct System {
     pub errors: Vec<String>,
     generators: Vec<Generator>,
     random: u32,
-    /// Attachment keys whose generators run until `stop` rather than for their own life: a
-    /// projectile's trail lasts exactly as long as the projectile (the source's generator hangs
-    /// on the item's joint and the item's own lifetime ends it).
-    sustained: std::collections::BTreeSet<u64>,
 }
 impl System {
     pub fn spawn(&mut self, id: u32, transform: Mat4, attachment: u64) -> Result<(), String> {
-        self.generator(id, transform, attachment, None, true)
+        self.generator(id, transform, attachment, None)
     }
     fn generator(
         &mut self,
@@ -89,7 +83,6 @@ impl System {
         transform: Mat4,
         attachment: u64,
         kind: Option<u32>,
-        root: bool,
     ) -> Result<(), String> {
         let d = self
             .definitions
@@ -113,7 +106,6 @@ impl System {
                 0.
             },
             kind,
-            root,
         });
         Ok(())
     }
@@ -129,19 +121,7 @@ impl System {
             }
         }
     }
-    /// Keeps every generator attached to `key` running until `stop(key)`, whatever life its
-    /// definition gives it.
-    pub fn sustain(&mut self, key: u64) {
-        if key != 0 {
-            self.sustained.insert(key);
-        }
-    }
-    /// Whether any generator or particle is attached to `key`.
-    pub fn running(&self, key: u64) -> bool {
-        self.generators.iter().any(|g| g.attachment == key) || self.particles.iter().any(|p| p.attachment == key)
-    }
     pub fn stop(&mut self, key: u64) {
-        self.sustained.remove(&key);
         self.generators.retain(|g| g.attachment != key);
         self.particles.retain(|p| p.attachment != key);
     }
@@ -177,7 +157,7 @@ impl System {
                 }
                 self.particles.push(p);
             }
-            if g.life > 0 && !(g.root && self.sustained.contains(&g.attachment)) {
+            if g.life > 0 {
                 g.life -= 1;
                 if g.life == 0 {
                     continue;
@@ -215,7 +195,6 @@ impl System {
                         transform * Mat4::from_translation(position),
                         attachment,
                         kind,
-                        false,
                     ) {
                         self.errors.push(e);
                     }

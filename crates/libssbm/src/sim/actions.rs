@@ -282,7 +282,6 @@ impl Sim {
                     }
                 }
                 Command::ThrowFlag(_) => {
-                    self.using_behavior(|b, s| b.script_flag(s));
                     // ftCo_Attack100Loop_Anim: the loop's beat. With no press or release since
                     // the last one, the rapid jab ends; otherwise it goes round again.
                     if self.current_move == Some(Move::RapidJab)

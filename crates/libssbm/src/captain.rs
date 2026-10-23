@@ -28,9 +28,6 @@ pub struct Specials {
     pub raptor_terminal: f32,
     /// Falcon Dive launch speed (ftCaptain_DatAttrs.x44 specialhi_horz_vel).
     pub dive_velocity: f32,
-    /// The air Falcon Kick flame's tilt in degrees (x70 speciallw_flame_particle_angle,
-    /// ftCa_SpecialHi_800E3EAC passes it as the effect's Z rotation).
-    pub kick_flame_angle: f32,
 }
 impl Specials {
     /// Synthetic fixture only; runtime hosts read the disc.
@@ -41,7 +38,6 @@ impl Specials {
             raptor_grav: 0.1,
             raptor_terminal: 2.,
             dive_velocity: 3.2,
-            kick_flame_angle: 30.,
         }
     }
 }
@@ -111,7 +107,7 @@ impl Captain {
         // hitbox comes up.
         if sim.stage_vec.x == 0. && !sim.action.active.is_empty() {
             sim.stage_vec.x = 1.;
-            let wind = crate::effect::part_cue_bound(sim, 1167, crate::effect::part::TOP_N); // x2219_b0 set
+            let wind = crate::effect::part_cue(sim, 1167, crate::effect::part::TOP_N);
             sim.action.effects.push(wind);
         }
         if sim.grounded {
@@ -292,11 +288,12 @@ impl Behavior for Captain {
             let spark = crate::effect::part_cue(sim, 1169, crate::effect::part::HEAD_N);
             sim.action.effects.push(spark);
         } else if m == Move::SpecialLw {
-            // Falcon Kick: a dash kick with a trailing flame. The flame is not made here: the
-            // clip raises its throw flag (frame 1) and Anim makes it then (script_flag).
+            // Falcon Kick: a dash kick with a trailing flame.
+            // ftcaptainspeciallw.c::ftCa_SpecialHi_800E3EAC (efAsync 0x490).
             sim.velocity.x = 0.;
             sim.velocity.z = 0.;
-            sim.stage_vec.y = 0.;
+            let flame = crate::effect::part_cue(sim, 1168, crate::effect::part::R_FOOT_JA);
+            sim.action.effects.push(flame);
         } else if m == Move::SpecialN {
             // Falcon Punch: a single devastating punch. The flame at the fist is
             // authored by the disc script (efasync 0x446 and 0x3FF).
@@ -375,30 +372,6 @@ impl Behavior for Captain {
                 true
             }
             _ => false,
-        }
-    }
-    /// ftCa_SpecialHi_800E3EAC (the Kick's Anim): each raise of the clip's throw flag toggles the
-    /// flame. With no effect up it makes efAsync 0x490 (id 1168) on the right foot (RFootJA) on the
-    /// ground or the left (LFootJA, tilted by x70) in the air and tags it x2219_b0; with one up it
-    /// calls ftCommon_8007DB24, efLib_DestroyAll. The ground clip raises the flag on frames 1 and
-    /// 33 (the hitboxes clear), the air clip once, and the motion change ends what is left.
-    fn script_flag(&self, sim: &mut Sim) {
-        if sim.current_move != Some(Move::SpecialLw) || !sim.motion.clip.contains("Lw") || sim.motion.clip.ends_with("End") {
-            return;
-        }
-        if sim.stage_vec.y == 0. {
-            sim.stage_vec.y = 1.;
-            let air = sim.motion.clip == "SpecialAirLw";
-            let part = if air { crate::effect::part::L_FOOT_JA } else { crate::effect::part::R_FOOT_JA };
-            let mut flame = crate::effect::part_cue_bound(sim, 1168, part);
-            if air {
-                flame.param = self.specials.kick_flame_angle.to_radians();
-            }
-            sim.action.effects.push(flame);
-        } else {
-            sim.stage_vec.y = 0.;
-            let end = crate::effect::destroy_all_cue(sim);
-            sim.action.effects.push(end);
         }
     }
     fn on_connect(&self, sim: &mut Sim) {

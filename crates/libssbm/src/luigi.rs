@@ -485,8 +485,7 @@ impl Behavior for Luigi {
                     sim.velocity.z = horizontal.z;
                 }
                 sim.stage_vec = Vec3::ZERO;
-                let mut gfx = Self::cue(sim, CYCLONE_GFX, 0);
-                gfx.destroy_on_change = true; // ftLg_SpecialLw sets x2219_b0 (ftluigispeciallw.c:52)
+                let gfx = Self::cue(sim, CYCLONE_GFX, 0);
                 sim.action.effects.push(gfx);
                 Self::hold_gravity(sim, 0.);
             }

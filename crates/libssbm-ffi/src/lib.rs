@@ -943,17 +943,8 @@ pub extern "C" fn ssbm_effect_target(id: u32) -> i32 {
 }
 #[unsafe(no_mangle)]
 pub extern "C" fn ssbm_effect_flags(id: u32) -> u32 {
-    // Bit 0: joint-bound (ftCo_8009F834, efAlt_Spawn). Bits 1 and 2: the effect's own target, and
-    // its companion, also take the joint's orientation (efLib_Create_AttachChild); otherwise they
-    // follow only its position and face the fighter's heading. Bit 3: the cue's strength is a
-    // tilt in radians below the heading (efLib_Cb_SetRotYZ_FromParamZ_FighterDir, Falcon Kick).
-    let (main, second) = libssbm::effect::follows_orientation(id);
-    u32::from(libssbm::effect::attached(id)) | (u32::from(main) << 1) | (u32::from(second) << 2) | (u32::from(id == 1168) << 3)
-}
-/// The frames an effect lives when its spawn code sets the lifetime itself (0: the descriptor's).
-#[unsafe(no_mangle)]
-pub extern "C" fn ssbm_effect_lifetime(id: u32) -> f32 {
-    libssbm::effect::lifetime_override(id).unwrap_or(0) as f32
+    // Attachment policy from ftCo_8009F834 and efAlt_Spawn.
+    u32::from(libssbm::effect::attached(id))
 }
 /// A second effect spawned with `id` (same encoding as `ssbm_effect_target`;
 /// `i32::MIN` when there is none).
@@ -1321,35 +1312,6 @@ pub unsafe extern "C" fn ssbm_sim_jump_height(handle: *mut Handle, height: f32) 
         if !h.poisoned && height.is_finite() && height >= 0. {
             h.sim.host_jump_height = if height > 0. { Some(height) } else { None };
             h.net.log(Op::JumpHeight(height));
-        }
-    }
-}
-/// The character-select preview of a fighter's up special: an up special rises as high as it does
-/// in play (a standard jump apex of `PREVIEW_JUMP_HEIGHT` units; with no host height the sim has
-/// only the disc's small launch speed and the move is over in a dozen frames, before the voice and
-/// the effects of the clip begin), and a move the host only adapts shows the disc's own version.
-/// # Safety
-/// Unique live handle or null.
-#[unsafe(no_mangle)]
-pub unsafe extern "C" fn ssbm_sim_select_preview(handle: *mut Handle) {
-    if let Some(h) = unsafe { handle.as_mut() } {
-        if !h.poisoned {
-            h.sim.host_jump_height = Some(PREVIEW_JUMP_HEIGHT);
-            h.sim.source_recovery = true;
-        }
-    }
-}
-/// Apex of the select preview's up special in sim units (about 2.5 m at 0.1 m a unit).
-pub const PREVIEW_JUMP_HEIGHT: f32 = 25.;
-/// Select-screen preview: moves that the host adapts beyond the disc show the disc's own
-/// behaviour (see `Sim::source_recovery`).
-/// # Safety
-/// Unique live handle or null.
-#[unsafe(no_mangle)]
-pub unsafe extern "C" fn ssbm_sim_source_recovery(handle: *mut Handle, on: u32) {
-    if let Some(h) = unsafe { handle.as_mut() } {
-        if !h.poisoned {
-            h.sim.source_recovery = on != 0;
         }
     }
 }
@@ -2069,7 +2031,6 @@ pub unsafe extern "C" fn ssbm_sim_interrupt(handle: *mut Handle) {
         let h = unsafe { &mut *handle };
         if !h.poisoned {
             h.sim.interrupt();
-            h.sim.end_effects();
             h.net.log(Op::Interrupt);
         }
     }

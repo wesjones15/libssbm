@@ -251,11 +251,8 @@ impl Fox {
         Self::hold_gravity(sim, 0.);
         // The source spends the double jump on the launch (x1968_jumpsUsed).
         sim.jumps_used = sim.params.jumps + sim.options.extra_jumps;
-        // ftFx_SpecialHi_CreateLaunchGFX: efSync 1164 on the hip, tagged x2219_b0, so the
-        // motion change that ends the launch (SpecialHiFall/Landing, Ft_MF_None) destroys it
-        // (Fighter_ChangeMotionState -> efLib_DestroyAll). Its lifetime is 0: it has no end
-        // of its own.
-        let flame = Self::cue(sim, 1164, PART_HIP_N, true);
+        // ftFx_SpecialHi_CreateLaunchGFX: efSync 1164 on the hip.
+        let flame = Self::cue(sim, 1164, PART_HIP_N, false);
         sim.action.effects.push(flame);
     }
     fn end_launch(&self, sim: &mut Sim) {

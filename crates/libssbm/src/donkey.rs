@@ -159,7 +159,7 @@ impl Donkey {
                 if last < mark && frame >= mark {
                     // ftDk_SpecialLw_8010E0CC / 8010E148: the slam's burst on TransN.
                     let id = if sim.grounded { 1222 } else { 1223 };
-                    let burst = crate::effect::part_cue_bound(sim, id, crate::effect::part::TRANS_N); // x2219_b0 set (ftdonkeyspeciallw.c:172)
+                    let burst = crate::effect::part_cue(sim, id, crate::effect::part::TRANS_N);
                     sim.action.effects.push(burst);
                     sim.emit(host, EventKind::Hit, Move::SpecialLw as u32, strength);
                 }

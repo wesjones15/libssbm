@@ -453,7 +453,6 @@ pub fn load_captain_specials(dir: &Path) -> Result<libssbm::captain::Specials> {
         raptor_grav: fighter.f32(ca + 0x18)?,
         raptor_terminal: fighter.f32(ca + 0x1c)?,
         dive_velocity: fighter.f32(ca + 0x44)?,
-        kick_flame_angle: fighter.f32(ca + 0x70)?,
     })
 }
 
