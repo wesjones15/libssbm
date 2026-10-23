@@ -2087,6 +2087,131 @@ pub unsafe extern "C" fn ssbm_sim_hurt(handle: *mut Handle) {
 /// A hit that took `severity` (a fraction of the fighter's health): the fighter is hurt and a
 /// big enough hit plays a hurt voice. Returns 1 when applied; a null handle is the capability
 /// query and returns 0 without effect.
+/// Gives a Luigi the Super Scope in place of his Fireball (`on` 1), or takes it away (0). `refill` is the shots of
+/// ammo the magazine refills a second while idle (host adaptation; 0 never). Safe to call every step: nothing
+/// changes while the arguments do not, and the magazine keeps its ammo. Returns 1 while the scope is in hand; 0
+/// when it is not, the fighter cannot use one, or the items archive (ItCo.dat) was not extracted.
+/// # Safety
+/// Unique live sim or null. Call outside a native host callback.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn ssbm_sim_scope(handle: *mut Handle, on: u32, refill: f32) -> u32 {
+    if handle.is_null() {
+        return 0;
+    }
+    guarded(0, || {
+        let h = unsafe { &mut *handle };
+        if h.poisoned {
+            return 0;
+        }
+        let refill = if refill.is_finite() { refill.clamp(0., 100.) } else { 0. };
+        let mut active = false;
+        if on != 0 && h.kind == libssbm_assets::fighter::FighterKind::Luigi {
+            match h.sim.scope.as_mut() {
+                Some(scope) => {
+                    scope.params.refill_per_second = refill;
+                    active = true;
+                }
+                None => match libssbm_assets::params::load_scope(&h.net.dir) {
+                    Ok(mut params) => {
+                        params.refill_per_second = refill;
+                        h.sim.set_scope(Some(params));
+                        active = true;
+                    }
+                    Err(e) => error(e),
+                },
+            }
+        } else {
+            h.sim.set_scope(None);
+        }
+        h.net.log(Op::Scope { on: active as u32, refill });
+        active as u32
+    })
+}
+/// The scope's magazine and use, for a HUD.
+#[repr(C)]
+#[derive(Clone, Copy, Default)]
+pub struct ScopeInfo {
+    pub ammo: u32,
+    pub capacity: u32,
+    /// Ticks the button has been held in this use.
+    pub held: u32,
+    /// The charge level that hold has reached (0 to 9).
+    pub level: u32,
+    /// 0 not in use, 1 charging, 2 firing a charged shot, 3 in a burst, 4 ending.
+    pub stage: u32,
+}
+/// Reads the scope's state. Returns 0 when the fighter has no scope.
+/// # Safety
+/// Live sim and a writable `ScopeInfo`.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn ssbm_sim_scope_state(handle: *const Handle, out: *mut ScopeInfo) -> u32 {
+    if handle.is_null() || out.is_null() {
+        return 0;
+    }
+    guarded(0, || {
+        let h = unsafe { &*handle };
+        let Some(scope) = h.sim.scope.as_ref() else { return 0 };
+        unsafe {
+            *out = ScopeInfo {
+                ammo: scope.state.ammo,
+                capacity: scope.params.ammo,
+                held: scope.state.held,
+                level: scope.params.level(scope.state.held),
+                stage: h.sim.scope_stage().map_or(0, |s| s + 1),
+            };
+        }
+        1
+    })
+}
+/// The ten levels of the Super Scope's beam, six floats each: speed (units a tick), scale, life (ticks), damage,
+/// hitbox radius and element. Returns 1, or 0 when the items archive is missing.
+/// # Safety
+/// UTF-8 asset path and 60 writable floats.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn ssbm_scope_beams(dir: *const c_char, out: *mut f32) -> u32 {
+    if dir.is_null() || out.is_null() {
+        return 0;
+    }
+    guarded(0, || {
+        let beams = match unsafe { path(dir) }.and_then(libssbm_assets::params::load_scope_beams) {
+            Ok(b) => b,
+            Err(e) => {
+                error(e);
+                return 0;
+            }
+        };
+        for (i, b) in beams.iter().enumerate() {
+            let row = [b.velocity, b.scale, b.lifetime, b.damage, b.radius, b.element as f32];
+            for (j, v) in row.iter().enumerate() {
+                unsafe { *out.add(i * 6 + j) = *v };
+            }
+        }
+        1
+    })
+}
+/// An item's model as a view (the Super Scope held is item 0x15, state 0; its beam is 0x26, state = charge level).
+/// # Safety
+/// UTF-8 asset path. Free with ssbm_view_free.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn ssbm_item_new(dir: *const c_char, item: u32, state: u32) -> *mut View {
+    guarded(std::ptr::null_mut(), || {
+        let result = (|| {
+            let item = match item {
+                0x15 => libssbm_assets::article::Item::SuperScope,
+                0x26 => libssbm_assets::article::Item::SuperScopeBeam,
+                _ => return Err("unsupported item".into()),
+            };
+            Presentation::item_for(unsafe { path(dir) }?, item, state)
+        })();
+        match result {
+            Ok(a) => Box::into_raw(Box::new(View::new(a))),
+            Err(e) => {
+                error(e);
+                std::ptr::null_mut()
+            }
+        }
+    })
+}
 /// # Safety
 /// Unique live sim or null. Call outside a native host callback.
 #[unsafe(no_mangle)]
@@ -2404,6 +2529,88 @@ mod tests {
         }
         eprintln!("{checked} effect poses checked");
         assert!(report.is_empty(), "non-finite effect vertices: {report:#?}");
+        Ok(())
+    }
+    /// The Super Scope through the C ABI: it is Luigi's alone, a hold fires a charged beam event, the beam and the
+    /// scope are drawable, and a log recorded with the scope in hand replays it on a shadow.
+    #[test]
+    fn luigis_super_scope_works_through_the_abi() -> libssbm_assets::Result<()> {
+        use std::sync::Mutex;
+        static SHOTS: Mutex<Vec<(u32, f32)>> = Mutex::new(Vec::new());
+        unsafe extern "C" fn on_event(_: *mut c_void, e: *const NativeEvent) {
+            let e = unsafe { &*e };
+            if e.kind == 2 && e.move_id == 17 {
+                SHOTS.lock().unwrap().push((e.move_id, e.strength));
+            }
+        }
+        let dir = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../assets");
+        if !libssbm_assets::fighter::LUIGI.complete(&dir) || !libssbm_assets::disc::items_present(&dir) {
+            eprintln!("SKIP: Luigi or the items archive is not extracted");
+            return Ok(());
+        }
+        let cdir = std::ffi::CString::new(dir.to_str().unwrap()).unwrap();
+        let mut host = HostTable { collide: None, event: Some(on_event), user: std::ptr::null_mut() };
+        let pad = |buttons: u32| Pad { movement: V3::default(), aim: V3 { x: 1., y: 0., z: 0. }, buttons, allowed: 0x1f };
+        unsafe {
+            // Only Luigi can hold it.
+            let fox = ssbm_sim_new_fighter(cdir.as_ptr(), V3::default(), 1);
+            assert_eq!(ssbm_sim_scope(fox, 1, 0.), 0, "a fighter without the hook took the scope");
+            ssbm_sim_free(fox);
+
+            let luigi = ssbm_sim_new_fighter(cdir.as_ptr(), V3::default(), 2);
+            assert!(!luigi.is_null());
+            assert_eq!(ssbm_sim_record(luigi, 1), 1);
+            assert_eq!(ssbm_sim_scope(luigi, 1, 0.), 1, "{}", ERROR.with(|e| e.borrow().to_string_lossy().into_owned()));
+            let mut info = ScopeInfo::default();
+            assert_eq!(ssbm_sim_scope_state(luigi, &mut info), 1);
+            assert_eq!((info.ammo, info.capacity), (48, 48));
+            SHOTS.lock().unwrap().clear();
+            // Hold 40 ticks, then let go and play it out.
+            for t in 0..400 {
+                ssbm_sim_scope(luigi, 1, 0.);
+                ssbm_sim_step(luigi, &mut host, &pad(if t < 40 { 256 } else { 0 }), 1. / 60.);
+            }
+            let shots = SHOTS.lock().unwrap().clone();
+            assert_eq!(shots.len(), 1, "a held shot: {shots:?}");
+            assert!(shots[0].1 >= 3. && shots[0].1 <= 6., "level {}", shots[0].1);
+            ssbm_sim_scope_state(luigi, &mut info);
+            assert!(info.ammo < 48, "the shot cost nothing");
+
+            // The beam and the scope draw, and the beam flies.
+            let beam = projectile::ssbm_scope_beam_new(cdir.as_ptr(), 4, V3 { x: 1., y: 0., z: 0. });
+            assert!(!beam.is_null());
+            let mut state = projectile::State::default();
+            for _ in 0..20 {
+                projectile::ssbm_projectile_step(beam, 1. / 60., V3::default(), 0);
+            }
+            assert_eq!(projectile::ssbm_projectile_state(beam, &mut state), 1);
+            assert!(state.position.x > 30., "the beam did not fly: {:?}", state.position.x);
+            assert!(state.damage > 5., "damage {}", state.damage);
+            projectile::ssbm_projectile_free(beam);
+            let mut rows = [0f32; 60];
+            assert_eq!(ssbm_scope_beams(cdir.as_ptr(), rows.as_mut_ptr()), 1);
+            assert!(rows[9 * 6 + 3] > rows[3], "level 9 does not hit harder");
+            for (item, state) in [(0x15u32, 0u32), (0x26, 0), (0x26, 9)] {
+                let view = ssbm_item_new(cdir.as_ptr(), item, state);
+                assert!(!view.is_null(), "item {item:#x} state {state}: {}", ERROR.with(|e| e.borrow().to_string_lossy().into_owned()));
+                ssbm_view_free(view);
+            }
+
+            // A shadow fed the owner's log ends up in the same place with the same magazine.
+            let mut log = vec![0u8; 1 << 16];
+            let length = ssbm_sim_ops_take(luigi, log.as_mut_ptr(), log.len() as u32);
+            assert!(length > 0);
+            let shadow = ssbm_sim_new_fighter(cdir.as_ptr(), V3::default(), 2);
+            SHOTS.lock().unwrap().clear();
+            assert_ne!(ssbm_sim_replay(shadow, &host, log.as_ptr(), length), u32::MAX);
+            assert_eq!(SHOTS.lock().unwrap().len(), 1, "the shadow did not fire the shot too");
+            let mut theirs = ScopeInfo::default();
+            ssbm_sim_scope_state(luigi, &mut info);
+            assert_eq!(ssbm_sim_scope_state(shadow, &mut theirs), 1);
+            assert_eq!(theirs.ammo, info.ammo);
+            ssbm_sim_free(shadow);
+            ssbm_sim_free(luigi);
+        }
         Ok(())
     }
     #[test]

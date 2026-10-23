@@ -592,6 +592,7 @@ pub fn load_scope(dir: &Path) -> Result<libssbm::scope::ScopeParams> {
         muzzle: glam::Vec3::new(article.special[13], article.special[14], article.special[15]),
         hold_max: common.f32(global + 0x5B8)?,
         rapid_shots: common.u32(global + 0x5BC)?,
+        refill_per_second: 0.,
     };
     if params.ammo == 0 || params.ammo > 1000 || params.charge_levels == 0 || params.charge_levels > 64 {
         return Err("the Super Scope's attributes are not the disc's".into());

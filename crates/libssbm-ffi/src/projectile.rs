@@ -28,6 +28,53 @@ pub struct State {
 }
 /// Host adaptation for open-world travel. Zero disables the source offscreen
 /// lifetime; positive values retain a finite fixed-tick lifetime.
+/// One beam of the Super Scope at a charge level 0..=9, flying along `direction`: the disc's speed, life, size and
+/// damage for that level (itsscopebeam.c). The hitbox is the level's radius times its scale.
+/// # Safety
+/// NUL-terminated asset path. New unique handle, freed with projectile_free.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn ssbm_scope_beam_new(dir: *const c_char, level: u32, direction: V3) -> *mut Handle {
+    guarded(std::ptr::null_mut(), || {
+        let result = (|| -> libssbm_assets::Result<Handle> {
+            let dir = unsafe { path(dir) }?;
+            let beams = libssbm_assets::params::load_scope_beams(dir)?;
+            let b = *beams.get(level as usize).ok_or("invalid scope beam level")?;
+            let radius = b.radius * b.scale;
+            let p = Params {
+                kind: 0x26,
+                state: level,
+                life: b.lifetime,
+                speed: b.velocity,
+                acceleration: 0.,
+                max_speed: 0.,
+                delay: 0.,
+                homing_frames: 0.,
+                decay: 1.,
+                min_speed: 0.,
+                turn_accel: 0.,
+                max_turn: 0.,
+                min_angle: 0.,
+                gravity: 0.,
+                max_fall: 0.,
+                initial_y: 0.,
+                damage: b.damage,
+                radius,
+                explosion_radius: radius,
+                explosion_frames: 0.,
+                max_bounces: 0,
+                bounce_factor: 0.,
+            };
+            Ok(Handle { sim: Projectile::new(p, direction.into()), element: b.element, notified: false, explosion: Vec::new() })
+        })();
+        match result {
+            Ok(h) => Box::into_raw(Box::new(h)),
+            Err(e) => {
+                error(e);
+                std::ptr::null_mut()
+            }
+        }
+    })
+}
 /// # Safety
 /// Unique live projectile handle or null.
 #[unsafe(no_mangle)]

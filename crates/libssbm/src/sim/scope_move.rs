@@ -41,6 +41,12 @@ impl Sim {
         }
     }
 
+    /// Where the scope is in its use, for a HUD: (`ScopeStage`-like code 0 charging, 1 firing, 2 burst, 3 ending), or
+    /// `None` when the scope is not being used.
+    pub fn scope_stage(&self) -> Option<u32> {
+        (self.current_move == Some(Move::SuperScope)).then_some(self.stage)
+    }
+
     /// A move start: the hold begins again; the magazine is as it was.
     pub(crate) fn scope_begin(&mut self) {
         if let Some(scope) = self.scope.as_mut() {
@@ -162,10 +168,11 @@ impl Sim {
         self.scope = Some(scope);
     }
 
-    /// The slow refill of the magazine the host asks for: `per_second` shots, only while the scope is not in use.
-    pub fn scope_refill(&mut self, per_second: f32, dt: f32) {
+    /// The magazine's slow refill (`ScopeParams::refill_per_second`), only while the scope is not in use; each tick.
+    pub(super) fn scope_refill(&mut self, dt: f32) {
         let in_use = self.current_move == Some(Move::SuperScope);
         if let Some(scope) = self.scope.as_mut() {
+            let per_second = scope.params.refill_per_second;
             if in_use {
                 scope.state.idle = 0;
                 return;

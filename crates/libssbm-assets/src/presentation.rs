@@ -192,6 +192,31 @@ impl Presentation {
             parts: [None; 5],
         })
     }
+    /// An item of the common item archive (the Super Scope held, or one level of its beam), posed like an article.
+    pub fn item_for(dir: &Path, item: crate::article::Item, state: u32) -> Result<Self> {
+        let a = crate::article::Article::load_item(dir, item, state)?;
+        let world = a.model.bind_world();
+        let duration = a.animations.clips.get("Object").map(|c| c.frames).unwrap_or(0.);
+        Ok(Self {
+            model: a.model,
+            animations: a.animations,
+            clip: "Object".into(),
+            frame: 0.,
+            world,
+            ball: false,
+            hidden: false,
+            material_tracks: a.material_tracks,
+            duration,
+            commands: a.commands,
+            object_scale: 1.,
+            upper_body_root: None,
+            effect_fade: false,
+            face_tracks: Vec::new(),
+            face: [0.; 8],
+            part_clips: Default::default(),
+            parts: [None; 5],
+        })
+    }
     pub fn object_pose(&mut self, frame: f32) {
         self.frame = frame;
         self.world = self.animations.pose_object(&self.model, frame);

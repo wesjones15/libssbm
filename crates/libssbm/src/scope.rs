@@ -27,6 +27,9 @@ pub struct ScopeParams {
     pub hold_max: f32,
     /// Taps in a rapid burst (ftCommonData.x5BC).
     pub rapid_shots: u32,
+    /// Host adaptation: shots of ammo the magazine refills a second once the scope has been idle a moment
+    /// (0: it never refills, as in the source).
+    pub refill_per_second: f32,
 }
 
 impl ScopeParams {
@@ -40,6 +43,7 @@ impl ScopeParams {
             muzzle: Vec3::new(0., 5.7, 0.),
             hold_max: 90.,
             rapid_shots: 10,
+            refill_per_second: 0.,
         }
     }
 

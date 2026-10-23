@@ -851,6 +851,7 @@ impl Sim {
     }
     fn tick(&mut self, host: &mut impl Host, input: Input, mut pressed: u32) {
         self.frame += 1;
+        self.scope_refill(1. / 60.);
         if self.tick_rebirth(input) {
             self.previous = input;
             return;

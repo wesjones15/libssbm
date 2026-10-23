@@ -33,6 +33,8 @@ pub(crate) enum Op {
     Rebirth(V3),
     Arrival,
     Sync { position: V3, grounded: u32 },
+    /// The Super Scope given to (1) or taken from (0) the fighter, with its refill rate.
+    Scope { on: u32, refill: f32 },
 }
 
 #[derive(Default)]
@@ -45,6 +47,7 @@ pub(crate) struct NetLog {
     tuning: Option<[u32; 5]>,
     lock: Option<[u32; 4]>,
     flags: Option<u32>,
+    scope: Option<[u32; 2]>,
     steps: u32,
 }
 
@@ -78,6 +81,7 @@ impl NetLog {
                     self.tuning = None;
                     self.lock = None;
                     self.flags = None;
+                    self.scope = None;
                 }
             }
             Op::Facing(v) => {
@@ -112,6 +116,12 @@ impl NetLog {
                     return;
                 }
                 self.flags = Some(f);
+            }
+            Op::Scope { on, refill } => {
+                if self.scope == Some([on, refill.to_bits()]) {
+                    return;
+                }
+                self.scope = Some([on, refill.to_bits()]);
             }
             _ => {}
         }
@@ -201,6 +211,11 @@ fn encode(b: &mut Vec<u8>, op: Op) {
             v3w(b, position);
             u32w(b, grounded);
         }
+        Op::Scope { on, refill } => {
+            b.push(19);
+            u32w(b, on);
+            f32w(b, refill);
+        }
     }
 }
 
@@ -255,6 +270,7 @@ impl Reader<'_> {
             15 => Op::Rebirth(self.v3()?),
             16 => Op::Arrival,
             18 => Op::Sync { position: self.v3()?, grounded: self.u32()? },
+            19 => Op::Scope { on: self.u32()?, refill: self.f32()? },
             _ => return None,
         })
     }
@@ -355,6 +371,9 @@ pub unsafe extern "C" fn ssbm_sim_replay(
                     if let Ok(dir) = CString::new((&*handle).net.dir.to_string_lossy().as_bytes()) {
                         ssbm_sim_begin_arrival(handle, dir.as_ptr());
                     }
+                }
+                Op::Scope { on, refill } => {
+                    ssbm_sim_scope(handle, on, refill);
                 }
                 Op::Sync { position, grounded } => {
                     let h = &mut *handle;
