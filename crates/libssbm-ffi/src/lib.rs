@@ -1469,6 +1469,21 @@ pub unsafe extern "C" fn ssbm_sim_break_roll(h: *mut Handle) -> u32 {
         })
         .unwrap_or(0)
 }
+/// Bounce a held Samus Morph Ball off an enemy (the host's morph hitbox landed). Returns 1
+/// when a morph roll was out, 0 otherwise.
+/// # Safety
+/// Unique live fighter or null.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn ssbm_sim_bonk_roll(h: *mut Handle) -> u32 {
+    unsafe { h.as_mut() }
+        .filter(|h| !h.poisoned && h.sim.morph_roll_hold)
+        .map(|h| {
+            h.sim.roll_bonk = true;
+            h.net.log(crate::replay::Op::BonkRoll);
+            1
+        })
+        .unwrap_or(0)
+}
 /// # Safety
 /// Live fighter or null.
 #[unsafe(no_mangle)]

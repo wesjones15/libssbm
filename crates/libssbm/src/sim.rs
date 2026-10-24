@@ -278,6 +278,8 @@ pub struct Sim {
     pub(crate) stage_value: f32,
     /// Host adaptation: Yoshi's egg-roll armor ran out, so the next tick ends the roll.
     pub roll_break: bool,
+    /// Host adaptation: the Morph Ball hit an enemy, so the next tick bounces it back.
+    pub roll_bonk: bool,
     /// Consecutive rolling ticks with no horizontal movement (a stuck egg).
     pub(crate) roll_still: u32,
     /// Samus's Morph Ball Roll is holding the ball form, independent of its clip.
@@ -404,6 +406,7 @@ impl Sim {
             stage_dir: Vec3::ZERO,
             stage_value: 0.,
             roll_break: false,
+            roll_bonk: false,
             roll_still: 0,
             morph_roll_hold: false,
             morph_roll_distance: 0.,
@@ -727,6 +730,7 @@ impl Sim {
         self.stage_dir = Vec3::ZERO;
         self.stage_value = 0.;
         self.roll_break = false;
+        self.roll_bonk = false;
         self.roll_still = 0;
         self.morph_roll_hold = false;
         if self.behavior.aimable(m)

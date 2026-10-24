@@ -122,7 +122,7 @@ fn samus_morph_roll_alternate_rolls_and_releases() {
 }
 
 #[test]
-fn samus_morph_roll_caps_at_ten_seconds_and_stands() {
+fn samus_morph_roll_stays_held_past_ten_seconds_and_breaks_to_knockdown() {
     let mut s = Sim::new(Params::fixture(), Vec3::ZERO);
     let mut h = FlatHost::default();
     tick(&mut s, &mut h, 0);
@@ -134,10 +134,13 @@ fn samus_morph_roll_caps_at_ten_seconds_and_stands() {
     };
     for _ in 0..650 {
         s.advance(&mut h, roll, 1. / 60.);
-        if s.current_move.is_none() { break; }
     }
-    assert!(s.current_move.is_none(), "a held morph roll never capped");
-    assert_eq!(s.motion.clip, "Wait", "the capped roll did not stand up");
+    assert_eq!(s.current_move, Some(Move::SpecialLw));
+    s.roll_break = true;
+    s.advance(&mut h, roll, 1. / 60.);
+    assert!(s.current_move.is_none(), "armor depletion did not end the roll");
+    assert!(!s.morph_roll_hold);
+    assert_eq!(s.motion.clip, "DownBoundU", "armor depletion did not knock Samus down");
 }
 
 #[test]

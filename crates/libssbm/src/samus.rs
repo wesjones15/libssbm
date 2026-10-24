@@ -12,7 +12,7 @@ use crate::{
 };
 use glam::Vec3;
 
-/// Host flag: Samus's down-B is the Morph Ball Roll alternate, not the bomb.
+/// Host adaptation: down-B drops one bomb, then holds a steerable Morph Ball.
 pub const HOST_MORPH_ROLL: u32 = 4;
 const MORPH_ROLL: u32 = 20;
 const MORPH_BOX: u32 = 0x8001;
@@ -22,8 +22,6 @@ const MORPH_BOUNCE_COOLDOWN: u32 = 8;
 /// The down-B clip is 54 frames: it morphs in by 13, holds the ball, and unfolds from
 /// 43. Freeze on 13 so the ball stays out instead of playing the unfold.
 const MORPH_BALL_FRAME: f32 = 13.;
-/// Host cap on the held ball: 10 seconds at 60 Hz.
-const MORPH_MAX_TICKS: u32 = 600;
 const MORPH_SPEED: f32 = 2.6;
 const MORPH_ACCEL: f32 = 0.06;
 
@@ -97,6 +95,7 @@ impl Samus {
         sim.roll_break = false;
         sim.roll_still = 0;
         sim.morph_roll_hold = true;
+        sim.morph_roll_distance = 0.;
         sim.action.active.clear();
         sim.velocity.x = 0.;
         sim.velocity.z = 0.;
@@ -132,7 +131,8 @@ impl Samus {
         );
     }
     fn end_morph_roll(sim: &mut Sim) {
-        sim.action.active.clear();
+        let broke = sim.roll_break;
+        sim.action.reset();
         sim.roll_break = false;
         sim.morph_roll_hold = false;
         // The same shell-bit burst Yoshi's egg roll ends with (efSync 0x4CF).
@@ -140,19 +140,36 @@ impl Samus {
             let shell = crate::effect::part_cue(sim, 1231, crate::effect::part::HIP_N);
             sim.action.effects.push(shell);
         }
-        // Back to normal Samus at once, not the down-B's folded end pose.
         Self::release_gravity(sim);
         sim.current_move = None;
         sim.set_phase(Phase::Free);
-        sim.motion.select("Wait", 1.);
         sim.velocity.x = 0.;
         sim.velocity.z = 0.;
+        if broke {
+            // Knocked out of the ball (the host's armor ran out): fall into the knockdown
+            // (DownBoundU), then get up, instead of standing straight back up.
+            sim.reaction = Some(crate::reaction::Stage::Bound);
+            sim.motion.select("DownBoundU", 1.);
+        } else {
+            // Released: back to normal Samus at once, not the down-B's folded end pose.
+            sim.motion.select("Wait", 1.);
+        }
+        sim.motion.frame = 0.;
     }
     fn tick_morph_roll(&self, sim: &mut Sim, input: Input, pressed: u32) {
         let scale = sim.options.speed_scale;
         match sim.stage {
             MORPH_ROLL => {
                 sim.stage_frame += 1;
+                // The ball hit an enemy last tick: bounce back off it, like the wall bonk.
+                if sim.roll_bonk {
+                    sim.roll_bonk = false;
+                    sim.stage_dir = -sim.stage_dir;
+                    sim.stage_value *= 0.7;
+                    sim.stage_len = MORPH_BOUNCE_COOLDOWN;
+                    let bonk = crate::effect::part_cue(sim, 1030, crate::effect::part::TOP_N);
+                    sim.action.effects.push(bonk);
+                }
                 // Keep the down-B action open for as long as the ball is held. Without
                 // this the generic startup/recovery clock ends the move after a few
                 // seconds, dropping the ball pose while LT is still down.
@@ -172,6 +189,7 @@ impl Samus {
                     sim.stage_dir = movement.normalize();
                 }
                 let moved = (sim.position - sim.stage_vec).with_y(0.).length();
+                sim.morph_roll_distance += moved;
                 if moved < 0.005 {
                     sim.roll_still = sim.roll_still.saturating_add(1);
                 } else {
@@ -207,18 +225,18 @@ impl Samus {
                         sim.jumps_used = if grounded { 1 } else { sim.jumps_used + 1 };
                     }
                 }
-                if sim.grounded && sim.stage_frame % MORPH_DUST_TICKS == 0 {
+                // ftYs_SpecialS_8012F0DC -> efSync 0x3FF -> efasync.c
+                // case 0x3FF -> EfCoData model 5. Host adaptation: retain
+                // Yoshi's roll trail in air while the ball keeps spinning.
+                if sim.stage_frame % MORPH_DUST_TICKS == 0 {
                     let dust = crate::effect::part_cue(sim, 1023, crate::effect::part::TOP_N);
                     sim.action.effects.push(dust);
                 }
                 if sim.stage_frame == 1 || sim.stage_frame % MORPH_HIT_TICKS == 0 {
                     Self::morph_hitbox(sim);
                 }
-                // Up to ten seconds while held; release or an armor break ends it early.
-                if sim.stage_frame >= MORPH_MAX_TICKS
-                    || sim.roll_break
-                    || input.buttons & DOWN_B == 0
-                {
+                // Hold until release or armor depletion; the animation never loops.
+                if sim.roll_break || input.buttons & DOWN_B == 0 {
                     Self::end_morph_roll(sim);
                 }
             }
@@ -270,7 +288,7 @@ impl Behavior for Samus {
             Move::SpecialN
         })
     }
-    fn enter_special(&self, sim: &mut Sim, _host: &mut dyn Host, m: Move, _input: Input) {
+    fn enter_special(&self, sim: &mut Sim, host: &mut dyn Host, m: Move, _input: Input) {
         if m == Move::SpecialHi {
             sim.action.effects.push(GfxCue {
                 id: 1154,
@@ -303,6 +321,10 @@ impl Behavior for Samus {
         } else if m == Move::SpecialLw {
             if sim.host_flags & HOST_MORPH_ROLL != 0 {
                 Self::begin_morph_roll(sim);
+                // Combined RoR2 attack: one bomb at entry, on ground or in air.
+                // The source article callback is ftSs_SpecialLw_8012ADF0;
+                // its later throw flag is muted so it cannot drop a second bomb.
+                sim.emit(host, EventKind::Hit, Move::SpecialLw as u32, 1.);
             } else if !sim.grounded {
                 sim.pad_gravity = None;
                 sim.velocity.y = self.specials.bomb_velocity;
@@ -351,6 +373,7 @@ impl Behavior for Samus {
         }
     }
     fn resolve_startup(&self, sim: &mut Sim, input: Input) -> bool {
+        if Self::morph_roll(sim) { return true; }
         if sim.current_move == Some(Move::SpecialN)
             && sim.grounded
             && sim.shot_charge < self.specials.charge_steps
@@ -432,7 +455,8 @@ impl Behavior for Samus {
         false
     }
     fn script_muted(&self, sim: &Sim) -> bool {
-        // The roll has no bomb article/hitbox: all of that belongs to the ordinary down-B.
+        // Entry already emitted the combined move's bomb; suppress the clip's
+        // projectile flag and hitboxes for the remainder of the held roll.
         Self::morph_roll(sim)
     }
     fn on_connect(&self, sim: &mut Sim) {
@@ -443,6 +467,9 @@ impl Behavior for Samus {
             let bonk = crate::effect::part_cue(sim, 1030, crate::effect::part::TOP_N);
             sim.action.effects.push(bonk);
         }
+    }
+    fn animation_rate(&self, sim: &Sim) -> f32 {
+        if Self::morph_roll(sim) && sim.motion.frame >= MORPH_BALL_FRAME { 0. } else { 1. }
     }
     fn clip(&self, sim: &Sim, m: Move) -> &'static str {
         match m {
@@ -473,7 +500,10 @@ impl Behavior for Samus {
                 }
             }
             Move::SpecialLw => {
-                if sim.grounded { "SpecialLw" } else { "SpecialAirLw" }
+                // A roll jump/landing keeps the same frozen ball clip instead of
+                // restarting the morph animation at every ground-air transition.
+                let grounded = if Self::morph_roll(sim) { sim.move_started_grounded } else { sim.grounded };
+                if grounded { "SpecialLw" } else { "SpecialAirLw" }
             }
             _ => "",
         }

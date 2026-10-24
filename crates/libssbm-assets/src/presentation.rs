@@ -308,8 +308,7 @@ impl Presentation {
         self.frame = sim.motion.render_frame(sim.alpha());
         // ftParts_80074B0C: the fighter's alternate DObj (Samus's morph ball,
         // Yoshi's egg) replaces the body for its move.
-        self.ball = (self.morph_move.is_some() && sim.current_move == self.morph_move)
-            || (sim.morph_roll_hold && self.morph_move == Some(Move::SpecialLw));
+        self.ball = self.morph_move.is_some() && sim.current_move == self.morph_move;
         self.hidden = sim
             .rebirth
             .as_ref()
@@ -323,6 +322,20 @@ impl Presentation {
             self.upper_body_root,
             &overlay,
         );
+        if sim.morph_roll_hold && self.ball && self.morph_move == Some(Move::SpecialLw) {
+            // PlSsNr DObj 19, visibility choice 1, SpecialLw frame 13 is the
+            // actual ball. ftSs_SpecialLw_8012AEBC puts its sphere on XRotN (3).
+            // Keep the whole authored pose: a walking/double-jump lower-body
+            // layer would replace it with the folded suit. Rotate that ball,
+            // using actual travel rather than advancing the morph clip.
+            self.world = self.animations.pose(&self.model, clip, self.frame, false);
+            if self.frame >= 13. {
+                // Spin the ball slower than a no-slip roll: the ball is ~2.75 units across,
+                // but dividing travel by that blurred the spin at full speed. A larger divisor
+                // keeps the travel speed while slowing the rotation to a readable roll.
+                spin_subtree(&self.model, &mut self.world, 3, sim.morph_roll_distance / 8.0);
+            }
+        }
         let neutral = match clip {
             "FallF" | "FallB" => Some("Fall"),
             "FallAerialF" | "FallAerialB" => Some("FallAerial"),
