@@ -672,15 +672,22 @@ frame, so panning through the tongue's startup keeps the tip on the reticle; the
 lash and the frame-20 grab re-aim from the live mouth to it. On empty sky the point
 is the shared `MeleeAim.PointOnRayAtReach`: the point on the camera ray at the lash's
 reach from the mouth, because a parallel line would sit below the reticle at every
-finite distance. Once the tongue catches, its target locks to the victim so the reel
-cannot follow the camera. While Egg Lay plays the host also pitches Yoshi's upper rig
-toward camera elevation, the same bounded +/-60 degree bend as the Scope, which moves
-the head and the mouth bone the lash starts from. The lash's reach and the grab
-capsule stop at the first terrain met by a narrow centre probe (the shared large-shot
-rule, so the lash's own thickness does not stop it on a floor it passes over), and the
-drawn curve is clamped to that contact each frame. Egg Lay's skill charge is spent
-when the tongue swallows an enemy, not when it is thrown, so a miss or a terrain
-stop costs no cooldown. These are host adaptations; the sim's `SpecialN` timing is
-unchanged. Viewer captures of 45/0/-45 degree aim across four `SpecialN1` frames
+finite distance. Every enemy the lash touches while out is swallowed, up to six; the
+lash never locks, so sweeping it across new foes catches them too. Its out window stays
+fixed at 0.18 s extend, 0.22 s hold and 0.25 s retract; the lay queue runs after it and
+never holds the tongue out. While Egg Lay plays
+the host also pitches Yoshi's upper rig toward camera elevation, the same bounded
++/-60 degree bend as the Scope, which moves the head and the mouth bone the lash
+starts from. The lash's reach and the grab capsule stop at the first terrain met by a
+narrow centre probe (the shared large-shot rule, so the lash's own thickness does not
+stop it on a floor it passes over), and the drawn curve is clamped to that contact
+each frame. Egg Lay's skill charge is spent when the tongue first swallows an enemy,
+not when it is thrown, so a miss or a terrain stop costs no cooldown. The swallowed
+victims reel in together; a single host lay queue then plays `SpecialN2` once per
+victim (swallow cue, egg model and lay cue each) rather than laying them at once, and
+fans the eggs behind Yoshi. Each egg holds for 5 s, 7 s for a large enemy and 10 s for
+a boss; a breakout puts the victim back on clear terrain instead of under the floor.
+These are host adaptations; the sim's `SpecialN` timing is unchanged. Viewer captures
+of 45/0/-45 degree aim across four `SpecialN1` frames
 (`crates/viewer/examples/yoshi_tongue.rs`) plus the shared camera/sweep,
 damage-permission and real-disc pose tests pass; RoR2 play is unverified.
