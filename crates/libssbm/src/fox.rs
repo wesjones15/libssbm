@@ -251,9 +251,6 @@ impl Fox {
         Self::hold_gravity(sim, 0.);
         // The source spends the double jump on the launch (x1968_jumpsUsed).
         sim.jumps_used = sim.params.jumps + sim.options.extra_jumps;
-        // ftFx_SpecialHi_CreateLaunchGFX: efSync 1164 on the hip.
-        let flame = Self::cue(sim, 1164, PART_HIP_N, false);
-        sim.action.effects.push(flame);
     }
     fn end_launch(&self, sim: &mut Sim) {
         if sim.stage == HI_END {
@@ -334,6 +331,14 @@ impl Fox {
                 sim.stage_frame += 1;
             }
             HI_GO => {
+                // ftFx_SpecialHi_CreateLaunchGFX: the launch flame is spawned once the
+                // launch clip is the current clip, not while the hold clip is still
+                // playing. It is bound to that clip, so it ends with the launch instead
+                // of riding Fox forever.
+                if sim.stage_frame == 0 {
+                    let flame = Self::cue(sim, 1164, PART_HIP_N, true);
+                    sim.action.effects.push(flame);
+                }
                 sim.stage_frame += 1;
                 if sim.stage_frame >= self.specials.fire_fox_duration_end.round() as u32 {
                     // ftFx_SpecialHi_Phys: after DURATION_END ticks the reverse

@@ -144,9 +144,10 @@ pub fn attached(id: u32) -> bool {
     matches!(
         id,
         1026 | 1027 | 1060 | 1086 | 1151 | 1154 | 1159 | 1214 | 1215 | 1216 | 1301
-            // Fox 0x488..0x48C, Captain 0x48F..0x493, Link 0x4BB/0x4BC, Donkey 0x4C6..0x4CB,
-            // Yoshi 0x4CD, Luigi 0x509/0x50A.
-            | 1160..=1164
+            // Fox 0x488..0x48D, Captain 0x48F..0x493, Link 0x4BB/0x4BC, Donkey 0x4C6..0x4CB,
+            // Yoshi 0x4CD, Luigi 0x509/0x50A. 0x48D (the Illusion streak) is a generator
+            // attached to TopN, not a one-shot position effect.
+            | 1160..=1165
             | 1167..=1171
             | 1211
             | 1212

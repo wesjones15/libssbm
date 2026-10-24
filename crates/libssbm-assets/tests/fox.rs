@@ -4,11 +4,12 @@
 //! the Reflector announces its burst. Each move plays its clips once.
 use glam::Vec3;
 use libssbm::{
+    effect::{attached, resolve, Target},
     fox::Fox,
     sim::{EventKind, FlatHost, DOWN_B, JUMP, NEUTRAL_B, SIDE_B, UP_B},
     Input, Sim,
 };
-use libssbm_assets::{Result, animation::Animations, fighter::FOX};
+use libssbm_assets::{Result, animation::Animations, fighter::FOX, presentation::Presentation};
 
 fn dir() -> std::path::PathBuf {
     std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../assets")
@@ -91,16 +92,43 @@ fn illusion_dashes_through_a_hitbox_and_ends() -> Result<()> {
     }
     step(&mut sim, &mut host, input(SIDE_B, Vec3::X));
     let mut boxed = false;
+    let mut streak = false;
     for _ in 0..200 {
         step(&mut sim, &mut host, Input::idle());
         boxed |= sim.action.samples.iter().any(|s| s.hitbox.damage >= 7. && s.hitbox.element == 3);
+        streak |= sim.action.effects.iter().any(|cue| cue.id == 1165);
         if sim.current_move.is_none() {
             break;
         }
     }
     assert!(sim.current_move.is_none(), "illusion never ended");
     assert!(boxed, "no dash hitbox was ever active");
+    assert!(streak, "the Illusion's 0x48D streak was never spawned");
+    // ftFx_SpecialS_CreateGFX attaches efSync 0x48D to FtPart_TopN; a one-shot
+    // world effect would leave the blue streak behind when Fox dashes.
+    assert!(attached(1165), "the Illusion streak is not joint-bound");
+    assert_eq!(resolve(1165), Target::Particle(3008));
     assert!(sim.position.x > 80., "illusion covered only {}", sim.position.x);
+    Ok(())
+}
+
+#[test]
+fn illusion_ghost_is_a_translucent_blue_fox_trail() -> Result<()> {
+    let dir = dir();
+    // The ghost is the It_Kind_Fox_Illusion article in the item archive.
+    if !dir.join("IfAll.usd").exists() {
+        eprintln!("SKIP: item archive absent");
+        return Ok(());
+    }
+    let ghost = Presentation::article_for(&dir, 2, 0, &FOX)?;
+    let batch = ghost.model.batches.first().ok_or("empty ghost model")?;
+    assert_eq!(batch.blend, 2, "the ghost is not translucent");
+    assert!(batch.color[3] < 1., "the ghost is not faded: {:?}", batch.color);
+    assert!(batch.color[2] > batch.color[0], "the ghost is not blue: {:?}", batch.color);
+    assert!(
+        ghost.model.batches.iter().map(|b| b.vertices.len()).sum::<usize>() > 6000,
+        "the ghost model is not the full trailing body"
+    );
     Ok(())
 }
 
@@ -120,10 +148,18 @@ fn fire_fox_holds_in_place_then_launches_along_the_aim() -> Result<()> {
     }
     assert!((sim.position - start).length() < 1., "moved during the charge: {:?}", sim.position - start);
     let mut strongest = 0f32;
+    let mut launch_flame = false;
     for _ in 0..120 {
         step(&mut sim, &mut host, input(0, aim));
         for s in &sim.action.samples {
             strongest = strongest.max(s.hitbox.damage);
+        }
+        for cue in &sim.action.effects {
+            if cue.id == 1164 {
+                launch_flame = true;
+                assert!(cue.destroy_on_change, "Fire Fox's launch flame is not move-bound");
+                assert_eq!(cue.clip, "SpecialHi", "launch flame spawned on the hold clip");
+            }
         }
         if sim.current_move.is_none() {
             break;
@@ -133,6 +169,7 @@ fn fire_fox_holds_in_place_then_launches_along_the_aim() -> Result<()> {
     assert!(travelled.x > 100. && travelled.y > 30., "fire fox travelled {travelled:?}");
     assert!(travelled.y < travelled.x, "launch did not follow the aim {travelled:?}");
     assert!(strongest >= 19., "launch hit only {strongest}%");
+    assert!(launch_flame, "no Fire Fox launch flame was spawned");
     Ok(())
 }
 
