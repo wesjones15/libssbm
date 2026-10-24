@@ -272,6 +272,8 @@ pub struct Sim {
     pub(crate) stage_vec: Vec3,
     pub(crate) stage_dir: Vec3,
     pub(crate) stage_value: f32,
+    /// Host adaptation: Yoshi's egg-roll armor ran out, so the next tick ends the roll.
+    pub roll_break: bool,
     /// Host lock-on: world position of the enemy the player is locked onto or
     /// aiming nearest, refreshed every tick. Staged specials (Quick Attack)
     /// steer to it; `None` falls back to stick and camera aim.
@@ -387,6 +389,7 @@ impl Sim {
             stage_vec: Vec3::ZERO,
             stage_dir: Vec3::ZERO,
             stage_value: 0.,
+            roll_break: false,
             lock_target: None,
             host_flags: 0,
             flutter: 0,
@@ -696,6 +699,7 @@ impl Sim {
         self.stage_vec = Vec3::ZERO;
         self.stage_dir = Vec3::ZERO;
         self.stage_value = 0.;
+        self.roll_break = false;
         if self.behavior.aimable(m)
             && self.host_facing.is_none()
             && input.aim.with_y(0.).length_squared() > 0.001

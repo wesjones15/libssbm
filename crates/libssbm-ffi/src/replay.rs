@@ -29,6 +29,8 @@ pub(crate) enum Op {
     Connect,
     Anchor { position: V3, grounded: u32 },
     SetGrabbed(u32),
+    /// Yoshi's egg-roll armor ran out; end the roll on the next tick.
+    BreakRoll,
     LaunchPad { velocity: V3, gravity: V3 },
     Rebirth(V3),
     Arrival,
@@ -196,6 +198,7 @@ fn encode(b: &mut Vec<u8>, op: Op) {
             b.push(13);
             u32w(b, held);
         }
+        Op::BreakRoll => b.push(17),
         Op::LaunchPad { velocity, gravity } => {
             b.push(14);
             v3w(b, velocity);
@@ -269,6 +272,7 @@ impl Reader<'_> {
             14 => Op::LaunchPad { velocity: self.v3()?, gravity: self.v3()? },
             15 => Op::Rebirth(self.v3()?),
             16 => Op::Arrival,
+            17 => Op::BreakRoll,
             18 => Op::Sync { position: self.v3()?, grounded: self.u32()? },
             19 => Op::Scope { on: self.u32()?, refill: self.f32()? },
             _ => return None,
@@ -361,6 +365,7 @@ pub unsafe extern "C" fn ssbm_sim_replay(
                 Op::Connect => ssbm_sim_connect(handle),
                 Op::Anchor { position, grounded } => ssbm_sim_anchor(handle, position, grounded),
                 Op::SetGrabbed(held) => ssbm_sim_set_grabbed(handle, held),
+                Op::BreakRoll => { ssbm_sim_break_roll(handle); }
                 Op::LaunchPad { velocity, gravity } => ssbm_sim_launch_pad(handle, velocity, gravity),
                 Op::Rebirth(dest) => {
                     if let Ok(dir) = CString::new((&*handle).net.dir.to_string_lossy().as_bytes()) {

@@ -80,7 +80,7 @@ const ROLL_DUST_TICKS: u32 = 6;
 /// every xDC (32) ticks; RoR2 enemies need more contact than that to read the roll, so a
 /// host adaptation refreshes the authored hitboxes much sooner. The authored 4% damage and
 /// knockback are unchanged.
-const ROLL_HIT_TICKS: u32 = 6;
+const ROLL_HIT_TICKS: u32 = 8;
 /// The slam's hitbox follows Yoshi down (the AirLw clip's 14% at its last frame,
 /// carried the whole dive so a falling Yoshi hits what he falls on).
 const DIVE_BOX: u32 = 91;
@@ -131,7 +131,19 @@ impl Yoshi {
         sim.stage_value = self.specials.egg_roll_speed * 0.5;
         sim.action.active.clear();
     }
-    fn tick_roll(&self, sim: &mut Sim, input: Input, pressed: u32) {
+    /// End the roll: back to `SpecialSEnd`, no more roll hitboxes, and the shell bits the
+    /// source spawns from the hip (efSync 0x4CF).
+    fn end_roll(&self, sim: &mut Sim) {
+        sim.stage = ROLL_END;
+        sim.stage_frame = 0;
+        sim.action.active.clear();
+        sim.roll_break = false;
+        for _ in 0..3 {
+            let shell = crate::effect::part_cue(sim, 1231, crate::effect::part::HIP_N);
+            sim.action.effects.push(shell);
+        }
+    }
+    fn tick_roll(&self, sim: &mut Sim, input: Input) {
         let scale = sim.options.speed_scale;
         match sim.stage {
             ROLL_START => {
@@ -141,12 +153,10 @@ impl Yoshi {
                     sim.velocity.x = 0.;
                     sim.velocity.z = 0.;
                 }
-                // The source waits x4C (50) ticks before B may end the roll; the host lets
-                // him break out at any time (a second side-B or the B skill).
-                if pressed & (SIDE_B | DOWN_B) != 0 {
-                    sim.stage = ROLL_END;
-                    sim.stage_frame = 0;
-                    sim.action.active.clear();
+                // Hold the button to keep rolling; releasing (or running out of armor)
+                // breaks him out at any time.
+                if sim.roll_break || input.buttons & SIDE_B == 0 {
+                    self.end_roll(sim);
                 }
             }
             ROLL_LOOP => {
@@ -213,19 +223,10 @@ impl Yoshi {
                 sim.velocity.z = sim.stage_dir.z * speed * scale;
                 let gravity = if sim.grounded { 0. } else { sim.params.gravity };
                 Self::hold_gravity(sim, gravity);
-                // Duration up, or a second special press at any time. The host drops the
-                // source's x4C wait so the roll is never a commitment he cannot leave.
-                if sim.stage_frame >= self.specials.egg_roll_frames.max(30)
-                    || pressed & (SIDE_B | DOWN_B) != 0
-                {
-                    sim.stage = ROLL_END;
-                    sim.stage_frame = 0;
-                    sim.action.active.clear();
-                    // The egg breaks: shell bits from the hip (efSync 0x4CF).
-                    for _ in 0..3 {
-                        let shell = crate::effect::part_cue(sim, 1231, crate::effect::part::HIP_N);
-                        sim.action.effects.push(shell);
-                    }
+                // Hold the button to keep rolling. Release, or an armor break reported by
+                // the host through `roll_break`, ends it immediately.
+                if sim.roll_break || input.buttons & SIDE_B == 0 {
+                    self.end_roll(sim);
                 }
             }
             _ => {
@@ -436,7 +437,7 @@ impl Behavior for Yoshi {
         }
     }
 
-    fn tick_special(&self, sim: &mut Sim, host: &mut dyn Host, input: Input, pressed: u32) {
+    fn tick_special(&self, sim: &mut Sim, host: &mut dyn Host, input: Input, _pressed: u32) {
         let mine = matches!(sim.current_move, Some(Move::SpecialN | Move::SpecialS | Move::SpecialLw));
         if !mine || sim.phase == Phase::Free {
             // Ended or interrupted: never leave a held gravity override or the dive
@@ -447,7 +448,7 @@ impl Behavior for Yoshi {
         }
         match sim.current_move {
             Some(Move::SpecialN) => self.tick_lay(sim),
-            Some(Move::SpecialS) => self.tick_roll(sim, input, pressed),
+            Some(Move::SpecialS) => self.tick_roll(sim, input),
             Some(Move::SpecialLw) => self.tick_bomb(sim, host),
             _ => {}
         }

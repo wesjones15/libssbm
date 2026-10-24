@@ -106,16 +106,18 @@ fn egg_roll_curls_up_rolls_steers_and_ends() -> Result<()> {
     let mut boxed = false;
     let mut heading_changed = false;
     for tick in 0..400 {
-        // After ten ticks of rolling steer the other way.
+        // Hold the button to roll; after ten ticks of rolling steer the other way, then
+        // release to break out.
         let stick = if rolling > 10 { Vec3::Z } else { Vec3::X };
-        step(&mut sim, &mut host, input(0, stick));
+        let button = if tick < 120 { SIDE_B } else { 0 };
+        step(&mut sim, &mut host, input(button, stick));
         if sim.motion.clip == "SpecialSLoop" {
             rolling += 1;
             boxed |= sim.action.samples.iter().any(|s| s.hitbox.damage >= 3.);
             heading_changed |= sim.facing.z > 0.3;
         }
         if sim.current_move.is_none() {
-            assert!(tick > 60, "the roll was over in {tick} ticks");
+            assert!(tick > 100, "the roll was over in {tick} ticks");
             break;
         }
     }
@@ -128,28 +130,49 @@ fn egg_roll_curls_up_rolls_steers_and_ends() -> Result<()> {
 }
 
 #[test]
-fn egg_roll_can_be_broken_out_of_at_any_time() -> Result<()> {
+fn egg_roll_lasts_while_held_and_ends_on_release() -> Result<()> {
     let Some(mut sim) = yoshi_at(Vec3::ZERO, true)? else { return Ok(()) };
     let mut host = FlatHost::default();
     settle(&mut sim, &mut host);
-    // A second side-B during the curl-up ends it before the roll starts.
+    // Releasing during the curl-up ends it before the roll starts.
     step(&mut sim, &mut host, input(SIDE_B, Vec3::X));
     step(&mut sim, &mut host, Input::idle());
-    step(&mut sim, &mut host, input(SIDE_B, Vec3::X));
-    assert_eq!(sim.motion.clip, "SpecialSEnd", "a second press did not end the start");
+    assert_eq!(sim.motion.clip, "SpecialSEnd", "releasing did not end the start");
     run_out(&mut sim, &mut host, 120);
 
-    // And during the loop, immediately (no x4C wait).
+    // Holding keeps it rolling; releasing ends it immediately.
     settle(&mut sim, &mut host);
     step(&mut sim, &mut host, input(SIDE_B, Vec3::X));
     let mut looped = false;
     for _ in 0..40 {
-        step(&mut sim, &mut host, input(0, Vec3::X));
+        step(&mut sim, &mut host, input(SIDE_B, Vec3::X));
         if sim.motion.clip == "SpecialSLoop" { looped = true; break; }
     }
     assert!(looped, "the roll loop never started");
+    for _ in 0..30 {
+        step(&mut sim, &mut host, input(SIDE_B, Vec3::X));
+    }
+    assert_eq!(sim.motion.clip, "SpecialSLoop", "the roll ended while still held");
+    step(&mut sim, &mut host, input(0, Vec3::X));
+    assert_eq!(sim.motion.clip, "SpecialSEnd", "releasing did not end the roll");
+    Ok(())
+}
+
+#[test]
+fn egg_roll_armor_break_ends_the_roll() -> Result<()> {
+    let Some(mut sim) = yoshi_at(Vec3::ZERO, true)? else { return Ok(()) };
+    let mut host = FlatHost::default();
+    settle(&mut sim, &mut host);
     step(&mut sim, &mut host, input(SIDE_B, Vec3::X));
-    assert_eq!(sim.motion.clip, "SpecialSEnd", "a second press did not end the roll");
+    let mut looped = false;
+    for _ in 0..40 {
+        step(&mut sim, &mut host, input(SIDE_B, Vec3::X));
+        if sim.motion.clip == "SpecialSLoop" { looped = true; break; }
+    }
+    assert!(looped, "the roll loop never started");
+    sim.roll_break = true;
+    step(&mut sim, &mut host, input(SIDE_B, Vec3::X));
+    assert_eq!(sim.motion.clip, "SpecialSEnd", "an armor break did not end the roll");
     Ok(())
 }
 
@@ -162,7 +185,7 @@ fn egg_roll_strikes_repeatedly() -> Result<()> {
     let mut generations = std::collections::BTreeSet::new();
     let mut rolling = 0;
     for _ in 0..90 {
-        step(&mut sim, &mut host, input(0, Vec3::X));
+        step(&mut sim, &mut host, input(SIDE_B, Vec3::X));
         if sim.motion.clip != "SpecialSLoop" { continue; }
         rolling += 1;
         for sample in &sim.action.samples {
@@ -199,19 +222,19 @@ fn egg_roll_pose_holds_its_place_when_the_loop_wraps() -> Result<()> {
     step(&mut sim, &mut host, input(SIDE_B, Vec3::X));
     let mut presentation = Presentation::load_for(&dir(), 0, &YOSHI)?;
     for _ in 0..60 {
-        step(&mut sim, &mut host, input(0, Vec3::X));
+        step(&mut sim, &mut host, input(SIDE_B, Vec3::X));
         if sim.motion.clip == "SpecialSLoop" { break; }
     }
     assert_eq!(sim.motion.clip, "SpecialSLoop", "the roll loop never started");
     while sim.motion.frame < 58. {
-        step(&mut sim, &mut host, input(0, Vec3::X));
+        step(&mut sim, &mut host, input(SIDE_B, Vec3::X));
     }
     presentation.update(&sim, 0.);
     let late = presentation.world[1].w_axis.truncate().length();
     // Cross the pass boundary: the disc clip travels 25 units and restarts at zero.
     let mut guard = 0;
     while sim.motion.frame > 2. && guard < 120 {
-        step(&mut sim, &mut host, input(0, Vec3::X));
+        step(&mut sim, &mut host, input(SIDE_B, Vec3::X));
         guard += 1;
     }
     presentation.update(&sim, 0.);

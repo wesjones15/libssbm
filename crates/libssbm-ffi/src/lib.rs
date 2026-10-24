@@ -1348,6 +1348,21 @@ pub unsafe extern "C" fn ssbm_sim_shield_hit(h: *mut Handle, damage: f32) -> u32
         .map(|h| h.sim.shield_hit(damage * h.sim.defense.params.maximum) as u32)
         .unwrap_or(0)
 }
+/// End Yoshi's egg roll on the next tick (his host-side armor ran out). Returns 1 when a
+/// roll was out, 0 otherwise.
+/// # Safety
+/// Unique live fighter or null.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn ssbm_sim_break_roll(h: *mut Handle) -> u32 {
+    unsafe { h.as_mut() }
+        .filter(|h| !h.poisoned && h.sim.current_move == Some(libssbm::Move::SpecialS))
+        .map(|h| {
+            h.sim.roll_break = true;
+            h.net.log(crate::replay::Op::BreakRoll);
+            1
+        })
+        .unwrap_or(0)
+}
 /// # Safety
 /// Live fighter or null.
 #[unsafe(no_mangle)]
