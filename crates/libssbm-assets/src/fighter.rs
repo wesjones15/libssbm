@@ -401,7 +401,9 @@ pub const YOSHI: FighterAssets<'static> = FighterAssets {
         ArticleLayout { states: 1, special_words: 12 },
     ],
     common_index: 14, // Ft_Kind_Yoshi (ft/forward.h)
-    morph_visibility: None,
+    // Choice 1 is the egg model in the costume file (ftys_SpecialAirSLoop's
+    // ftParts_80074B0C(gobj, 0, 1)); the normal choice shows Yoshi's body.
+    morph_visibility: Some(1),
     upper_body_root: Some(22), // torso root above HipN (arms + head subtree)
     portrait: crate::portrait::Portrait {
         archive: Archive {
@@ -521,6 +523,16 @@ impl FighterKind {
     }
 }
 impl<'a> FighterAssets<'a> {
+    /// The move whose animation swaps in the alternate DObj choice
+    /// (`morph_visibility`): Samus's Morph Ball Bomb and Yoshi's Egg Roll. The
+    /// presentation draws `ball_visible` for it and the normal body otherwise.
+    pub fn morph_move(&self) -> Option<libssbm::Move> {
+        match self.common_index {
+            13 => Some(libssbm::Move::SpecialLw), // Ft_Kind_Samus
+            14 => Some(libssbm::Move::SpecialS),  // Ft_Kind_Yoshi
+            _ => None,
+        }
+    }
     /// Maps a disc clip name to the canonical name the sim uses, if this
     /// fighter aliases it (e.g. "Wait1" -> "Wait"). Unaliased names pass through.
     pub fn canonical_clip<'n>(&self, actual: &'n str) -> &'n str

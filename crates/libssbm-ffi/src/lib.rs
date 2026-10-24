@@ -1489,6 +1489,37 @@ pub unsafe extern "C" fn ssbm_view_new(dir: *const c_char, kind: u32, costume: u
         }
     })
 }
+/// A fighter's alternate DObj (choice 1: Samus's morph ball, Yoshi's egg) with no
+/// body, for views that do not follow a sim (Yoshi's laid egg). Choice 0 is the
+/// normal body and matches [`ssbm_view_new`].
+/// # Safety
+/// UTF-8 cache path; costume index 0..4. Free with ssbm_view_free.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn ssbm_view_new_choice(
+    dir: *const c_char,
+    kind: u32,
+    costume: u32,
+    choice: u32,
+) -> *mut View {
+    guarded(std::ptr::null_mut(), || {
+        let result = (|| {
+            let fighter = fighter_assets(kind)?;
+            Presentation::load_for_variant(
+                unsafe { path(dir) }?,
+                costume as usize,
+                fighter,
+                choice != 0,
+            )
+        })();
+        match result {
+            Ok(a) => Box::into_raw(Box::new(View::new(a))),
+            Err(e) => {
+                error(e);
+                std::ptr::null_mut()
+            }
+        }
+    })
+}
 /// # Safety
 /// UTF-8 cache path and Samus article kind 0..3/state. Free with ssbm_view_free.
 #[unsafe(no_mangle)]
@@ -2785,7 +2816,7 @@ mod tests {
     #[test]
     fn non_samus_arrival_hitboxes_and_view_do_not_fail() -> libssbm_assets::Result<()> {
         let dir = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../assets");
-        for kind in [1u32, 2u32, 4u32, 5u32] {
+        for kind in [1u32, 2u32, 4u32, 5u32, 6u32] {
             let fighter = libssbm_assets::fighter::FighterKind::from_u32(kind).unwrap();
             if !fighter.assets().unwrap().complete(&dir) {
                 eprintln!("SKIP: kind {kind} disc cache absent");
@@ -2812,6 +2843,16 @@ mod tests {
             assert_eq!(unsafe { ssbm_view_model(view, &mut info) }, 1);
             assert!(info.vertex_count > 0, "kind {kind} view has no vertices");
             unsafe { ssbm_view_free(view) };
+            if kind == 6 {
+                // Yoshi's alternate model is the egg; the host uses it for the roll and
+                // for the laid egg without a sim.
+                let egg = unsafe { ssbm_view_new_choice(cdir.as_ptr(), kind, 0, 1) };
+                assert!(!egg.is_null(), "yoshi egg view failed: {}", ERROR.with(|e| e.borrow().to_string_lossy().into_owned()));
+                let mut egg_info = ModelInfo::default();
+                assert_eq!(unsafe { ssbm_view_model(egg, &mut egg_info) }, 1);
+                assert!(egg_info.vertex_count > 0, "yoshi egg view has no vertices");
+                unsafe { ssbm_view_free(egg) };
+            }
             unsafe { ssbm_sim_free(sim) };
         }
         Ok(())

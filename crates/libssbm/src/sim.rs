@@ -420,6 +420,11 @@ impl Sim {
     pub fn alpha(&self) -> f32 {
         (self.accumulator * TICK_HZ) as f32
     }
+    /// How far a staged roll has turned, in radians: the rolling stage's ticks times its
+    /// speed over the body radius. Yoshi's egg uses it for ftPartSetRotX(fp, 3, ...).
+    pub fn roll_angle(&self, radius: f32) -> f32 {
+        self.stage_frame as f32 * self.stage_value / radius.max(0.001)
+    }
     pub fn mobile_action(&self) -> bool {
         self.grounded
             && self.reaction.is_none()

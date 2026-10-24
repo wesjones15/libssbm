@@ -8,7 +8,13 @@ pub struct Presentation {
     pub clip: String,
     pub frame: f32,
     pub world: Vec<Mat4>,
+    /// Draw the alternate DObj choice (the morph ball / egg) instead of the body.
     pub ball: bool,
+    /// The move that swaps to `ball` (fighter data); None for non-fighters.
+    pub morph_move: Option<Move>,
+    /// Joint the source rotates by the distance rolled (Yoshi's whole-egg spin,
+    /// ftYs_SpecialS_WrapAndSetRotX -> ftPartSetRotX(fp, 3, ...)).
+    pub spin_joint: Option<usize>,
     pub hidden: bool,
     pub material_tracks: Vec<crate::animation::Track>,
     pub duration: f32,
@@ -43,6 +49,8 @@ impl Presentation {
             clip: "Object".into(),
             frame: 0.,
             ball: false,
+            morph_move: None,
+            spin_joint: None,
             hidden: false,
             material_tracks: Vec::new(),
             duration: 0.,
@@ -83,6 +91,8 @@ impl Presentation {
             frame: 0.,
             world,
             ball: false,
+            morph_move: None,
+            spin_joint: None,
             hidden: false,
             material_tracks,
             duration,
@@ -137,6 +147,8 @@ impl Presentation {
             frame: 0.,
             world,
             ball: false,
+            morph_move: None,
+            spin_joint: None,
             hidden: false,
             material_tracks: model.material_tracks,
             duration: model.lifetime,
@@ -179,6 +191,8 @@ impl Presentation {
             frame: 0.,
             world,
             ball: false,
+            morph_move: None,
+            spin_joint: None,
             hidden: false,
             material_tracks: a.material_tracks,
             duration,
@@ -204,6 +218,8 @@ impl Presentation {
             frame: 0.,
             world,
             ball: false,
+            morph_move: None,
+            spin_joint: None,
             hidden: false,
             material_tracks: a.material_tracks,
             duration,
@@ -254,6 +270,9 @@ impl Presentation {
             frame: 0.,
             world,
             ball: false,
+            morph_move: fighter.morph_move(),
+            // Yoshi's egg is skinned to joint 3; the source spins that joint as he rolls.
+            spin_joint: (fighter.common_index == 14).then_some(3),
             hidden: false,
             material_tracks: Vec::new(),
             duration: 0.,
@@ -267,13 +286,28 @@ impl Presentation {
             parts: [None; 5],
         })
     }
+    /// A fighter's alternate DObj alone (`ball`), for a view that does not follow a
+    /// sim: Yoshi's laid egg and his rolling shell. The body is hidden by the
+    /// fighter's visibility table.
+    pub fn load_for_variant(
+        dir: &Path,
+        costume: usize,
+        fighter: &crate::fighter::FighterAssets<'_>,
+        ball: bool,
+    ) -> Result<Self> {
+        let mut view = Self::load_for(dir, costume, fighter)?;
+        view.ball = ball;
+        Ok(view)
+    }
     pub fn update(&mut self, sim: &Sim, _dt: f32) {
         let clip = sim.motion.clip;
         self.clip = clip.into();
         self.face = sim.face;
         self.parts = sim.parts;
         self.frame = sim.motion.render_frame(sim.alpha());
-        self.ball = sim.current_move == Some(Move::SpecialLw);
+        // ftParts_80074B0C: the fighter's alternate DObj (Samus's morph ball,
+        // Yoshi's egg) replaces the body for its move.
+        self.ball = self.morph_move.is_some() && sim.current_move == self.morph_move;
         self.hidden = sim
             .rebirth
             .as_ref()
@@ -296,6 +330,14 @@ impl Presentation {
         if let Some(neutral) = neutral {
             let base = self.animations.pose(&self.model, neutral, self.frame, true);
             self.world = blend_pose(&self.model, &base, &self.world, sim.fall_blend);
+        }
+        if self.ball
+            && let Some(joint) = self.spin_joint
+        {
+            // Distance rolled over the egg's radius (5.77 model units), matching the
+            // source's per-frame x14 accumulation and the host's movement scale.
+            let angle = sim.roll_angle(5.77);
+            spin_subtree(&self.model, &mut self.world, joint, angle);
         }
         if let Some(entry) = sim.entry {
             let transform = entry.transform();
@@ -555,6 +597,28 @@ pub fn splice_pose(model: &Model, lower: &[Mat4], upper: &[Mat4], upper_root: us
         world.push(joint.parent.map_or(local, |p| world[p] * local));
     }
     world
+}
+/// Rotate a joint and its descendants about the joint's own origin (the source's
+/// `ftPartSetRotX(fighter, joint, angle)`): the egg is skinned to that joint, so the
+/// roll spins it about the egg's centre instead of the feet.
+fn spin_subtree(model: &Model, world: &mut [Mat4], root: usize, angle: f32) {
+    if root >= world.len() {
+        return;
+    }
+    let pivot = world[root].w_axis.truncate();
+    let turn = Mat4::from_translation(pivot)
+        * Mat4::from_quat(glam::Quat::from_rotation_x(angle))
+        * Mat4::from_translation(-pivot);
+    for i in 0..world.len() {
+        let mut current = Some(i);
+        while let Some(j) = current {
+            if j == root {
+                world[i] = turn * world[i];
+                break;
+            }
+            current = model.joints.get(j).and_then(|joint| joint.parent);
+        }
+    }
 }
 /// ftCo_Fall_Anim_Inner blends local joint transforms, then concatenates the
 /// hierarchy. Blending world matrices would shorten limbs during rotations.

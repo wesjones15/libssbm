@@ -4,9 +4,9 @@ use glam::Vec3;
 use libssbm::{
     sim::{EventKind, FlatHost, DOWN_B, JUMP, NEUTRAL_B, SIDE_B},
     yoshi::Yoshi,
-    Input, Sim,
+    Input, Move, Sim,
 };
-use libssbm_assets::{Result, animation::Animations, fighter::YOSHI};
+use libssbm_assets::{Result, animation::Animations, fighter::YOSHI, presentation::Presentation};
 
 fn dir() -> std::path::PathBuf {
     std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../assets")
@@ -124,6 +124,70 @@ fn egg_roll_curls_up_rolls_steers_and_ends() -> Result<()> {
     assert!(boxed, "the egg never had a hitbox");
     assert!(heading_changed, "the stick did not steer the egg");
     assert!(sim.position.length() > 10., "the roll covered only {}", sim.position.length());
+    Ok(())
+}
+
+#[test]
+fn egg_roll_can_be_broken_out_of_at_any_time() -> Result<()> {
+    let Some(mut sim) = yoshi_at(Vec3::ZERO, true)? else { return Ok(()) };
+    let mut host = FlatHost::default();
+    settle(&mut sim, &mut host);
+    // A second side-B during the curl-up ends it before the roll starts.
+    step(&mut sim, &mut host, input(SIDE_B, Vec3::X));
+    step(&mut sim, &mut host, Input::idle());
+    step(&mut sim, &mut host, input(SIDE_B, Vec3::X));
+    assert_eq!(sim.motion.clip, "SpecialSEnd", "a second press did not end the start");
+    run_out(&mut sim, &mut host, 120);
+
+    // And during the loop, immediately (no x4C wait).
+    settle(&mut sim, &mut host);
+    step(&mut sim, &mut host, input(SIDE_B, Vec3::X));
+    let mut looped = false;
+    for _ in 0..40 {
+        step(&mut sim, &mut host, input(0, Vec3::X));
+        if sim.motion.clip == "SpecialSLoop" { looped = true; break; }
+    }
+    assert!(looped, "the roll loop never started");
+    step(&mut sim, &mut host, input(SIDE_B, Vec3::X));
+    assert_eq!(sim.motion.clip, "SpecialSEnd", "a second press did not end the roll");
+    Ok(())
+}
+
+#[test]
+fn egg_roll_strikes_repeatedly() -> Result<()> {
+    let Some(mut sim) = yoshi_at(Vec3::ZERO, true)? else { return Ok(()) };
+    let mut host = FlatHost::default();
+    settle(&mut sim, &mut host);
+    step(&mut sim, &mut host, input(SIDE_B, Vec3::X));
+    let mut generations = std::collections::BTreeSet::new();
+    let mut rolling = 0;
+    for _ in 0..90 {
+        step(&mut sim, &mut host, input(0, Vec3::X));
+        if sim.motion.clip != "SpecialSLoop" { continue; }
+        rolling += 1;
+        for sample in &sim.action.samples {
+            if sample.clip == "SpecialSLoop" {
+                generations.insert((sample.hitbox.group, sample.generation));
+            }
+        }
+    }
+    assert!(rolling > 30, "only rolled for {rolling} ticks");
+    assert!(generations.len() >= 6, "the egg struck {} times in {rolling} ticks", generations.len());
+    Ok(())
+}
+
+#[test]
+fn egg_roll_draws_the_egg_model_not_the_body() -> Result<()> {
+    let Some(_) = yoshi_at(Vec3::ZERO, true)? else { return Ok(()) };
+    let dir = dir();
+    assert_eq!(YOSHI.morph_move(), Some(Move::SpecialS));
+    let body = Presentation::load_for(&dir, 0, &YOSHI)?;
+    let egg = Presentation::load_for_variant(&dir, 0, &YOSHI, true)?;
+    let body_visible = (0..body.model.batches.len()).filter(|&i| body.visible(i)).count();
+    let egg_visible: Vec<usize> = (0..egg.model.batches.len()).filter(|&i| egg.visible(i)).collect();
+    assert!(body_visible > 20, "the normal body is missing its parts");
+    assert_eq!(egg_visible.len(), 1, "the egg must hide every body part");
+    assert_eq!(egg.model.batches[egg_visible[0]].dobj, 35, "choice 1 is not the egg DObj");
     Ok(())
 }
 

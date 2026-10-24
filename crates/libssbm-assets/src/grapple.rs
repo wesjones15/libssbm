@@ -72,6 +72,8 @@ pub fn part(dir: &Path, part: u32) -> Result<Presentation> {
         frame: 0.,
         world,
         ball: false,
+        morph_move: None,
+        spin_joint: None,
         hidden: false,
         material_tracks,
         duration: 0.,

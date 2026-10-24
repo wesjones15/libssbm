@@ -76,8 +76,11 @@ const ROLL_BOUNCE_COOLDOWN: u32 = 12;
 /// Ticks between the rolling egg's dust puffs (host choice; the source's interval is a
 /// disc attribute not read here).
 const ROLL_DUST_TICKS: u32 = 6;
-/// The roll cannot be ended by a second press before this many ticks.
-const ROLL_MIN_TICKS: u32 = 20;
+/// How often the rolling hitbox may strike again. The source toggles its one hit capsule
+/// every xDC (32) ticks; RoR2 enemies need more contact than that to read the roll, so a
+/// host adaptation refreshes the authored hitboxes much sooner. The authored 4% damage and
+/// knockback are unchanged.
+const ROLL_HIT_TICKS: u32 = 6;
 /// The slam's hitbox follows Yoshi down (the AirLw clip's 14% at its last frame,
 /// carried the whole dive so a falling Yoshi hits what he falls on).
 const DIVE_BOX: u32 = 91;
@@ -138,6 +141,13 @@ impl Yoshi {
                     sim.velocity.x = 0.;
                     sim.velocity.z = 0.;
                 }
+                // The source waits x4C (50) ticks before B may end the roll; the host lets
+                // him break out at any time (a second side-B or the B skill).
+                if pressed & (SIDE_B | DOWN_B) != 0 {
+                    sim.stage = ROLL_END;
+                    sim.stage_frame = 0;
+                    sim.action.active.clear();
+                }
             }
             ROLL_LOOP => {
                 sim.stage_frame += 1;
@@ -185,13 +195,28 @@ impl Yoshi {
                     let dust = crate::effect::part_cue(sim, 1023, crate::effect::part::TOP_N);
                     sim.action.effects.push(dust);
                 }
+                // Refresh the authored roll hitboxes so contact registers repeatedly.
+                // ftYs_SpecialAirSLoop_*_Anim toggles the one hit capsule every xDC ticks;
+                // a new generation lets MeleeHitTracker hit a victim it already struck
+                // while the egg is still overlapping it.
+                if sim.stage_frame % ROLL_HIT_TICKS == 0 {
+                    let slot = &mut sim.action.generations[0];
+                    *slot = slot.wrapping_add(1);
+                    let generation = *slot;
+                    for active in sim.action.active.values_mut() {
+                        if active.hitbox.group == 0 {
+                            active.generation = generation;
+                        }
+                    }
+                }
                 sim.velocity.x = sim.stage_dir.x * speed * scale;
                 sim.velocity.z = sim.stage_dir.z * speed * scale;
                 let gravity = if sim.grounded { 0. } else { sim.params.gravity };
                 Self::hold_gravity(sim, gravity);
-                // Duration up, or a second press once he has gotten going.
+                // Duration up, or a second special press at any time. The host drops the
+                // source's x4C wait so the roll is never a commitment he cannot leave.
                 if sim.stage_frame >= self.specials.egg_roll_frames.max(30)
-                    || (pressed & SIDE_B != 0 && sim.stage_frame > ROLL_MIN_TICKS)
+                    || pressed & (SIDE_B | DOWN_B) != 0
                 {
                     sim.stage = ROLL_END;
                     sim.stage_frame = 0;
