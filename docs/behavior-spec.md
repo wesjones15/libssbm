@@ -689,13 +689,14 @@ commits for **DashGrab** as well as Dash Attack. New exports:
 
 ### Verification and limits
 Headless (`libssbm-assets/tests/pikachu.rs`, `pikachu_presentation.rs`, ffi
-tests, `NativeCheck`): lock-on arrival at near/mid/far distances without
-snap-back, Skull Bash reach/damage scaling, Thunder event timeline and muted
+tests, `NativeCheck`): camera-vector Quick Attack zips without snap-back,
+Skull Bash reach/damage scaling, Thunder event timeline and muted
 hitbox, gravity release, committed dash travel, ten-bounce shot, every costume
 loads with the clips his specials use, every script cue/sound resolves. **Not
 verified in game.** Missing or partial: Quick Attack's body tilt along the zip
 (`XRotN` rotation and scale), Skull Bash wall rebound (`SpecialAirSEnd`
-bounce-back), the Thunder cloud model (only the poof and bolts are drawn), the
+bounce-back), the Thunder cloud's exact source placement/tuning (the 0x24C
+generator is drawn at the top), the
 tail-of-bolt scaling when it reaches the ground (`UnkMotion2`), Pichu/Kirby
 variants, and the air jolt after its 24-tick contact arc (the host redraws a new
 arc per bounce rather than following the source's single air-jolt item).
