@@ -53,8 +53,9 @@ pub fn resolve(id: u32) -> Target {
         1065 => Particle(206),
         1067 => Model(25), // efasync.c 0x42B: standard blast-zone KO
         1068 => Model(26), // alternate KO presentation
-        1072 => Particle(0x140), // efasync.c 0x430: Super Scope muzzle flash (generator 0x140)
-        1073 => Model(0x21), // efasync.c 0x431: the visible additive burst used for the scope's shot
+        1071 => Model(0x20), // efasync.c 0x42F: the drawable white muzzle burst (common model 32)
+        1072 => Particle(0x140), // efasync.c 0x430: Super Scope flash generator 0x140 (no drawable common sprites)
+        1073 => Model(0x21), // efasync.c 0x431: model 33, invisible in the viewer
         1080 => Model(34),
         1086 => Model(36),
         1087 => Particle(202), // efasync.c 0x43F: rebirth ring
@@ -198,9 +199,10 @@ mod tests {
     fn the_scope_effects_are_common_particles() {
         // efasync.c 0x405: the empty-click smoke puff (generator 0x2C), reused for the held charge.
         assert_eq!(resolve(0x405), Target::Particle(44));
-        // efasync.c 0x430: the shot's muzzle flash (generator 0x140), and 0x431's visible burst.
+        // efasync.c 0x430: the shot's muzzle flash (generator 0x140); 0x42F's common burst is the
+        // drawable stand-in the viewer shows.
         assert_eq!(resolve(0x430), Target::Particle(0x140));
-        assert_eq!(resolve(0x431), Target::Model(0x21));
+        assert_eq!(resolve(0x42F), Target::Model(0x20));
     }
 }
 
