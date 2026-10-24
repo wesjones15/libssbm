@@ -593,9 +593,9 @@ mask (45% size, 60% alpha) so the deepest blue sits in the middle and every edge
 fades out (the small 7001/7003 sparks keep their size). Article 2 is the air jolt
 (`itpikachutjoltair.c`), which the source spawns on a surface contact
 (`it_802B3554` -> `it_802B4224`) for 24 ticks (`xDF4 <= 24`). The host draws it as
-a short 24-tick, 0.6-scale arc at each bounce; it is never carried by the flying
-orb (its 36-frame clip would freeze on a long shot). Bounce/impact/despawn puffs
-are off for this shot.
+a short 24-tick, 0.6-scale arc at each bounce, tinted to the item colour overlay's
+blue; it is never carried by the flying orb (its 36-frame clip would freeze on a
+long shot). Bounce/impact/despawn puffs are off for this shot.
 
 ### Egg Lay (borrowed Yoshi move, RT alternate)
 The primary slot's alternate replaces Thunder Jolt with Yoshi's Egg Lay. The sim
