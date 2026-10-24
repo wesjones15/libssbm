@@ -159,6 +159,24 @@ fn egg_roll_lasts_while_held_and_ends_on_release() -> Result<()> {
 }
 
 #[test]
+fn held_egg_roll_caps_at_ten_seconds() -> Result<()> {
+    let Some(mut sim) = yoshi_at(Vec3::ZERO, true)? else { return Ok(()) };
+    let mut host = FlatHost::default();
+    settle(&mut sim, &mut host);
+    step(&mut sim, &mut host, input(SIDE_B, Vec3::X));
+    let mut loop_ticks = 0;
+    for _ in 0..750 {
+        step(&mut sim, &mut host, input(SIDE_B, Vec3::X));
+        if sim.motion.clip == "SpecialSLoop" { loop_ticks += 1; }
+        if sim.current_move.is_none() { break; }
+    }
+    assert!(sim.current_move.is_none(), "a held roll never capped");
+    assert!(loop_ticks <= 601, "the roll ran {loop_ticks} loop ticks");
+    assert!(loop_ticks >= 590, "the roll ended early at {loop_ticks} loop ticks");
+    Ok(())
+}
+
+#[test]
 fn egg_roll_armor_break_ends_the_roll() -> Result<()> {
     let Some(mut sim) = yoshi_at(Vec3::ZERO, true)? else { return Ok(()) };
     let mut host = FlatHost::default();

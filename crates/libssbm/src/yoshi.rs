@@ -81,6 +81,8 @@ const ROLL_DUST_TICKS: u32 = 6;
 /// host adaptation refreshes the authored hitboxes much sooner. The authored 4% damage and
 /// knockback are unchanged.
 const ROLL_HIT_TICKS: u32 = 8;
+/// Host cap on a held roll: 10 seconds at the source's 60 Hz tick.
+const ROLL_MAX_TICKS: u32 = 600;
 /// The slam's hitbox follows Yoshi down (the AirLw clip's 14% at its last frame,
 /// carried the whole dive so a falling Yoshi hits what he falls on).
 const DIVE_BOX: u32 = 91;
@@ -223,9 +225,12 @@ impl Yoshi {
                 sim.velocity.z = sim.stage_dir.z * speed * scale;
                 let gravity = if sim.grounded { 0. } else { sim.params.gravity };
                 Self::hold_gravity(sim, gravity);
-                // Hold the button to keep rolling. Release, or an armor break reported by
-                // the host through `roll_break`, ends it immediately.
-                if sim.roll_break || input.buttons & SIDE_B == 0 {
+                // Hold the button to keep rolling, up to ten seconds. Release, the cap, or
+                // an armor break reported by the host through `roll_break` ends it.
+                if sim.stage_frame >= ROLL_MAX_TICKS
+                    || sim.roll_break
+                    || input.buttons & SIDE_B == 0
+                {
                     self.end_roll(sim);
                 }
             }
