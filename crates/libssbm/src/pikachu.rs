@@ -113,8 +113,6 @@ const BASH_HOST_SCALE: f32 = 1.5;
 /// Longest zip step per tick (Melee units); a farther lock-on stretches the zip
 /// over more ticks instead, so a fast step never tunnels the capsule sweep.
 const MAX_ZIP_STEP: f32 = 15.;
-/// Pikachu stops this far short of a locked enemy so he does not end inside it.
-const ZIP_STANDOFF: f32 = 12.;
 /// Ticks between a zip ending and the decision to zip again: the source reads
 /// its second-zip input on the End clip's frame 9, after a 5-tick zip.
 const ZIP_DECISION_TICKS: u32 = 4;
@@ -311,24 +309,9 @@ impl Pikachu {
     /// Returns false when a locked enemy is already within reach.
     fn begin_zip(&self, sim: &mut Sim, input: Input) -> bool {
         let second = sim.stage_value >= 1.;
-        let zips_left = if second { 1. } else { 2. };
         let (mut dir, magnitude) = self.stick_direction(sim, input);
-        let mut capacity = self.zip_capacity(magnitude, second) * sim.options.speed_scale;
-        let mut travel = capacity;
-        if let Some(target) = sim.lock_target {
-            // Steer to the locked enemy and arrive within the source's two zips:
-            // each zip covers its usual reach or an even share of what remains,
-            // whichever is longer, and the last one covers all of it.
-            let to = target - sim.position;
-            let distance = to.length();
-            let want = (distance - ZIP_STANDOFF).max(0.);
-            if want <= 0.5 {
-                return false;
-            }
-            dir = to / distance.max(1e-4);
-            travel = if zips_left <= 1. { want } else { capacity.max(want / zips_left).min(want) };
-            capacity = travel;
-        }
+        let capacity = self.zip_capacity(magnitude, second) * sim.options.speed_scale;
+        let travel = capacity;
         if sim.grounded && dir.y < 0. {
             dir.y = 0.;
             dir = dir.normalize_or_zero();
@@ -378,10 +361,7 @@ impl Pikachu {
             QUICK_ZIP => {
                 sim.stage_frame += 1;
                 sim.velocity = sim.stage_vec;
-                let arrived = sim
-                    .lock_target
-                    .is_some_and(|t| (t - sim.position).length() <= ZIP_STANDOFF);
-                if sim.stage_frame >= sim.stage_len || arrived {
+                if sim.stage_frame >= sim.stage_len {
                     self.end_zip(sim);
                 }
             }
@@ -408,9 +388,6 @@ impl Pikachu {
     /// continues; re-pressing the button also counts (host adaptation, since a
     /// camera-relative angle is awkward to flick).
     fn wants_second_zip(&self, sim: &Sim, input: Input, pressed: u32) -> bool {
-        if let Some(target) = sim.lock_target {
-            return (target - sim.position).length() > ZIP_STANDOFF + 0.5;
-        }
         if pressed & UP_B != 0 {
             return true;
         }
@@ -634,13 +611,7 @@ impl Behavior for Pikachu {
                 true
             }
             (Move::SpecialHi, QUICK_START) => {
-                if !self.begin_zip(sim, input) {
-                    // Already in reach of the locked enemy: skip straight to the end.
-                    sim.stage_value = 2.;
-                    sim.stage = QUICK_END;
-                    sim.stage_frame = 0;
-                    sim.stage_dir = sim.facing;
-                }
+                self.begin_zip(sim, input);
                 true
             }
             (Move::SpecialLw, THUNDER_START) => {

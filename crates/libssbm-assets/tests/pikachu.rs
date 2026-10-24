@@ -1,5 +1,5 @@
 //! Pikachu's staged specials against his real disc clips (skipped without the
-//! player's extracted cache): lock-on arrival, no snap-back, Thunder timeline,
+//! player's extracted cache): camera-vector zips, no snap-back, Thunder timeline,
 //! gravity release, and committed dash travel.
 use glam::Vec3;
 use libssbm::{
@@ -66,42 +66,6 @@ fn run_move(sim: &mut Sim, host: &mut FlatHost, button: u32, max: usize) -> f32 
     }
     assert!(sim.current_move.is_none(), "move never ended");
     furthest
-}
-
-#[test]
-fn quick_attack_reaches_a_locked_enemy_within_two_zips_without_snapback() -> Result<()> {
-    for (distance, label) in [(40., "near"), (90., "mid"), (250., "far")] {
-        let Some(mut sim) = pikachu_at(Vec3::ZERO, true)? else { return Ok(()) };
-        let mut host = FlatHost { events: Vec::new() };
-        sim.lock_target = Some(Vec3::new(distance, 0., 0.));
-        for _ in 0..4 {
-            step(&mut sim, &mut host, idle());
-        }
-        let mut furthest = 0f32;
-        let mut bursts = 0;
-        let mut fast = false;
-        step(&mut sim, &mut host, press(UP_B));
-        for tick in 0..400 {
-            step(&mut sim, &mut host, idle());
-            assert!(sim.position.x >= furthest - 1e-3, "{label}: snap-back at tick {tick}");
-            furthest = furthest.max(sim.position.x);
-            let moving = sim.velocity.length() > 2.;
-            if moving && !fast {
-                bursts += 1;
-            }
-            fast = moving;
-            if sim.current_move.is_none() && tick > 3 {
-                break;
-            }
-        }
-        assert!(bursts >= 1 && bursts <= 2, "{label}: {bursts} zips");
-        let gap = distance - sim.position.x;
-        assert!(
-            (0. ..=14.).contains(&gap),
-            "{label}: stopped {gap} short of the enemy (standoff is 12)"
-        );
-    }
-    Ok(())
 }
 
 #[test]
