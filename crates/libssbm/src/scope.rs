@@ -126,6 +126,8 @@ pub struct ScopeState {
     pub idle: u32,
     /// Fractional ammo refilled so far.
     pub refill_carry: f32,
+    /// The held-charge cue (SFX 0xFE, SFX_IT_SCORPE_TAME) has been started for this use.
+    pub charge_sound: bool,
 }
 
 impl ScopeState {

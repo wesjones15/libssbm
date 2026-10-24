@@ -130,6 +130,26 @@ mod in_hand {
     }
 
     #[test]
+    fn a_hold_cocks_once_then_charges_and_the_shot_stops_the_charge_cue() {
+        let Some((mut sim, mut host)) = luigi(None) else { return };
+        let mut cues: Vec<(u32, bool)> = Vec::new();
+        for _ in 0..30 {
+            step(&mut sim, &mut host, true);
+            cues.extend(sim.action.sounds.iter().map(|c| (c.sound, c.stop)));
+        }
+        // The Start clip's own command: SFX_IT_SCORPE_KAMAE (0xFD), once.
+        assert_eq!(cues.iter().filter(|(sound, stop)| *sound == 0xFD && !stop).count(), 1, "{cues:?}");
+        // The disc's separate charge cue: SFX_IT_SCORPE_TAME (0xFE), once, when the clip ends.
+        assert_eq!(cues.iter().filter(|(sound, stop)| *sound == 0xFE && !stop).count(), 1, "{cues:?}");
+        // Firing stops it on its own track.
+        for _ in 0..2 {
+            step(&mut sim, &mut host, false);
+            cues.extend(sim.action.sounds.iter().map(|c| (c.sound, c.stop)));
+        }
+        assert!(cues.iter().any(|(sound, stop)| *sound == 0xFE && *stop), "the charge cue was not stopped: {cues:?}");
+    }
+
+    #[test]
     fn a_hold_is_one_charged_shot_that_costs_more() {
         let Some((mut sim, mut host)) = luigi(None) else { return };
         use_scope(&mut sim, &mut host, 40);

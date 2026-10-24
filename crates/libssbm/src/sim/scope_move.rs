@@ -15,16 +15,49 @@ const STAGE_RAPID: u32 = 2;
 const STAGE_END: u32 = 3;
 
 /// What `ft_PlaySFX` plays: the small shot, the mid and large charges, and the click of an empty scope
-/// (ftCo_ItemScopeFire.c fn_800D84D4); the charging hum is the Start clip's own sound command.
+/// (ftCo_ItemScopeFire.c fn_800D84D4). The Start clip's own command is the cocking chirp (SOUND_COCK);
+/// the disc's separate charge cue (SOUND_CHARGE, `SFX_IT_SCORPE_TAME`) plays once when that clip runs out.
 const SOUND_SMALL: u32 = 0xFC;
+const SOUND_CHARGE: u32 = 0xFE;
 const SOUND_MEDIUM: u32 = 0xFF;
 const SOUND_LARGE: u32 = 0x100;
 const SOUND_EMPTY: u32 = 0x101;
+/// A track of its own, so firing can stop the charge cue without touching the shot or voice slots.
+const SCOPE_SOUND_CHANNEL: u32 = 7;
+
+fn scope_sound(sound: u32, stop: bool) -> SoundCue {
+    SoundCue {
+        sound,
+        volume: 127,
+        pan: 64,
+        channel: SCOPE_SOUND_CHANNEL,
+        stop,
+    }
+}
 
 impl Sim {
     /// Gives the fighter the Super Scope (with a full magazine), or takes it away.
     pub fn set_scope(&mut self, params: Option<ScopeParams>) {
+        self.scope_stop_charge_sound(true);
         self.scope = params.map(|params| Scope { state: crate::scope::ScopeState::new(&params), params });
+    }
+
+    /// Stops the held-charge cue if it is playing. `queued` is for calls outside a tick (the stop must survive
+    /// the next `advance`'s sound-cue clear).
+    pub(super) fn scope_stop_charge_sound(&mut self, queued: bool) {
+        let was = match self.scope.as_mut() {
+            Some(scope) => std::mem::replace(&mut scope.state.charge_sound, false),
+            None => false,
+        };
+        if !was {
+            return;
+        }
+        let cue = scope_sound(SOUND_CHARGE, true);
+        if queued {
+            self.queued_sounds.push(cue);
+        } else {
+            self.action.sounds.push(cue);
+        }
     }
 
     /// The disc clip for the scope's stage, ground or air.
@@ -49,11 +82,13 @@ impl Sim {
 
     /// A move start: the hold begins again; the magazine is as it was.
     pub(crate) fn scope_begin(&mut self) {
+        self.scope_stop_charge_sound(false);
         if let Some(scope) = self.scope.as_mut() {
             scope.state.held = 0;
             scope.state.released = false;
             scope.state.level = None;
             scope.state.shots_left = 0;
+            scope.state.charge_sound = false;
         }
     }
 
@@ -75,6 +110,12 @@ impl Sim {
                     }
                 }
                 if self.motion.finished() {
+                    // The Start clip (and its cocking chirp) has run out. A trigger still down is a charge:
+                    // play the disc's charge cue once for this use, on its own track so firing can stop it.
+                    if held && !scope.state.released && !scope.state.charge_sound {
+                        scope.state.charge_sound = true;
+                        self.action.sounds.push(scope_sound(SOUND_CHARGE, false));
+                    }
                     let too_long = scope.state.held as f32 >= scope.params.hold_max;
                     if too_long || scope.state.released {
                         if !too_long && scope.params.level(scope.state.held) == 0 {
@@ -114,6 +155,10 @@ impl Sim {
     }
 
     fn scope_fire(&mut self, scope: &mut Scope, level: Option<u32>) {
+        if scope.state.charge_sound {
+            scope.state.charge_sound = false;
+            self.action.sounds.push(scope_sound(SOUND_CHARGE, true));
+        }
         self.stage = STAGE_FIRE;
         self.motion.frame = 0.;
         self.action.projectile_fired = false;
@@ -121,6 +166,10 @@ impl Sim {
     }
 
     fn scope_rapid(&mut self, scope: &mut Scope) {
+        if scope.state.charge_sound {
+            scope.state.charge_sound = false;
+            self.action.sounds.push(scope_sound(SOUND_CHARGE, true));
+        }
         self.stage = STAGE_RAPID;
         self.motion.frame = 0.;
         self.action.projectile_fired = false;

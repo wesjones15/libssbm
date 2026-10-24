@@ -10,6 +10,8 @@ const HURT_HEAVY: f32 = 0.2;
 
 impl Sim {
     pub(super) fn finish_disc_action(&mut self) {
+        // A charge interrupted before it fires (a hit, a ledge grab) leaves no held cue behind.
+        self.scope_stop_charge_sound(false);
         if self.grabbed {
             self.set_grabbed(true);
             return;
