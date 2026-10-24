@@ -667,14 +667,17 @@ Yoshi's tongue is a host-drawn lash (the disc has no tongue model) where the sim
 `SpecialN1` grab command fires. It aims at the point the camera crosshair is on,
 using the shared `MeleeAim.ProjectilePoint` convergence also used by the Charge
 Shot and Scope, rather than the camera's parallel forward ray, which starts above
-the mouth and puts close or low targets below the lash. The target point is fixed
-when the move starts; the drawn lash and the frame-20 grab re-aim from the live
-mouth to it, so the clip's head bob (and the upper-body pitch) cannot drag the tip
-off the target. While Egg Lay plays the host also pitches Yoshi's upper rig toward
-camera elevation, the same bounded +/-60 degree bend as the Scope, which moves the
-head and the mouth bone the lash starts from. The lash's reach and the grab capsule
-stop at the first terrain met by a narrow centre probe (the shared large-shot rule,
-so the lash's own thickness does not stop it on a floor it passes over), and the
+the mouth and puts close or low targets below the lash. The point is read live every
+frame, so panning through the tongue's startup keeps the tip on the reticle; the
+lash and the frame-20 grab re-aim from the live mouth to it. On empty sky the point
+is the shared `MeleeAim.PointOnRayAtReach`: the point on the camera ray at the lash's
+reach from the mouth, because a parallel line would sit below the reticle at every
+finite distance. Once the tongue catches, its target locks to the victim so the reel
+cannot follow the camera. While Egg Lay plays the host also pitches Yoshi's upper rig
+toward camera elevation, the same bounded +/-60 degree bend as the Scope, which moves
+the head and the mouth bone the lash starts from. The lash's reach and the grab
+capsule stop at the first terrain met by a narrow centre probe (the shared large-shot
+rule, so the lash's own thickness does not stop it on a floor it passes over), and the
 drawn curve is clamped to that contact each frame. Egg Lay's skill charge is spent
 when the tongue swallows an enemy, not when it is thrown, so a miss or a terrain
 stop costs no cooldown. These are host adaptations; the sim's `SpecialN` timing is
