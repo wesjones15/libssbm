@@ -625,8 +625,9 @@ clip's own Thunder script is muted, so no cloud, bolt, hitbox or Pikachu voice l
 `Sim::tongue_upper_pitch` already reports `SpecialN`, so the upper rig pitches with
 camera elevation around Pikachu's torso root (joint 5); hips and legs stay.
 The host draws Yoshi's tongue from Pikachu's forward snout joint 16, catches up to
-six enemies with the shared Yoshi capture/egg code, and lays Yoshi's egg model
-behind him (5 s / 7 s / 10 s breakout). Egg Lay sounds come from Yoshi's extracted
+six enemies with the shared Yoshi capture/egg code (a HealthComponent lookup, so
+slimes and bodies without a HurtBox are edible too), and lays Yoshi's egg model
+behind Pikachu's aim (5 s / 7 s / 10 s breakout). Egg Lay sounds come from Yoshi's extracted
 bank (`0xDD` swallow, `0x4460C` lay, `0x44618` break) through the modular
 `ssbm_sim_play_sound_from`; Egg Lay has no Yoshi voice, and no other Yoshi voice is
 played. Its 3 s cooldown is spent only when the tongue catches something. Effect
@@ -647,18 +648,14 @@ Start (hover) -> zip (`x60` = 5 ticks at `x90*mag + x94`, 10% kept as
 `xA4`) -> End, whose frame-9 decision zips again when the new direction differs
 by `xA8` (38 degrees) or, as a host adaptation, LB is pressed again. Second zip
 speed is scaled by `x98` (0.9). The double jump is spent on the first zip.
-**Lock-on:** the host passes the locked enemy (`ssbm_sim_lock_target`, chosen
-with ror2-common `EnemyLock`, the nearest to the crosshair preferring enemies in
-front, as Olimar and Mario). Zips steer to it and **arrive within the source's two
-zips**: each covers its usual reach or an even share of the remaining distance,
-the last all of it, stopping `ZIP_STANDOFF` (12 units) short; a far enemy
-stretches the zips over more ticks (step <= 15 units) rather than falling short.
-Without a lock the heading is the camera-relative stick and the camera pitch
-(the source reads a 2D stick angle), or the camera aim with no stick. A level zip
-slides on the floor; only a rising zip leaves it. Zips carry velocity through the
-host's collision sweep and the sim position is never rewritten, so there is no
-rubber-banding. Host travel scale 1.6. Up-special invulnerability until landing
-is the shared recovery adaptation.
+**No lock-on:** the heading is the camera-relative stick and camera pitch (the
+source reads a 2D stick angle), or the camera aim with no stick. The host gives
+it **2 charges at start**, each back after **1 s**, and damages every enemy whose
+body the zip path crosses (host `PikachuDriver.QuickSweep`, once per enemy per
+cast). A level zip slides on the floor; only a rising zip leaves it. Zips carry
+velocity through the host's collision sweep and the sim position is never
+rewritten, so there is no rubber-banding. Host travel scale 1.6. Up-special
+invulnerability until landing is the shared recovery adaptation.
 
 ### Thunder (down special, RB)
 Start -> Loop (wait) -> Loop (struck) -> End. At the end of Start the sim emits a
@@ -670,10 +667,16 @@ strength 2, restarts the loop clip unmuted (its 17% electric hitbox, effects
 and sounds), hops him `xB4` in the air under `xB8` gravity, and plays the
 crackle (1216). While waiting the clip's script is muted (`script_muted`), so
 the hitbox and effects of the struck state do not fire early. Enemies in the
-bolt's column are hit once for the bolt's 10%. Host presentation: four fixed
-4 m article-0 segments stacked into a 16 m column above Pikachu -- no world
-ceiling raycast and no dynamic stretch; the top segment starts at 16 m and the
-bottom reaches his feet. The source storm cloud (efSync 0x4C3 -> common generator 0x24C) is spawned at the top of the column. The bolt is forced additive and tinted yellow; the texture's black border is recoloured by a distance-faded yellow halo, so it reads as a glow around the core.
+bolt's column are hit once for the bolt's 10%. At the strike the host adds a
+10 m electric burst (30x damage coefficient) with outward/upward knockback.
+An overhead surface within the fixed 16 m column blocks the cloud, bolt and
+burst entirely. Host presentation: four fixed 4 m article-0 segments stacked
+into a 16 m column above Pikachu -- no world-ceiling raycast for the visual and
+no dynamic stretch; the top segment starts at 16 m and the bottom reaches his
+feet. The source storm cloud (efSync 0x4C3 -> common generator 0x24C) is spawned
+at the top of the column. The bolt is forced additive and tinted yellow; the
+texture's black border is recoloured by a distance-faded yellow halo, so it
+reads as a glow around the core.
 
 ### Shared mechanisms added for staged specials
 `Sim::{stage, stage_frame, stage_len, stage_vec, stage_dir, stage_value,
