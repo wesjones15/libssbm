@@ -1,12 +1,12 @@
 //! Pikachu's models, portrait, sounds and effect ids against the player's disc
 //! cache (skipped when it is absent): every clip his specials name exists, every
 //! script cue resolves, every script sound is playable.
+use glam::Vec3;
 use libssbm::effect::{self, Target};
 use libssbm_assets::{
-    Result, animation::Animations, audio, effects::Effects, fighter::PIKACHU, portrait,
-    presentation::Presentation,
+    Result, animation::Animations, audio, effects::Effects, fighter::PIKACHU,
+    model::Model, portrait, presentation::Presentation,
 };
-
 fn dir() -> Option<std::path::PathBuf> {
     let dir = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../assets");
     if PIKACHU.complete(&dir) {
@@ -122,5 +122,49 @@ fn thunder_jolt_orb_is_the_item_effect_not_the_air_jolt_model() -> Result<()> {
     assert!(!air.model.batches.is_empty(), "the air-jolt trail model is missing");
     let clip = air.animations.clips.get("Object").expect("air jolt Object clip");
     assert_eq!(clip.frames, 36., "air jolt clip length changed; the host no longer draws it, but the identity should stay pinned");
+    Ok(())
+}
+
+/// The borrowed Egg Lay tongue leaves Pikachu's mouth. His model has no named mouth bone
+/// and no common `FtPart_Mouth`; the forward snout joint under the head (16, at z=4.0 in
+/// bind pose) is the mouth analogue of Yoshi's joint 42 used by the host.
+#[test]
+fn pikachu_mouth_joint_is_the_forward_snout() -> Result<()> {
+    let Some(dir) = dir() else { return Ok(()) };
+    let model = Model::load_for(&dir, 0, &PIKACHU)?;
+    let mouth = model.joints.get(16).expect("Pikachu has no joint 16");
+    assert_eq!(mouth.parent, Some(14), "the mouth joint moved off the head");
+    assert!(
+        mouth.bind.w_axis.z > 3.5 && mouth.bind.w_axis.y < 8.0,
+        "joint 16 is no longer the forward, low snout: {:?}",
+        mouth.bind.w_axis
+    );
+    Ok(())
+}
+
+/// The borrowed Egg Lay pitches Pikachu's upper rig around the torso root (5), leaving the
+/// hips and legs alone while the mouth follows the camera elevation.
+#[test]
+fn egg_lay_pitch_moves_the_mouth_and_keeps_the_hips() -> Result<()> {
+    let Some(dir) = dir() else { return Ok(()) };
+    let mut p = Presentation::load_for(&dir, 0, &PIKACHU)?;
+    p.clip = "SpecialLwStart".into();
+    p.frame = 8.;
+    p.world = p.animations.pose(&p.model, "SpecialLwStart", 8., false);
+    let mouth = p.world[16].transform_point3(Vec3::ZERO);
+    let hips = p.world[4].transform_point3(Vec3::ZERO);
+    let mut up = p.world.clone();
+    libssbm_assets::presentation::pitch_upper_body(&p.model, &mut up, 5, 45f32.to_radians());
+    let mut down = p.world.clone();
+    libssbm_assets::presentation::pitch_upper_body(&p.model, &mut down, 5, -45f32.to_radians());
+    let up_mouth = up[16].transform_point3(Vec3::ZERO);
+    let down_mouth = down[16].transform_point3(Vec3::ZERO);
+    assert!(up_mouth.y > mouth.y + 0.5, "up pitch did not raise the mouth");
+    assert!(down_mouth.y < mouth.y - 0.5, "down pitch did not lower the mouth");
+    assert!(
+        (up[4].transform_point3(Vec3::ZERO) - hips).length() < 1e-4
+            && (down[4].transform_point3(Vec3::ZERO) - hips).length() < 1e-4,
+        "the pitch moved the hip root"
+    );
     Ok(())
 }

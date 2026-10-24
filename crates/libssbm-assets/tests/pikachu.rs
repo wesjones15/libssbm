@@ -4,7 +4,7 @@
 use glam::Vec3;
 use libssbm::{
     pikachu::Pikachu,
-    sim::{EventKind, FlatHost, DOWN_B, SIDE_B, UP_B},
+    sim::{EventKind, FlatHost, DOWN_B, NEUTRAL_B, SIDE_B, UP_B},
     Input, Move, Sim,
 };
 use libssbm_assets::{Result, animation::Animations, fighter::PIKACHU};
@@ -245,6 +245,37 @@ fn dash_attack_and_dash_grab_commit_their_travel() -> Result<()> {
         }
         assert!((sim.position.x - travel).abs() < 0.2, "{clip}: {} vs {travel}", sim.position.x);
     }
+    Ok(())
+}
+
+// Thunder Jolt plays the grounded clip (the source's down-diagonal throw) for a level or
+// downward aim and the airborne clip when it is fired from the air or aimed upward.
+#[test]
+fn borrowed_egg_lay_uses_the_tense_thunder_start_and_pitches() -> Result<()> {
+    let Some(mut sim) = pikachu_at(Vec3::ZERO, true)? else { return Ok(()) };
+    let mut host = FlatHost { events: Vec::new() };
+    for _ in 0..4 { step(&mut sim, &mut host, idle()); }
+    sim.host_flags = libssbm::pikachu::HOST_EGG_LAY;
+    let aim = Vec3::new(0., 0.5, 1.).normalize();
+    let input = Input { aim, buttons: NEUTRAL_B, ..Input::idle() };
+    step(&mut sim, &mut host, input);
+    assert_eq!(sim.current_move, Some(Move::SpecialN), "RT did not start Egg Lay");
+    assert_eq!(sim.motion.clip, "SpecialLwStart", "Egg Lay did not use the Thunder start");
+    assert!(sim.tongue_upper_pitch().is_some(), "the upper body is not pitching");
+    for _ in 0..3 {
+        step(&mut sim, &mut host, Input { aim, ..Input::idle() });
+        assert_eq!(sim.motion.clip, "SpecialLwStart");
+    }
+    // The Thunder start script (cloud/bolt sounds and effects) must be muted.
+    assert!(sim.action.sounds.is_empty(), "Thunder sounds leaked into Egg Lay");
+    assert!(sim.action.effects.is_empty(), "Thunder effects leaked into Egg Lay");
+    // Its 18-frame clip hands over to the swallow stage, which replays the same tense clip.
+    for _ in 0..20 { step(&mut sim, &mut host, idle()); }
+    assert_eq!(sim.current_move, Some(Move::SpecialN), "Egg Lay ended before the swallow");
+    assert_eq!(sim.motion.clip, "SpecialLwStart");
+    assert!(sim.motion.frame < 10., "the swallow did not restart the tense clip: frame {}", sim.motion.frame);
+    for _ in 0..24 { step(&mut sim, &mut host, idle()); }
+    assert!(sim.current_move.is_none(), "Egg Lay never ended");
     Ok(())
 }
 

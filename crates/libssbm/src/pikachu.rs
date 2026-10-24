@@ -95,6 +95,14 @@ const THUNDER_START: u32 = 0;
 const THUNDER_WAIT: u32 = 1;
 const THUNDER_STRUCK: u32 = 2;
 const THUNDER_END: u32 = 3;
+// Borrowed Yoshi Egg Lay, on the LT slot (SpecialLw) while the loadout selects it.
+// The two stages reuse Pikachu's tense Thunder start animation.
+const EGG_TONGUE: u32 = 0;
+const EGG_SWALLOW: u32 = 1;
+
+/// Host flag: the LT slot's loadout holds Yoshi's Egg Lay instead of Thunder.
+/// `Pikachu::select_special`, the stage machine and the presentation read it.
+pub const HOST_EGG_LAY: u32 = 1;
 
 /// Host adaptation: open-world travel multipliers over the 60 Hz source speeds.
 const ZIP_HOST_SCALE: f32 = 1.6;
@@ -137,6 +145,19 @@ impl Pikachu {
     fn hold_gravity(sim: &mut Sim, gravity: f32) {
         sim.pad_gravity = Some(Vec3::new(0., -gravity, 0.));
         sim.owns_gravity = true;
+    }
+    /// The LT slot's loadout holds the borrowed Egg Lay instead of Thunder.
+    fn egg_lay(sim: &Sim) -> bool {
+        sim.host_flags & HOST_EGG_LAY != 0
+    }
+    /// Egg Lay's two stages reuse the tense Thunder start clip; the host drives the
+    /// tongue and the egg. Grounded, the source Egg Lay plants the feet.
+    fn tick_egg_lay(sim: &mut Sim) {
+        sim.stage_frame += 1;
+        if sim.grounded {
+            sim.velocity.x = 0.;
+            sim.velocity.z = 0.;
+        }
     }
     fn release_gravity(sim: &mut Sim) {
         if sim.owns_gravity {
@@ -468,13 +489,31 @@ impl Behavior for Pikachu {
     }
     fn enter_special(&self, sim: &mut Sim, _host: &mut dyn Host, m: Move, _input: Input) {
         match m {
-            Move::SpecialHi | Move::SpecialLw => {
-                // Start is a hover: ftPk_SpecialAirHiStart0_Phys / SpecialLwStart_Phys.
+            Move::SpecialHi => {
+                // Start is a hover: ftPk_SpecialAirHiStart0_Phys.
+                sim.velocity = Vec3::ZERO;
+                Self::hold_gravity(sim, 0.);
+            }
+            Move::SpecialLw => {
+                // Thunder Start is a hover: ftPk_SpecialLwStart_Phys.
                 sim.velocity = Vec3::ZERO;
                 Self::hold_gravity(sim, 0.);
             }
             Move::SpecialN => {
-                sim.stage_value = if sim.move_aim.y > JOLT_UP_AIM { 1. } else { 0. };
+                if Self::egg_lay(sim) {
+                    // Borrowed Yoshi Egg Lay on the RT slot: the tense Thunder start is
+                    // the animation, and the host drives the tongue and egg.
+                    sim.stage = EGG_TONGUE;
+                    sim.stage_frame = 0;
+                    sim.stage_len = 0;
+                    sim.stage_value = 0.;
+                    if sim.grounded {
+                        sim.velocity.x = 0.;
+                        sim.velocity.z = 0.;
+                    }
+                } else {
+                    sim.stage_value = if sim.move_aim.y > JOLT_UP_AIM { 1. } else { 0. };
+                }
             }
             Move::SpecialS => {
                 // ftPk_SpecialS_Enter: gr_vel /= x30 (start friction), no air lift.
@@ -518,6 +557,10 @@ impl Behavior for Pikachu {
     }
     fn fire_strength(&self, sim: &mut Sim, m: Move) -> f32 {
         if m == Move::SpecialN {
+            if Self::egg_lay(sim) {
+                // 1: the tongue is out; 2: the egg is laid (the borrowed Yoshi contract).
+                return if sim.stage == EGG_SWALLOW { 2. } else { 1. };
+            }
             sim.action.sounds.push(SoundCue {
                 sound: SHOCK_SOUND,
                 volume: 127,
@@ -543,7 +586,7 @@ impl Behavior for Pikachu {
         let mine = matches!(
             sim.current_move,
             Some(Move::SpecialS | Move::SpecialHi | Move::SpecialLw)
-        );
+        ) || (Self::egg_lay(sim) && sim.current_move == Some(Move::SpecialN));
         if !mine || sim.phase == Phase::Free {
             // Ended or interrupted: never leave a held gravity override behind.
             Self::release_gravity(sim);
@@ -552,11 +595,24 @@ impl Behavior for Pikachu {
         match sim.current_move {
             Some(Move::SpecialS) => self.tick_bash(sim, input),
             Some(Move::SpecialHi) => self.tick_quick(sim, input, pressed),
+            Some(Move::SpecialN) if Self::egg_lay(sim) => Self::tick_egg_lay(sim),
             Some(Move::SpecialLw) => self.tick_thunder(sim, host),
             _ => {}
         }
     }
     fn next_stage(&self, sim: &mut Sim, host: &mut dyn Host, m: Move, input: Input) -> bool {
+        if Self::egg_lay(sim) && m == Move::SpecialN {
+            // Tongue -> swallow. Both stages replay the tense Thunder start: the clip is
+            // 18 frames, so the second stage restarts it rather than holding the last pose.
+            if sim.stage == EGG_TONGUE {
+                sim.stage = EGG_SWALLOW;
+                sim.stage_frame = 0;
+                sim.motion.frame = 0.;
+                sim.action.projectile_fired = false;
+                return true;
+            }
+            return false;
+        }
         match (m, sim.stage) {
             (Move::SpecialS, BASH_START) => {
                 if input.buttons & SIDE_B != 0 {
@@ -611,9 +667,25 @@ impl Behavior for Pikachu {
         }
     }
     fn script_muted(&self, sim: &Sim) -> bool {
+        if Self::egg_lay(sim) && sim.current_move == Some(Move::SpecialN) {
+            // The borrowed animation is Pikachu's Thunder start; mute its cloud/bolt
+            // sounds and effects. The host plays Yoshi's Egg Lay cues instead.
+            return true;
+        }
         sim.current_move == Some(Move::SpecialLw) && sim.stage == THUNDER_WAIT
     }
     fn on_connect(&self, sim: &mut Sim) {
+        // Borrowed Egg Lay: the tongue caught something; start the swallow stage now.
+        if Self::egg_lay(sim)
+            && sim.current_move == Some(Move::SpecialN)
+            && sim.stage == EGG_TONGUE
+        {
+            sim.stage = EGG_SWALLOW;
+            sim.stage_frame = 0;
+            sim.motion.frame = 0.;
+            sim.action.projectile_fired = false;
+            return;
+        }
         // ftPk_SpecialS_ZeroVelocity (deal_dmg_cb): Skull Bash stops on its victim.
         if sim.current_move == Some(Move::SpecialS) && sim.stage == BASH_GO && sim.stage_value > 0.
         {
@@ -632,6 +704,10 @@ impl Behavior for Pikachu {
     fn clip(&self, sim: &Sim, m: Move) -> &'static str {
         let started = sim.move_started_grounded;
         let now = sim.grounded;
+        if Self::egg_lay(sim) && m == Move::SpecialN {
+            // The user-facing choice: Pikachu's Thunder start, where he tenses up.
+            return if started { "SpecialLwStart" } else { "SpecialAirLwStart" };
+        }
         match (m, sim.stage) {
             (Move::SpecialN, _) => {
                 if started && sim.stage_value == 0. { "SpecialN" } else { "SpecialAirN" }
