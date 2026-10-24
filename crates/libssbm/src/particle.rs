@@ -32,6 +32,9 @@ pub struct Particle {
     pub velocity: Vec3,
     pub size: f32,
     pub rotation: f32,
+    /// Trail length from 0xE8; `kind` bit 22 marks it on. The host draws a trail only
+    /// when it implements one, but parsing this keeps the rest of the particle alive.
+    pub trail: f32,
     pub color: Vec4,
     pub environment: Vec4,
     pub transform: Mat4,
@@ -314,6 +317,7 @@ impl Particle {
             velocity,
             size: d.size,
             rotation: 0.,
+            trail: 0.,
             color: Vec4::ONE,
             environment: Vec4::ZERO,
             transform,
@@ -542,6 +546,17 @@ impl Particle {
                         }
                         0xe6 => self.kind |= 1 << 21,
                         0xe7 => self.kind &= !(1 << 21),
+                        0xe8 => {
+                            // particle.c: Trail control. A negative value disables the
+                            // trail; a non-negative one enables it with that length.
+                            let trail = r.float()?;
+                            if trail < 0. {
+                                self.kind &= !(1 << 22);
+                            } else {
+                                self.kind |= 1 << 22;
+                                self.trail = trail;
+                            }
+                        }
                         0xed => {
                             let base = r.float()?;
                             let range = r.float()?;
