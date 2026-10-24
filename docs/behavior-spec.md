@@ -579,6 +579,35 @@ bounce. This is the Luigi-fireball arc, not the source's terrain-hugging crawl
 are host adaptations shared with Luigi's fireball; spawn is chest height, not
 foot height.
 
+**Visual.** Article 1 (the travelling ground jolt) has no model. The source
+gives it effect `0x4BD` in `it_802B3554`: `efsync.c case 0x4BD` calls
+`hsd_8039EFAC(0, 7, 0x1B58, jobj)`, i.e. `EfPkData` generator 7000 attached to the
+item. That generator spawns child generators 7001-7003 (the pulsing electric
+aura), so they are **not** separate bounce or impact puffs. The host spawns 7000
+once with the shot, attaches it every frame and stops it with the shot; it does
+not draw article 2's model. That model is the air jolt (`itpikachutjoltair.c`),
+spawned only after the ground jolt's first surface contact
+(`it_802B3F88`), and its 36-frame `Object` clip freezes while a host shot keeps
+flying. Bounce/impact/despawn puffs are off for this shot.
+
+### Egg Lay (borrowed Yoshi move, RT alternate)
+The primary slot's alternate replaces Thunder Jolt with Yoshi's Egg Lay. The sim
+uses `Move::SpecialN` and the Yoshi stage machine (`ftYoshi/ftyoshispecialn.c`:
+tongue, swallow), gated by `Sim::host_flags & pikachu::HOST_EGG_LAY`. Both stages
+play Pikachu's tense Thunder start (`SpecialLwStart` / `SpecialAirLwStart`) instead
+of Yoshi's `SpecialN1`/`SpecialN2`; the second stage restarts that clip. The clip's
+own Thunder script is muted, so no cloud, bolt, hitbox or Pikachu voice leaks in.
+`Sim::tongue_upper_pitch` already reports `SpecialN`, so the upper rig pitches with
+camera elevation around Pikachu's torso root (joint 5); hips and legs stay.
+The host draws Yoshi's tongue from Pikachu's forward snout joint 16, catches up to
+six enemies with the shared Yoshi capture/egg code, and lays Yoshi's egg model
+behind him (5 s / 7 s / 10 s breakout). Egg Lay sounds come from Yoshi's extracted
+bank (`0xDD` swallow, `0x4460C` lay, `0x44618` break) through the modular
+`ssbm_sim_play_sound_from`; Egg Lay has no Yoshi voice, and no other Yoshi voice is
+played. Its 3 s cooldown is spent only when the tongue catches something. Effect
+models resolve through `MeleeFighterView.EffectAny`, so the borrowed egg/shell
+cues can come from any extracted fighter bank.
+
 ### Skull Bash (side special, B slot)
 Stages Start -> Hold -> Lunge -> End (`ftpikachuspecials.c`). Holding B charges
 up to `x24` (90) frames. Release plays `SpecialS`; its frame-4 script (cmd var
@@ -636,8 +665,9 @@ loads with the clips his specials use, every script cue/sound resolves. **Not
 verified in game.** Missing or partial: Quick Attack's body tilt along the zip
 (`XRotN` rotation and scale), Skull Bash wall rebound (`SpecialAirSEnd`
 bounce-back), the Thunder cloud model (only the poof and bolts are drawn), the
-tail-of-bolt scaling when it reaches the ground (`UnkMotion2`), Pichu/Kirby variants, and the effect puff choices for the shot's
-bounce/impact (particles 7001-7003 are best guesses pending a visual check).
+tail-of-bolt scaling when it reaches the ground (`UnkMotion2`), Pichu/Kirby
+variants, and the post-contact air-jolt trail model (deliberately not drawn while
+the host's adapted shot keeps bouncing).
 
 ### Super Scope ground-smoke presentation
 
