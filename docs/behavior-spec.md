@@ -577,18 +577,24 @@ enemy, and drops from 10% in flight to the ground jolt's 6% after its first
 bounce. This is the Luigi-fireball arc, not the source's terrain-hugging crawl
 (`itpikachutjoltground.c`), by request. Speed `x8 * 1.6` and the gentle gravity
 are host adaptations shared with Luigi's fireball; spawn is chest height, not
-foot height.
+foot height. The orb flies level for 20 m before the gentle arc begins (host
+adaptation, `MeleeBouncingShot.StraightMetres`); the ten-surface bounce budget and
+bounce response are unchanged.
 
 **Visual.** Article 1 (the travelling ground jolt) has no model. The source
 gives it effect `0x4BD` in `it_802B3554`: `efsync.c case 0x4BD` calls
 `hsd_8039EFAC(0, 7, 0x1B58, jobj)`, i.e. `EfPkData` generator 7000 attached to the
 item. That generator spawns child generators 7001-7003 (the pulsing electric
 aura), so they are **not** separate bounce or impact puffs. The host spawns 7000
-once with the shot, attaches it every frame and stops it with the shot; it does
-not draw article 2's model. That model is the air jolt (`itpikachutjoltair.c`),
-spawned only after the ground jolt's first surface contact
-(`it_802B3F88`), and its 36-frame `Object` clip freezes while a host shot keeps
-flying. Bounce/impact/despawn puffs are off for this shot.
+once with the shot, attaches it every frame and stops it with the shot. Child 7002
+is a 27.5-unit additive sprite that reads as a hard blue square around the orb in
+RoR2's camera; the host scales it to 45% and keeps 60% alpha so it blends as a
+blue glow (the small 7001/7003 sparks keep their size). Article 2 is the air jolt
+(`itpikachutjoltair.c`), which the source spawns on a surface contact
+(`it_802B3554` -> `it_802B4224`) for 24 ticks (`xDF4 <= 24`). The host draws it as
+a short 24-tick, 0.6-scale arc at each bounce; it is never carried by the flying
+orb (its 36-frame clip would freeze on a long shot). Bounce/impact/despawn puffs
+are off for this shot.
 
 ### Egg Lay (borrowed Yoshi move, RT alternate)
 The primary slot's alternate replaces Thunder Jolt with Yoshi's Egg Lay. The sim
@@ -666,8 +672,8 @@ verified in game.** Missing or partial: Quick Attack's body tilt along the zip
 (`XRotN` rotation and scale), Skull Bash wall rebound (`SpecialAirSEnd`
 bounce-back), the Thunder cloud model (only the poof and bolts are drawn), the
 tail-of-bolt scaling when it reaches the ground (`UnkMotion2`), Pichu/Kirby
-variants, and the post-contact air-jolt trail model (deliberately not drawn while
-the host's adapted shot keeps bouncing).
+variants, and the air jolt after its 24-tick contact arc (the host redraws a new
+arc per bounce rather than following the source's single air-jolt item).
 
 ### Super Scope ground-smoke presentation
 
