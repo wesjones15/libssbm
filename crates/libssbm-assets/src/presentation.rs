@@ -305,7 +305,9 @@ impl Presentation {
         self.clip = clip.into();
         self.face = sim.face;
         self.parts = sim.parts;
-        self.frame = sim.motion.render_frame(sim.alpha());
+        self.frame = sim
+            .held_pose()
+            .unwrap_or_else(|| sim.motion.render_frame(sim.alpha()));
         // ftParts_80074B0C: the fighter's alternate DObj (Samus's morph ball,
         // Yoshi's egg) replaces the body for its move.
         self.ball = self.morph_move.is_some() && sim.current_move == self.morph_move;

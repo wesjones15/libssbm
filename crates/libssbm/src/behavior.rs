@@ -76,6 +76,11 @@ pub trait Behavior: Send {
     fn tick_charge_cancel(&self, sim: &mut Sim) -> bool;
 
     // --- Presentation --------------------------------------------------------
+    /// Playback multiplier for a staged pose that must remain held after selection.
+    fn animation_rate(&self, _sim: &Sim) -> f32 { 1. }
+    /// A fixed animation frame the host should draw instead of the live action frame.
+    /// Pikachu's borrowed Egg Lay holds one Thunder pose for both its stages.
+    fn held_pose(&self, _sim: &Sim) -> Option<f32> { None }
     fn clip(&self, sim: &Sim, m: Move) -> &'static str;
     fn landing(&self, sim: &Sim, m: Move) -> &'static str;
     fn facing_locked(&self, m: Move) -> bool;

@@ -251,7 +251,7 @@ fn dash_attack_and_dash_grab_commit_their_travel() -> Result<()> {
 // Thunder Jolt plays the grounded clip (the source's down-diagonal throw) for a level or
 // downward aim and the airborne clip when it is fired from the air or aimed upward.
 #[test]
-fn borrowed_egg_lay_uses_the_tense_thunder_start_and_pitches() -> Result<()> {
+fn borrowed_egg_lay_holds_the_upright_thunder_cast_pose() -> Result<()> {
     let Some(mut sim) = pikachu_at(Vec3::ZERO, true)? else { return Ok(()) };
     let mut host = FlatHost { events: Vec::new() };
     for _ in 0..4 { step(&mut sim, &mut host, idle()); }
@@ -261,6 +261,7 @@ fn borrowed_egg_lay_uses_the_tense_thunder_start_and_pitches() -> Result<()> {
     step(&mut sim, &mut host, input);
     assert_eq!(sim.current_move, Some(Move::SpecialN), "RT did not start Egg Lay");
     assert_eq!(sim.motion.clip, "SpecialLwStart", "Egg Lay did not use the Thunder start");
+    assert_eq!(sim.held_pose(), Some(15.), "Egg Lay did not hold the upright Thunder pose");
     assert!(sim.tongue_upper_pitch().is_some(), "the upper body is not pitching");
     for _ in 0..3 {
         step(&mut sim, &mut host, Input { aim, ..Input::idle() });
@@ -269,11 +270,12 @@ fn borrowed_egg_lay_uses_the_tense_thunder_start_and_pitches() -> Result<()> {
     // The Thunder start script (cloud/bolt sounds and effects) must be muted.
     assert!(sim.action.sounds.is_empty(), "Thunder sounds leaked into Egg Lay");
     assert!(sim.action.effects.is_empty(), "Thunder effects leaked into Egg Lay");
-    // Its 18-frame clip hands over to the swallow stage, which replays the same tense clip.
+    // Its 18-frame clip hands over to the swallow stage, which keeps the same held
+    // upright Thunder pose instead of replaying the crouched wind-up.
     for _ in 0..20 { step(&mut sim, &mut host, idle()); }
     assert_eq!(sim.current_move, Some(Move::SpecialN), "Egg Lay ended before the swallow");
     assert_eq!(sim.motion.clip, "SpecialLwStart");
-    assert!(sim.motion.frame < 10., "the swallow did not restart the tense clip: frame {}", sim.motion.frame);
+    assert_eq!(sim.held_pose(), Some(15.), "the swallow did not hold the Thunder pose");
     for _ in 0..24 { step(&mut sim, &mut host, idle()); }
     assert!(sim.current_move.is_none(), "Egg Lay never ended");
     Ok(())

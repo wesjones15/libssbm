@@ -327,6 +327,10 @@ pub struct Sim {
     rng: u32,
 }
 impl Sim {
+    /// The host presentation frame override for a held pose (Pikachu's Egg Lay).
+    pub fn held_pose(&self) -> Option<f32> {
+        self.behavior.held_pose(self)
+    }
     /// A pseudo-random number in `0..bound` (the source's HSD_Randi), deterministic from the
     /// sim's own history so headless runs repeat.
     pub fn random(&mut self, bound: u32) -> u32 {

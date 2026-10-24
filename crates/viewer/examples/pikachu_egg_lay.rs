@@ -41,7 +41,7 @@ async fn main() {
     let dir = std::path::Path::new(args.first().map(String::as_str).unwrap_or("assets"));
     let capture = args.get(1).cloned();
     let clip = args.get(2).cloned().unwrap_or_else(|| "SpecialLwStart".into());
-    let frame = args.get(3).and_then(|s| s.parse::<f32>().ok()).unwrap_or(8.);
+    let frame = args.get(3).and_then(|s| s.parse::<f32>().ok()).unwrap_or(15.);
     let pitch = args.get(4).and_then(|s| s.parse::<f32>().ok()).unwrap_or(0.).to_radians();
     let mut view = Presentation::load_for(dir, 0, &fighter::PIKACHU).unwrap();
     let alpha = models::blended(false).unwrap();

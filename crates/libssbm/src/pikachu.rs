@@ -99,6 +99,9 @@ const THUNDER_END: u32 = 3;
 // The two stages reuse Pikachu's tense Thunder start animation.
 const EGG_TONGUE: u32 = 0;
 const EGG_SWALLOW: u32 = 1;
+/// The last clean upright Thunder cast pose in `SpecialLwStart`, before the clip
+/// drops Pikachu into the Thunder loop. Egg Lay holds this one pose for both stages.
+const EGG_POSE_FRAME: f32 = 15.;
 
 /// Host flag: the LT slot's loadout holds Yoshi's Egg Lay instead of Thunder.
 /// `Pikachu::select_special`, the stage machine and the presentation read it.
@@ -602,8 +605,8 @@ impl Behavior for Pikachu {
     }
     fn next_stage(&self, sim: &mut Sim, host: &mut dyn Host, m: Move, input: Input) -> bool {
         if Self::egg_lay(sim) && m == Move::SpecialN {
-            // Tongue -> swallow. Both stages replay the tense Thunder start: the clip is
-            // 18 frames, so the second stage restarts it rather than holding the last pose.
+            // Tongue -> swallow. Both stages hold the same upright Thunder cast pose;
+            // only the stage clock restarts.
             if sim.stage == EGG_TONGUE {
                 sim.stage = EGG_SWALLOW;
                 sim.stage_frame = 0;
@@ -699,6 +702,11 @@ impl Behavior for Pikachu {
     }
     fn projectile_variable(&self) -> Option<u32> {
         Some(0)
+    }
+
+    fn held_pose(&self, sim: &Sim) -> Option<f32> {
+        (Self::egg_lay(sim) && sim.current_move == Some(Move::SpecialN))
+            .then_some(EGG_POSE_FRAME)
     }
 
     fn clip(&self, sim: &Sim, m: Move) -> &'static str {

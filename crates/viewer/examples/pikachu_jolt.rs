@@ -251,8 +251,8 @@ async fn main() {
         }
     }
 
-    let mut article = Presentation::article_for(dir, 2, 0, &fighter::PIKACHU)
-        .expect("Pikachu article 2 (air-jolt trail model)");
+    let mut article = Presentation::article_for(dir, if mode == "bolt" || mode == "boltstretch" || mode == "boltstack" { 0 } else { 2 }, 0, &fighter::PIKACHU)
+        .expect("Pikachu article");
     let alpha = models::blended(false).unwrap();
     let additive = models::blended(true).unwrap();
     let mut renderer = particles::Renderer::new(&bank).unwrap();
@@ -355,6 +355,27 @@ async fn main() {
                 fovy: 42.,
                 ..Default::default()
             },
+            "bolt" => Camera3D {
+                position: vec3(0., 24., 70.),
+                target: vec3(0., 20., 0.),
+                up: Vec3::Y,
+                fovy: 42.,
+                ..Default::default()
+            },
+            "boltstretch" => Camera3D {
+                position: vec3(0., 35., 120.),
+                target: vec3(0., 30., 0.),
+                up: Vec3::Y,
+                fovy: 42.,
+                ..Default::default()
+            },
+            "boltstack" => Camera3D {
+                position: vec3(0., 80., 300.),
+                target: vec3(0., 80., 0.),
+                up: Vec3::Y,
+                fovy: 42.,
+                ..Default::default()
+            },
             _ => Camera3D {
                 position: vec3(0., 12., 48.),
                 target: vec3(0., 10., 0.),
@@ -392,6 +413,36 @@ async fn main() {
                 &additive,
                 [0.18, 0.55, 1.0],
             );
+        } else if mode == "bolt" {
+            article.object_pose(frame);
+            draw_model(
+                &article,
+                ::glam::Mat4::from_translation(::glam::Vec3::new(0., 10., 0.)),
+                &alpha,
+                &additive,
+            );
+        } else if mode == "boltstretch" {
+            // Host Thunder: one article 0 bolt stretched from the cloud to Pikachu.
+            article.object_pose(frame);
+            draw_model(
+                &article,
+                ::glam::Mat4::from_translation(::glam::Vec3::new(0., 20., 0.))
+                    * ::glam::Mat4::from_scale(::glam::Vec3::splat(3.)),
+                &alpha,
+                &additive,
+            );
+        } else if mode == "boltstack" {
+            // Host Thunder: four fixed 4 m article-0 segments stacked into a 16 m column.
+            article.object_pose(frame);
+            for i in 0..4 {
+                draw_model_tint(
+                    &article,
+                    ::glam::Mat4::from_translation(::glam::Vec3::new(0., 20. + 40. * i as f32, 0.)),
+                    &alpha,
+                    &additive,
+                    [1., 0.92, 0.3],
+                );
+            }
         } else if mode == "orb" {
             renderer.draw(&system, camera.position);
         } else if emitter_id.is_some() {
@@ -415,6 +466,9 @@ async fn main() {
             "trail" => "Thunder Jolt trail | efSync 0x4BD -> EfPkData generator 7000 | article 2 model".to_string(),
             "orb" => format!("Thunder Jolt orb | efSync 0x4BD -> EfPkData generator 7000 | tick {frame:.0}"),
             "arc" => format!("Thunder Jolt bounce arc | article 2 air jolt | 24-tick flash | frame {frame:.0} | 0.6 scale"),
+            "bolt" => format!("Pikachu Thunder | article 0 bolt model | frame {frame:.0}"),
+            "boltstretch" => format!("Pikachu Thunder | article 0 stretched 3x | frame {frame:.0}"),
+            "boltstack" => format!("Pikachu Thunder | four fixed 4 m article-0 segments | frame {frame:.0}"),
             _ => "Thunder Jolt orb | article 2 (air-jolt trail model) | Object animation frames".to_string(),
         };
         draw_text(&label, 20., 30., 24., WHITE);
