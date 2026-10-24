@@ -71,14 +71,14 @@ fn spec(name: &str, skill: &str) -> Option<Spec> {
         "pikachu" => match skill {
             "jolt" => Spec { fighter: &fighter::PIKACHU, clip: "SpecialN", frame: 4., effect: EffectSpec::Article(1, 0), char_offset: ::glam::Vec3::ZERO, show_body: true, trail: None, trail_offset: ::glam::Vec3::ZERO, offset: ::glam::Vec3::new(0., 6., 6.), yaw: 0.4, zoom: 1.0 },
             "thunder" => Spec { fighter: &fighter::PIKACHU, clip: "SpecialLwStart", frame: 4., effect: EffectSpec::Article(0, 0), char_offset: ::glam::Vec3::ZERO, show_body: true, trail: None, trail_offset: ::glam::Vec3::ZERO, offset: ::glam::Vec3::new(0., 10., 0.), yaw: 0.4, zoom: 0.8 },
-            "skullbash" => Spec { fighter: &fighter::PIKACHU, clip: "SpecialS", frame: 4., effect: EffectSpec::None, char_offset: ::glam::Vec3::ZERO, show_body: true, trail: Some(7005), trail_offset: ::glam::Vec3::new(0., 4., 2.), offset: ::glam::Vec3::ZERO, yaw: 0.4, zoom: 1.0 },
+            "skullbash" => Spec { fighter: &fighter::PIKACHU, clip: "SpecialS", frame: 8., effect: EffectSpec::None, char_offset: ::glam::Vec3::ZERO, show_body: true, trail: Some(7005), trail_offset: ::glam::Vec3::new(0., 0., 2.), offset: ::glam::Vec3::ZERO, yaw: 0.4, zoom: 1.0 },
             "quick" => Spec { fighter: &fighter::PIKACHU, clip: "SpecialHiStart", frame: 2., effect: EffectSpec::Effect(1042), char_offset: ::glam::Vec3::ZERO, show_body: true, trail: None, trail_offset: ::glam::Vec3::ZERO, offset: ::glam::Vec3::new(0., 6., 0.), yaw: 0.4, zoom: 1.0 },
             _ => return None,
         },
         "luigi" => match skill {
             "fireball" => Spec { fighter: &fighter::LUIGI, clip: "SpecialN", frame: 4., effect: EffectSpec::Article(0, 0), char_offset: ::glam::Vec3::ZERO, show_body: true, trail: None, trail_offset: ::glam::Vec3::ZERO, offset: ::glam::Vec3::new(0., 6., 6.), yaw: 0.4, zoom: 1.0 },
             "cyclone" => Spec { fighter: &fighter::LUIGI, clip: "SpecialLwStart", frame: 6., effect: EffectSpec::Effect(2001), char_offset: ::glam::Vec3::ZERO, show_body: true, trail: None, trail_offset: ::glam::Vec3::ZERO, offset: ::glam::Vec3::new(0., 6., 0.), yaw: 0.4, zoom: 1.0 },
-            "missile" => Spec { fighter: &fighter::LUIGI, clip: "SpecialSStart", frame: 4., effect: EffectSpec::None, char_offset: ::glam::Vec3::ZERO, show_body: true, trail: Some(95), trail_offset: ::glam::Vec3::new(0., 4., 2.), offset: ::glam::Vec3::ZERO, yaw: 0.4, zoom: 1.0 },
+            "missile" => Spec { fighter: &fighter::LUIGI, clip: "SpecialS", frame: 8., effect: EffectSpec::None, char_offset: ::glam::Vec3::ZERO, show_body: true, trail: Some(95), trail_offset: ::glam::Vec3::new(0., 0., 2.), offset: ::glam::Vec3::ZERO, yaw: 0.4, zoom: 1.0 },
             "punch" => Spec { fighter: &fighter::LUIGI, clip: "SpecialHi", frame: 6., effect: EffectSpec::Effect(1154), char_offset: ::glam::Vec3::ZERO, show_body: true, trail: None, trail_offset: ::glam::Vec3::ZERO, offset: ::glam::Vec3::new(0., 6., 0.), yaw: 0.4, zoom: 1.0 },
             _ => return None,
         },
@@ -165,7 +165,8 @@ async fn main() {
         let mut system = libssbm::particle::System::default();
         system.definitions = bank.emitters.clone();
         system.spawn(id, ::glam::Mat4::from_translation(spec.trail_offset), 1).unwrap();
-        for _ in 0..if fighter_name == "samus" && skill == "missile" { 10 } else { 20 } { system.tick(); }
+        let ticks = match (fighter_name, skill) { ("samus", "missile") => 10, ("luigi", "missile") | ("pikachu", "skullbash") => 3, _ => 20 };
+        for _ in 0..ticks { system.tick(); }
         particle_renderer = Some(particles::Renderer::new(&bank).unwrap());
         particle_system = Some(system);
     }
