@@ -192,6 +192,35 @@ fn egg_roll_draws_the_egg_model_not_the_body() -> Result<()> {
 }
 
 #[test]
+fn egg_roll_pose_holds_its_place_when_the_loop_wraps() -> Result<()> {
+    let Some(mut sim) = yoshi_at(Vec3::ZERO, true)? else { return Ok(()) };
+    let mut host = FlatHost::default();
+    settle(&mut sim, &mut host);
+    step(&mut sim, &mut host, input(SIDE_B, Vec3::X));
+    let mut presentation = Presentation::load_for(&dir(), 0, &YOSHI)?;
+    for _ in 0..60 {
+        step(&mut sim, &mut host, input(0, Vec3::X));
+        if sim.motion.clip == "SpecialSLoop" { break; }
+    }
+    assert_eq!(sim.motion.clip, "SpecialSLoop", "the roll loop never started");
+    while sim.motion.frame < 58. {
+        step(&mut sim, &mut host, input(0, Vec3::X));
+    }
+    presentation.update(&sim, 0.);
+    let late = presentation.world[1].w_axis.truncate().length();
+    // Cross the pass boundary: the disc clip travels 25 units and restarts at zero.
+    let mut guard = 0;
+    while sim.motion.frame > 2. && guard < 120 {
+        step(&mut sim, &mut host, input(0, Vec3::X));
+        guard += 1;
+    }
+    presentation.update(&sim, 0.);
+    let wrapped = presentation.world[1].w_axis.truncate().length();
+    assert!(late < 0.1 && wrapped < 0.1, "roll root moved {late} -> {wrapped}");
+    Ok(())
+}
+
+#[test]
 fn yoshi_bomb_hops_dives_and_announces_the_landing_once() -> Result<()> {
     let Some(mut sim) = yoshi_at(Vec3::ZERO, true)? else { return Ok(()) };
     let mut host = FlatHost::default();

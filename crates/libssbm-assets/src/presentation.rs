@@ -331,6 +331,12 @@ impl Presentation {
             let base = self.animations.pose(&self.model, neutral, self.frame, true);
             self.world = blend_pose(&self.model, &base, &self.world, sim.fall_blend);
         }
+        if self.ball && self.morph_move == Some(Move::SpecialS) {
+            // Yoshi's roll passes animate TransN (joint 1) 25 units forward and restart at
+            // zero on the next pass. The sim owns the travel, so pin the rig to the sim
+            // position; otherwise the model lurches forward and snaps back every loop.
+            pin_joint_to_bind(&self.model, &mut self.world, 1);
+        }
         if self.ball
             && let Some(joint) = self.spin_joint
         {
@@ -597,6 +603,30 @@ pub fn splice_pose(model: &Model, lower: &[Mat4], upper: &[Mat4], upper_root: us
         world.push(joint.parent.map_or(local, |p| world[p] * local));
     }
     world
+}
+/// Undo a clip's animated translation on `joint` and its descendants, keeping the bind
+/// translation. A looping clip that travels forward and restarts at zero otherwise makes
+/// the model jump back once per pass when the host already owns movement.
+fn pin_joint_to_bind(model: &Model, world: &mut [Mat4], joint: usize) {
+    let Some(info) = model.joints.get(joint) else { return };
+    if joint >= world.len() {
+        return;
+    }
+    let parent = info.parent;
+    let parent_world = parent.map_or(Mat4::IDENTITY, |p| world[p]);
+    let local = parent_world.inverse() * world[joint];
+    let shift = Mat4::from_translation(info.translation - local.w_axis.truncate());
+    let world_shift = parent_world * shift * parent_world.inverse();
+    for i in 0..world.len() {
+        let mut current = Some(i);
+        while let Some(j) = current {
+            if j == joint {
+                world[i] = world_shift * world[i];
+                break;
+            }
+            current = model.joints.get(j).and_then(|j| j.parent);
+        }
+    }
 }
 /// Rotate a joint and its descendants about the joint's own origin (the source's
 /// `ftPartSetRotX(fighter, joint, angle)`): the egg is skinned to that joint, so the
