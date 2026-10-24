@@ -108,6 +108,27 @@ fn spec(name: &str, skill: &str) -> Option<Spec> {
     Some(s)
 }
 
+fn tint(fighter: &str, skill: &str) -> (f32, f32, f32) {
+    match fighter {
+        "samus" => match skill {
+            "charge" => (0.95, 0.45, 0.10),
+            "bomb" => (0.95, 0.55, 0.15),
+            "missile" => (0.85, 0.25, 0.20),
+            "screw" => (0.30, 0.75, 0.45),
+            "shield" => (0.25, 0.55, 0.95),
+            _ => (0.90, 0.50, 0.20),
+        },
+        "fox" => (0.30, 0.75, 0.40),
+        "luigi" => (0.30, 0.75, 0.35),
+        "pikachu" => (0.95, 0.78, 0.18),
+        "captain" => (0.90, 0.25, 0.20),
+        "link" => (0.30, 0.70, 0.35),
+        "yoshi" => (0.35, 0.75, 0.40),
+        "donkey" => (0.65, 0.42, 0.22),
+        _ => (0.40, 0.50, 0.60),
+    }
+}
+
 #[macroquad::main(config)]
 async fn main() {
     let args: Vec<String> = std::env::args().skip(1).collect();
@@ -161,16 +182,19 @@ async fn main() {
     let hi = points.iter().fold(::glam::Vec3::splat(f32::NEG_INFINITY), |a, p| a.max(*p));
     let effect_center = (lo + hi) * 0.5 + spec.offset;
     let radius = ((hi - lo).max_element() * 0.5).max(1.);
-    let distance = radius * 2.2 / spec.zoom;
+    let distance = radius * 1.55 / spec.zoom;
     eprintln!("effect bounds {lo:?}..{hi:?} center {effect_center:?} radius {radius:.2} distance {distance:.2}");
 
     loop {
         clear_background(Color::from_rgba(18, 22, 30, 255));
-        // RoR2 skill icons are square, not discs: a full-bleed card with a
-        // subtle vertical gradient and a thin square frame.
-        for y in 0..512 {
-            let t = y as f32 / 511.;
-            draw_rectangle(0., y as f32, 512., 1., Color::new(0.055 + 0.055 * (1. - t), 0.075 + 0.075 * (1. - t), 0.105 + 0.095 * (1. - t), 1.));
+        // RoR2 skill icons are square. A full-bleed square gradient in the
+        // skill's colour gives a small effect something to sit on.
+        let (tr, tg, tb) = tint(fighter_name, skill);
+        for i in (0..240).rev() {
+            let t = i as f32 / 240.;
+            let core = 1. - t;
+            let c = Color::new(0.035 + tr * (0.08 + 0.30 * core), 0.050 + tg * (0.08 + 0.30 * core), 0.075 + tb * (0.08 + 0.30 * core), 1.);
+            draw_rectangle(256. - i as f32, 256. - i as f32, (i * 2) as f32, (i * 2) as f32, c);
         }
         let camera = sv(effect_center) + vec3(spec.yaw.sin() * distance, distance * 0.20, spec.yaw.cos() * distance);
         let missile = fighter_name == "samus" && skill == "missile";
