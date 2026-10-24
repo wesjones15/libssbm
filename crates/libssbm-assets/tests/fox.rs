@@ -111,7 +111,7 @@ fn illusion_dashes_through_a_hitbox_and_ends() -> Result<()> {
     let mut streak = false;
     for _ in 0..200 {
         step(&mut sim, &mut host, Input::idle());
-        boxed |= sim.action.samples.iter().any(|s| s.hitbox.damage >= 7. && s.hitbox.element == 3);
+        boxed |= sim.action.samples.iter().any(|s| s.hitbox.damage >= 15. && s.hitbox.element == 3);
         streak |= sim.action.effects.iter().any(|cue| cue.id == 1165);
         if sim.current_move.is_none() {
             break;
@@ -143,6 +143,28 @@ fn illusion_follows_the_stick_direction_during_its_startup() -> Result<()> {
     }
     assert!(sim.position.z > 25., "illusion ignored the stick: {:?}", sim.position);
     assert!(sim.position.x.abs() < 12., "illusion kept its old facing: {:?}", sim.position);
+    Ok(())
+}
+
+#[test]
+fn a_held_illusion_continues_past_its_default_dash() -> Result<()> {
+    let Some(mut sim) = fox_at(true)? else { return Ok(()) };
+    let mut host = FlatHost { events: Vec::new() };
+    for _ in 0..4 {
+        step(&mut sim, &mut host, Input::idle());
+    }
+    step(&mut sim, &mut host, input(SIDE_B, Vec3::X));
+    for _ in 0..60 {
+        step(&mut sim, &mut host, input(SIDE_B, Vec3::X));
+    }
+    let held = sim.position.x;
+    assert!(held > 300., "held Illusion travelled only {held}");
+    for _ in 0..100 {
+        step(&mut sim, &mut host, Input::idle());
+        if sim.current_move.is_none() { break; }
+    }
+    assert!(sim.current_move.is_none(), "Illusion did not end on release");
+    assert!(sim.position.x >= held, "Illusion slid back after release");
     Ok(())
 }
 
@@ -218,10 +240,14 @@ fn fire_fox_holds_in_place_then_launches_along_the_aim() -> Result<()> {
     assert!((sim.position - start).length() < 1., "moved during the charge: {:?}", sim.position - start);
     let mut strongest = 0f32;
     let mut launch_flame = false;
+    let mut impact_sound = false;
     for _ in 0..120 {
         step(&mut sim, &mut host, input(0, aim));
         for s in &sim.action.samples {
             strongest = strongest.max(s.hitbox.damage);
+        }
+        for sound in &sim.action.sounds {
+            if sound.sound == 0x74 { impact_sound = true; }
         }
         for cue in &sim.action.effects {
             if cue.id == 1164 {
@@ -239,8 +265,44 @@ fn fire_fox_holds_in_place_then_launches_along_the_aim() -> Result<()> {
     assert!(travelled.y < travelled.x, "launch did not follow the aim {travelled:?}");
     assert!(strongest >= 19., "launch hit only {strongest}%");
     assert!(launch_flame, "no Fire Fox launch flame was spawned");
+    assert!(impact_sound, "Fire Fox's impact sound cue was not emitted");
     let impacts = host.events.iter().filter(|e| e.kind == EventKind::Hit && e.move_id == 23 && e.strength >= 2.5).count();
     assert_eq!(impacts, 1, "Fire Fox did not emit exactly one impact burst");
+    Ok(())
+}
+
+#[test]
+fn a_held_fire_fox_continues_and_impacts_on_release() -> Result<()> {
+    let Some(mut sim) = fox_at(false)? else { return Ok(()) };
+    let mut host = FlatHost { events: Vec::new() };
+    for _ in 0..4 {
+        step(&mut sim, &mut host, Input::idle());
+    }
+    let start = sim.position;
+    let aim = Vec3::X;
+    step(&mut sim, &mut host, input(UP_B, aim));
+    for _ in 0..120 {
+        step(&mut sim, &mut host, input(UP_B, aim));
+    }
+    let held = sim.position.x - start.x;
+    assert!(held > 300., "held Fire Fox travelled only {held}");
+    assert_eq!(
+        host.events.iter().filter(|e| e.kind == EventKind::Hit && e.move_id == 23 && e.strength >= 2.5).count(),
+        0,
+        "Fire Fox impacted before release"
+    );
+    for _ in 0..60 {
+        step(&mut sim, &mut host, input(0, aim));
+        if sim.current_move.is_none() {
+            break;
+        }
+    }
+    assert!(sim.current_move.is_none(), "Fire Fox did not end on release");
+    assert_eq!(
+        host.events.iter().filter(|e| e.kind == EventKind::Hit && e.move_id == 23 && e.strength >= 2.5).count(),
+        1,
+        "Fire Fox did not impact once on release"
+    );
     Ok(())
 }
 

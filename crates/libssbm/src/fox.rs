@@ -105,9 +105,16 @@ const ATTACH_RIGHT_THUMB: usize = 0x1_0000 + 49;
 /// tunnels (host adaptation).
 const ILLUSION_TRAVEL: f32 = 96.;
 const ILLUSION_FRAMES: u32 = 6;
-/// The Illusion article's hitbox (itFoxIllusion, article 2): 7% slash, angle 80,
-/// bkb 68, growth 40 grounded / 60 aerial. Widened to the RoR2 body size (host
-/// adaptation); it follows Fox for the dash so everything in the path is hit once.
+/// Hold-to-extend cap, in ticks: 6 s at the source's 60 Hz.
+const ILLUSION_HOLD_TICKS: f32 = 360.;
+/// Common item-explosion cue (it_2725.c::it_80272B40), not a voice.
+const FIREFOX_IMPACT_SOUND: u32 = 0x74;
+/// Fire Fox hold-to-extend cap, in ticks: 6 s at the source's 60 Hz.
+const FIREFOX_HOLD_TICKS: u32 = 360;
+/// The Illusion article's hitbox (itFoxIllusion, article 2): angle 80, bkb 68,
+/// growth 40 grounded / 60 aerial. The source's 7% is a 500% host hit so the
+/// pass-through dash is worth its cooldown. It follows Fox for the dash so
+/// everything in the path is hit once, and enemies never block the dash.
 const ILLUSION_BOX: u32 = 90;
 const ILLUSION_GROUP: u32 = 3;
 /// Fire Fox travels further than the source (host adaptation) and hits harder.
@@ -169,6 +176,7 @@ impl Fox {
         sim.stage = S_DASH;
         sim.stage_frame = 0;
         sim.stage_len = ILLUSION_FRAMES;
+        sim.stage_value = 0.;
         sim.stage_vec = heading * (travel / ILLUSION_FRAMES as f32);
         sim.velocity = sim.stage_vec;
         Self::hold_gravity(sim, 0.);
@@ -187,7 +195,7 @@ impl Fox {
                     group: ILLUSION_GROUP,
                     bone: 0,
                     common_bone: false,
-                    damage: 7.,
+                    damage: 15., // 500% host damage (coefficient = damage / 3)
                     radius: 10.,
                     offset: Vec3::new(0., 6., 0.),
                     angle: 80,
@@ -317,9 +325,13 @@ impl Fox {
             }
             S_DASH => {
                 sim.stage_frame += 1;
+                sim.stage_value += 1.;
                 sim.velocity = sim.stage_vec;
                 Self::hold_gravity(sim, 0.);
-                if sim.stage_frame >= sim.stage_len {
+                let held = input.buttons & SIDE_B != 0;
+                if sim.stage_value >= ILLUSION_HOLD_TICKS
+                    || (!held && sim.stage_frame >= sim.stage_len)
+                {
                     self.end_dash(sim);
                 }
             }
@@ -328,7 +340,7 @@ impl Fox {
             }
         }
     }
-    fn tick_firefox(&self, sim: &mut Sim, host: &mut dyn Host) {
+    fn tick_firefox(&self, sim: &mut Sim, host: &mut dyn Host, input: Input) {
         match sim.stage {
             HI_HOLD => {
                 // The fireball charges in place: the fighter holds position in
@@ -347,11 +359,23 @@ impl Fox {
                     sim.action.effects.push(flame);
                 }
                 sim.stage_frame += 1;
-                if sim.stage_frame >= self.specials.fire_fox_duration_end.round() as u32 {
+                let default_done = sim.stage_frame >= sim.stage_len;
+                let held = input.buttons & UP_B != 0;
+                // The default tap keeps the source's braking window and distance.
+                // Holding LB continues at the launch speed after that distance,
+                // for up to six seconds or until release.
+                if !default_done
+                    && sim.stage_frame >= self.specials.fire_fox_duration_end.round() as u32
+                {
                     // ftFx_SpecialHi_Phys: after DURATION_END ticks the reverse
                     // acceleration brakes the travel.
                     let accel = self.specials.fire_fox_reverse_accel * FIREFOX_HOST_SCALE;
                     sim.stage_value = (sim.stage_value - accel).max(0.);
+                }
+                if default_done && held && sim.stage_frame < FIREFOX_HOLD_TICKS {
+                    sim.stage_value = self.specials.fire_fox_velocity
+                        * FIREFOX_HOST_SCALE
+                        * sim.options.speed_scale;
                 }
                 sim.velocity = sim.stage_dir * sim.stage_value;
                 Self::hold_gravity(sim, 0.);
@@ -365,12 +389,23 @@ impl Fox {
                     }
                 }
                 let landed = sim.stage_frame > 2 && sim.grounded && sim.stage_dir.y < -0.05;
-                if sim.stage_frame >= sim.stage_len || landed {
+                if landed
+                    || sim.stage_frame >= FIREFOX_HOLD_TICKS
+                    || (default_done && !held)
+                {
                     self.end_launch(sim);
                     // Host adaptation, not in the source: the end of Fire Fox is a
                     // fiery impact. Strength 3 tells the host to run the burst (the
-                    // launch hitboxes use the ordinary hit sampler).
+                    // launch hitboxes use the ordinary hit sampler). The cue is the
+                    // common item-explosion sound, not a voice.
                     sim.emit(host, EventKind::Hit, Move::SpecialHi as u32, 3.);
+                    sim.action.sounds.push(SoundCue {
+                        sound: FIREFOX_IMPACT_SOUND,
+                        volume: 127,
+                        pan: 64,
+                        channel: 0,
+                        stop: false,
+                    });
                 }
             }
             _ => {
@@ -564,12 +599,12 @@ impl Behavior for Fox {
         match sim.current_move {
             Some(Move::SpecialN) => self.tick_blaster(sim, input, pressed),
             Some(Move::SpecialS) => self.tick_illusion(sim, input),
-            Some(Move::SpecialHi) => self.tick_firefox(sim, host),
+            Some(Move::SpecialHi) => self.tick_firefox(sim, host, input),
             Some(Move::SpecialLw) => self.tick_reflector(sim, host, input, pressed),
             _ => {}
         }
     }
-    fn next_stage(&self, sim: &mut Sim, _host: &mut dyn Host, m: Move, _input: Input) -> bool {
+    fn next_stage(&self, sim: &mut Sim, _host: &mut dyn Host, m: Move, input: Input) -> bool {
         match (m, sim.stage) {
             (Move::SpecialN, N_START) => {
                 // stage_frame (a tap owed during the Start clip) carries into the Loop.
@@ -593,8 +628,15 @@ impl Behavior for Fox {
                 true
             }
             (Move::SpecialS, S_DASH) => {
-                self.end_dash(sim);
-                true
+                // The 4-frame dash clip loops while RB is held; the default tap
+                // still ends on this clip, so its distance is unchanged.
+                if input.buttons & SIDE_B != 0 && sim.stage_value < ILLUSION_HOLD_TICKS {
+                    sim.motion.frame = 0.;
+                    true
+                } else {
+                    self.end_dash(sim);
+                    true
+                }
             }
             (Move::SpecialHi, HI_HOLD) => {
                 self.begin_launch(sim);
