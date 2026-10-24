@@ -185,6 +185,8 @@ fn fire_fox_holds_in_place_then_launches_along_the_aim() -> Result<()> {
     assert!(travelled.y < travelled.x, "launch did not follow the aim {travelled:?}");
     assert!(strongest >= 19., "launch hit only {strongest}%");
     assert!(launch_flame, "no Fire Fox launch flame was spawned");
+    let impacts = host.events.iter().filter(|e| e.kind == EventKind::Hit && e.move_id == 23 && e.strength >= 2.5).count();
+    assert_eq!(impacts, 1, "Fire Fox did not emit exactly one impact burst");
     Ok(())
 }
 

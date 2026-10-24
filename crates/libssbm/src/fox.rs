@@ -321,7 +321,7 @@ impl Fox {
             }
         }
     }
-    fn tick_firefox(&self, sim: &mut Sim) {
+    fn tick_firefox(&self, sim: &mut Sim, host: &mut dyn Host) {
         match sim.stage {
             HI_HOLD => {
                 // The fireball charges in place: the fighter holds position in
@@ -360,6 +360,10 @@ impl Fox {
                 let landed = sim.stage_frame > 2 && sim.grounded && sim.stage_dir.y < -0.05;
                 if sim.stage_frame >= sim.stage_len || landed {
                     self.end_launch(sim);
+                    // Host adaptation, not in the source: the end of Fire Fox is a
+                    // fiery impact. Strength 3 tells the host to run the burst (the
+                    // launch hitboxes use the ordinary hit sampler).
+                    sim.emit(host, EventKind::Hit, Move::SpecialHi as u32, 3.);
                 }
             }
             _ => {
@@ -553,7 +557,7 @@ impl Behavior for Fox {
         match sim.current_move {
             Some(Move::SpecialN) => self.tick_blaster(sim, input, pressed),
             Some(Move::SpecialS) => self.tick_illusion(sim),
-            Some(Move::SpecialHi) => self.tick_firefox(sim),
+            Some(Move::SpecialHi) => self.tick_firefox(sim, host),
             Some(Move::SpecialLw) => self.tick_reflector(sim, host, input, pressed),
             _ => {}
         }
