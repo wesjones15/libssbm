@@ -588,8 +588,9 @@ item. That generator spawns child generators 7001-7003 (the pulsing electric
 aura), so they are **not** separate bounce or impact puffs. The host spawns 7000
 once with the shot, attaches it every frame and stops it with the shot. Child 7002
 is a 27.5-unit additive sprite that reads as a hard blue square around the orb in
-RoR2's camera; the host scales it to 45% and keeps 60% alpha so it blends as a
-blue glow (the small 7001/7003 sparks keep their size). Article 2 is the air jolt
+RoR2's camera; the host replaces its corner-centred texture with a centred radial
+mask (45% size, 60% alpha) so the deepest blue sits in the middle and every edge
+fades out (the small 7001/7003 sparks keep their size). Article 2 is the air jolt
 (`itpikachutjoltair.c`), which the source spawns on a surface contact
 (`it_802B3554` -> `it_802B4224`) for 24 ticks (`xDF4 <= 24`). The host draws it as
 a short 24-tick, 0.6-scale arc at each bounce; it is never carried by the flying
