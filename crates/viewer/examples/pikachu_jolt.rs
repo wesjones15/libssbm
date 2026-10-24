@@ -433,6 +433,8 @@ async fn main() {
             );
         } else if mode == "boltstack" {
             // Host Thunder: four fixed 4 m article-0 segments stacked into a 16 m column.
+            // The host forces additive, which drops the texture's black outline.
+            for b in &mut article.model.batches { b.blend = 3; }
             article.object_pose(frame);
             for i in 0..4 {
                 draw_model_tint(

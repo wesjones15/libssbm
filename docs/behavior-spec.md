@@ -291,6 +291,23 @@ use local coordinates when the owner is a skeleton root; blended envelopes use
 bind space (`ftPartsSetupEnvelopeMtx`). Rigid shared vertices use owner matrix 0
 and the linked joint matrix 1. High-detail visibility is selected through the
 disc's FtPartsDesc tables; the morph-ball alternative is selected for Bomb.
+The RoR2 **Morph Ball Bomb** adaptation (2026-10-24) combines the former Bomb
+and roll alternate: one bomb hit event on entry, grounded or airborne, then
+hold down-B to roll until release or the host's 25%-maximum-health armor breaks.
+The clip's later projectile throw flag is muted (including the common projectile
+dispatcher), preventing duplicate bombs. The fighter mesh is PlSsNr.dat DObj 19,
+FtPartsDesc visibility choice 1; PlSsAJ.dat SpecialLw/SpecialAirLw frame 13 is
+the complete ball. The animation selector preserves rate zero after that frame,
+and ground/air transitions retain it. XRotN (joint 3, also the source spherical
+hurtbox in ftsamusspeciallw1.c::ftSs_SpecialLw_8012AEBC) rotates with actual
+horizontal distance over a 2.75-unit ball radius. Release/armor break clears the
+alternate visibility and resumes normal idle/walk/fall without a folded hold.
+Air and ground roll trails use Yoshi's efSync 0x3FF -> EfCoData model 5
+(ftyoshispecials.c::ftYs_SpecialAirSLoop_1_Anim; efasync.c case 0x3FF).
+The host bomb blast has 2x damage and 1.5x radius; these are RoR2 tuning values.
+Viewer proof: `crates/viewer/examples/morph_roll.rs`, local captures
+`build/morph-roll.png` and `build/morph-roll-air.png`; Rust disc regression
+`tests/samus_roll.rs` and NativeCheck cover 30/60/144 FPS. Not yet played.
 Full visibility commands, animated materials, inverse-bind edge cases, animation
 blending and root-motion fidelity remain partial. All costumes and all animation
 poses are checked for finite transforms when a real-disc cache is present.
@@ -656,7 +673,7 @@ the hitbox and effects of the struck state do not fire early. Enemies in the
 bolt's column are hit once for the bolt's 10%. Host presentation: four fixed
 4 m article-0 segments stacked into a 16 m column above Pikachu -- no world
 ceiling raycast and no dynamic stretch; the top segment starts at 16 m and the
-bottom reaches his feet.
+bottom reaches his feet. The bolt is forced additive and tinted yellow, so the texture's black border contributes nothing and the result reads as a yellow glow.
 
 ### Shared mechanisms added for staged specials
 `Sim::{stage, stage_frame, stage_len, stage_vec, stage_dir, stage_value,
