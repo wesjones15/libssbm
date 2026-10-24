@@ -78,6 +78,41 @@ fn explicit_skills_ignore_camera_and_stick_and_respect_five_stock_masks() {
 }
 
 #[test]
+fn samus_morph_roll_alternate_rolls_and_releases() {
+    let mut s = Sim::new(Params::fixture(), Vec3::ZERO);
+    let mut h = FlatHost::default();
+    tick(&mut s, &mut h, 0);
+    s.host_flags = libssbm::samus::HOST_MORPH_ROLL;
+    let roll = Input {
+        buttons: DOWN_B,
+        allowed: 2,
+        ..Input::idle()
+    };
+    for _ in 0..8 {
+        s.advance(&mut h, roll, 1. / 60.);
+    }
+    assert_eq!(s.current_move, Some(Move::SpecialLw), "morph roll did not start");
+    assert!(
+        s.velocity.x.abs() > 0.1 || s.velocity.z.abs() > 0.1,
+        "morph roll is not moving"
+    );
+    assert!(!s.action.active.is_empty(), "morph roll has no hitbox");
+    let hop = Input {
+        buttons: DOWN_B | JUMP,
+        allowed: 2,
+        ..Input::idle()
+    };
+    s.advance(&mut h, hop, 1. / 60.);
+    assert!(s.velocity.y > 0., "morph ball cannot jump");
+    assert_eq!(s.current_move, Some(Move::SpecialLw), "jumping ended the ball");
+    let idle = Input { allowed: 0, ..Input::idle() };
+    for _ in 0..20 {
+        s.advance(&mut h, idle, 1. / 60.);
+    }
+    assert!(s.current_move.is_none(), "morph roll did not end on release");
+}
+
+#[test]
 fn host_jump_height_matches_short_full_and_aerial_apices() {
     for fps in [30, 60, 144] {
         for (aerial, short) in [(false, false), (false, true), (true, false)] {

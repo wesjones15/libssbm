@@ -86,6 +86,7 @@ the libssbm working tree is shared with other agents, so commit only your own fi
 ### How to read the tables
 
 - Input columns give the Melee button first, then the RoR2 pad binding and the keyboard/mouse binding. The five skills are RT / LT / RB / LB / B on a pad and Primary / Secondary / Utility / Special / C on keyboard and mouse. **A attacks are B; the down special (and its Shield / Air Feint alternate) is LT.**
+- **Samus also has a second LT alternate, Morph Ball Roll**: the down-B morph animation without the bomb. Hold LT to roll; it has a 3% no-knockback contact hitbox, bounces off enemies and walls, and uses 25% of maximum health as armor. Its dust, wall-bonk and shell-bit effects are Yoshi's egg-roll cues. Not played.
   Pikachu is the only fighter whose specials are shuffled (RB is Thunder, LB is Quick Attack, B is Skull Bash).
 - Status: **OK** does what the disc says, **PARTIAL** runs but is missing stages or effects, **BROKEN** does not do its job, **ANIMATION ONLY** plays but has no effect.
 - "Should do" comes from the Melee decompilation (`melee-master/.../ft/kinds/ft<Name>/`) and the clip lists and scripts in each fighter's disc data.

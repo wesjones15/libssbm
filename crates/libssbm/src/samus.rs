@@ -2,12 +2,28 @@
 //! Bomb, plus the grapple-based throws the shared executor already understands.
 //! References: ftSamus/ftsamusspecial{n,s,hi,lw1}.c and its article attributes.
 use crate::{
-    action::{GfxCue, SoundCue},
+    action::{ActiveHitbox, GfxCue, Hitbox, SoundCue},
     behavior::Behavior,
-    sim::{side_special_upper_angles, Host, Input, Move, Phase, Sim, DOWN_B, NEUTRAL_B, SIDE_B, UP_B},
+    sim::{
+        side_special_upper_angles, Host, Input, Move, Phase, Sim, DOWN_B, JUMP, NEUTRAL_B, SIDE_B,
+        UP_B,
+    },
     EventKind,
 };
 use glam::Vec3;
+
+/// Host flag: Samus's down-B is the Morph Ball Roll alternate, not the bomb.
+pub const HOST_MORPH_ROLL: u32 = 4;
+const MORPH_ROLL: u32 = 20;
+const MORPH_ROLL_END: u32 = 21;
+const MORPH_BOX: u32 = 0x8001;
+const MORPH_HIT_TICKS: u32 = 8;
+const MORPH_DUST_TICKS: u32 = 6;
+const MORPH_BOUNCE_COOLDOWN: u32 = 8;
+const MORPH_MAX_TICKS: u32 = 600;
+const MORPH_STILL_TICKS: u32 = 120;
+const MORPH_SPEED: f32 = 2.6;
+const MORPH_ACCEL: f32 = 0.06;
 
 /// Samus's `ext_attr` tuning (ftSs_DatAttrs and charge-shot article attributes),
 /// separate from the shared `Params`.
@@ -51,6 +67,152 @@ impl Samus {
     /// Synthetic Samus behavior for headless tests.
     pub fn fixture() -> Self {
         Self::new(Specials::fixture(), None)
+    }
+    fn morph_roll(sim: &Sim) -> bool {
+        sim.current_move == Some(Move::SpecialLw) && sim.host_flags & HOST_MORPH_ROLL != 0
+    }
+    fn hold_gravity(sim: &mut Sim, gravity: f32) {
+        sim.pad_gravity = Some(Vec3::new(0., -gravity, 0.));
+        sim.owns_gravity = true;
+    }
+    fn release_gravity(sim: &mut Sim) {
+        if sim.owns_gravity {
+            sim.pad_gravity = None;
+            sim.owns_gravity = false;
+        }
+    }
+    fn begin_morph_roll(sim: &mut Sim) {
+        sim.stage = MORPH_ROLL;
+        sim.stage_frame = 0;
+        sim.stage_len = 0;
+        sim.stage_dir = sim.facing.with_y(0.).normalize_or_zero();
+        if sim.stage_dir.length_squared() < 0.01 {
+            sim.stage_dir = Vec3::X;
+        }
+        sim.stage_vec = sim.position;
+        sim.stage_value = MORPH_SPEED * 0.5;
+        sim.roll_break = false;
+        sim.roll_still = 0;
+        sim.action.active.clear();
+        sim.velocity.x = 0.;
+        sim.velocity.z = 0.;
+    }
+    /// The Morph Ball Roll hit: light damage, no knockback, so contact only bounces Samus.
+    fn morph_hitbox(sim: &mut Sim) {
+        let slot = &mut sim.action.generations[0];
+        *slot = slot.wrapping_add(1);
+        let generation = *slot;
+        sim.action.active.insert(
+            MORPH_BOX,
+            ActiveHitbox {
+                hitbox: Hitbox {
+                    id: MORPH_BOX,
+                    group: 0,
+                    bone: 0,
+                    common_bone: false,
+                    damage: 3.,
+                    radius: 7.,
+                    offset: Vec3::new(0., 4., 0.),
+                    angle: 80,
+                    growth: 0,
+                    fixed_knockback: 0,
+                    base_knockback: 0,
+                    element: 0,
+                    sfx_kind: 1,
+                    sfx_severity: 0,
+                    ground: true,
+                    air: true,
+                },
+                generation,
+            },
+        );
+    }
+    fn end_morph_roll(sim: &mut Sim) {
+        sim.stage = MORPH_ROLL_END;
+        sim.stage_frame = 0;
+        sim.action.active.clear();
+        sim.roll_break = false;
+        // The same shell-bit burst Yoshi's egg roll ends with (efSync 0x4CF).
+        for _ in 0..3 {
+            let shell = crate::effect::part_cue(sim, 1231, crate::effect::part::HIP_N);
+            sim.action.effects.push(shell);
+        }
+    }
+    fn tick_morph_roll(&self, sim: &mut Sim, input: Input, pressed: u32) {
+        let scale = sim.options.speed_scale;
+        match sim.stage {
+            MORPH_ROLL => {
+                sim.stage_frame += 1;
+                sim.stage_len = sim.stage_len.saturating_sub(1);
+                let movement = input.movement.with_y(0.);
+                if movement.length() > 0.3 {
+                    sim.stage_dir = movement.normalize();
+                }
+                let moved = (sim.position - sim.stage_vec).with_y(0.).length();
+                if moved < 0.005 {
+                    sim.roll_still = sim.roll_still.saturating_add(1);
+                } else {
+                    sim.roll_still = 0;
+                }
+                let mut speed = sim.stage_value;
+                if sim.stage_frame > 2 {
+                    speed = (speed + MORPH_ACCEL * scale).min(MORPH_SPEED * scale);
+                }
+                if sim.stage_frame > 6 && sim.stage_len == 0 && moved < speed * scale * 0.3 {
+                    sim.stage_dir = -sim.stage_dir;
+                    speed *= 0.7;
+                    sim.stage_len = MORPH_BOUNCE_COOLDOWN;
+                    let bonk = crate::effect::part_cue(sim, 1030, crate::effect::part::TOP_N);
+                    sim.action.effects.push(bonk);
+                }
+                sim.stage_vec = sim.position;
+                sim.stage_value = speed;
+                sim.facing = sim.stage_dir;
+                sim.velocity.x = sim.stage_dir.x * speed * scale;
+                sim.velocity.z = sim.stage_dir.z * speed * scale;
+                let gravity = if sim.grounded { 0. } else { sim.params.gravity };
+                Self::hold_gravity(sim, gravity);
+                // The ball can jump: a grounded hop or the fighter's remaining air jump.
+                if pressed & JUMP != 0 {
+                    let grounded = sim.grounded;
+                    if grounded || sim.jumps_used < sim.params.jumps {
+                        sim.velocity.y = match sim.host_jump_height {
+                            Some(height) => crate::controls::jump_velocity(height, sim.params.gravity),
+                            None => 3.,
+                        };
+                        sim.grounded = false;
+                        sim.jumps_used = if grounded { 1 } else { sim.jumps_used + 1 };
+                    }
+                }
+                if sim.grounded && sim.stage_frame % MORPH_DUST_TICKS == 0 {
+                    let dust = crate::effect::part_cue(sim, 1023, crate::effect::part::TOP_N);
+                    sim.action.effects.push(dust);
+                }
+                if sim.stage_frame == 1 || sim.stage_frame % MORPH_HIT_TICKS == 0 {
+                    Self::morph_hitbox(sim);
+                }
+                if sim.stage_frame >= MORPH_MAX_TICKS
+                    || sim.roll_still >= MORPH_STILL_TICKS
+                    || sim.roll_break
+                    || input.buttons & DOWN_B == 0
+                {
+                    Self::end_morph_roll(sim);
+                }
+            }
+            MORPH_ROLL_END => {
+                sim.stage_frame += 1;
+                sim.velocity.x *= 0.8;
+                sim.velocity.z *= 0.8;
+                if sim.stage_frame >= 10 {
+                    Self::release_gravity(sim);
+                    sim.action.active.clear();
+                    sim.current_move = None;
+                    sim.set_phase(Phase::Free);
+                    sim.motion.select("Wait", 1.);
+                }
+            }
+            _ => {}
+        }
     }
 }
 impl Behavior for Samus {
@@ -127,9 +289,13 @@ impl Behavior for Samus {
                 self.specials.screw_velocity * sim.options.jump_scale
             };
             sim.jumps_used = sim.params.jumps + sim.options.extra_jumps;
-        } else if m == Move::SpecialLw && !sim.grounded {
-            sim.pad_gravity = None;
-            sim.velocity.y = self.specials.bomb_velocity;
+        } else if m == Move::SpecialLw {
+            if sim.host_flags & HOST_MORPH_ROLL != 0 {
+                Self::begin_morph_roll(sim);
+            } else if !sim.grounded {
+                sim.pad_gravity = None;
+                sim.velocity.y = self.specials.bomb_velocity;
+            }
         }
     }
     fn aimable(&self, m: Move) -> bool {
@@ -239,6 +405,33 @@ impl Behavior for Samus {
         }
     }
 
+    fn tick_special(&self, sim: &mut Sim, _host: &mut dyn Host, input: Input, pressed: u32) {
+        if Self::morph_roll(sim) {
+            Self::tick_morph_roll(self, sim, input, pressed);
+        }
+    }
+    fn next_stage(&self, sim: &mut Sim, _host: &mut dyn Host, _m: Move, _input: Input) -> bool {
+        if Self::morph_roll(sim) {
+            // The down-B morph clip is a one-shot; hold its last frame while the ball
+            // rolls, so the ball does not re-morph every loop.
+            sim.motion.frame = (sim.motion.length(sim.motion.clip) - 1.).max(0.);
+            return true;
+        }
+        false
+    }
+    fn script_muted(&self, sim: &Sim) -> bool {
+        // The roll has no bomb article/hitbox: all of that belongs to the ordinary down-B.
+        Self::morph_roll(sim)
+    }
+    fn on_connect(&self, sim: &mut Sim) {
+        if Self::morph_roll(sim) && sim.stage == MORPH_ROLL && sim.stage_len == 0 {
+            sim.stage_dir = -sim.stage_dir;
+            sim.stage_value *= 0.7;
+            sim.stage_len = MORPH_BOUNCE_COOLDOWN;
+            let bonk = crate::effect::part_cue(sim, 1030, crate::effect::part::TOP_N);
+            sim.action.effects.push(bonk);
+        }
+    }
     fn clip(&self, sim: &Sim, m: Move) -> &'static str {
         match m {
             Move::SpecialN => {
