@@ -63,8 +63,9 @@ fn every_script_cue_and_sound_resolves() -> Result<()> {
     let mut mixer = audio::Mixer::new(audio::Bank::load_for(&dir, &PIKACHU)?);
     let mut cues = std::collections::BTreeSet::new();
     let mut sounds = std::collections::BTreeSet::new();
-    // Cues the sim itself raises: Skull Bash charge/release, Thunder crackle, cloud.
-    cues.extend([1214u32, 1215, 1216, 1219]);
+    // Cues the sim itself raises: the jolt item's 0x4BD aura, Skull Bash charge/release,
+    // Thunder crackle and the cloud.
+    cues.extend([1213u32, 1214, 1215, 1216, 1219]);
     sounds.insert(240076u32); // Thunder Shock launch
     sounds.insert(240079u32); // Thunder Shock landing
     for (name, action) in &actions {
@@ -98,5 +99,28 @@ fn every_script_cue_and_sound_resolves() -> Result<()> {
         mixer.play(*sound, 127, 64, 0).unwrap_or_else(|e| panic!("sound {sound} unplayable: {e}"));
     }
     assert!(!cues.is_empty() && !sounds.is_empty());
+    Ok(())
+}
+
+/// The travelling Thunder Jolt (article 1, itpikachutjoltground.c) has no model. Its
+/// visual is the item effect efSync 0x4BD: efsync.c case 0x4BD calls
+/// hsd_8039EFAC(0, 7, 0x1B58) -> EfPkData generator 7000, which spawns the attached
+/// child generators 7001-7003. Article 2 is the separate air jolt
+/// (itpikachutjoltair.c) whose 36-frame Object clip is the trail spawned after the
+/// ground jolt's first surface contact, not the flying orb.
+#[test]
+fn thunder_jolt_orb_is_the_item_effect_not_the_air_jolt_model() -> Result<()> {
+    let Some(dir) = dir() else { return Ok(()) };
+    assert_eq!(effect::resolve(1213), Target::Particle(7000));
+    let bank = Effects::load_archive(&dir, PIKACHU.effects)?;
+    for id in [7000u32, 7001, 7002, 7003] {
+        assert!(bank.emitters.contains_key(&id), "EfPkData has no emitter {id}");
+    }
+    let ground = libssbm_assets::article::Article::load_for(&dir, 1, 0, &PIKACHU)?;
+    assert!(ground.model.batches.is_empty(), "the travelling ground jolt has a model");
+    let air = libssbm_assets::article::Article::load_for(&dir, 2, 0, &PIKACHU)?;
+    assert!(!air.model.batches.is_empty(), "the air-jolt trail model is missing");
+    let clip = air.animations.clips.get("Object").expect("air jolt Object clip");
+    assert_eq!(clip.frames, 36., "air jolt clip length changed; the host no longer draws it, but the identity should stay pinned");
     Ok(())
 }
