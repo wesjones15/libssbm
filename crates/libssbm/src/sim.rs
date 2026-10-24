@@ -276,6 +276,8 @@ pub struct Sim {
     pub roll_break: bool,
     /// Consecutive rolling ticks with no horizontal movement (a stuck egg).
     pub(crate) roll_still: u32,
+    /// Samus's Morph Ball Roll is holding the ball form, independent of its clip.
+    pub morph_roll_hold: bool,
     /// Host lock-on: world position of the enemy the player is locked onto or
     /// aiming nearest, refreshed every tick. Staged specials (Quick Attack)
     /// steer to it; `None` falls back to stick and camera aim.
@@ -393,6 +395,7 @@ impl Sim {
             stage_value: 0.,
             roll_break: false,
             roll_still: 0,
+            morph_roll_hold: false,
             lock_target: None,
             host_flags: 0,
             flutter: 0,
@@ -704,6 +707,7 @@ impl Sim {
         self.stage_value = 0.;
         self.roll_break = false;
         self.roll_still = 0;
+        self.morph_roll_hold = false;
         if self.behavior.aimable(m)
             && self.host_facing.is_none()
             && input.aim.with_y(0.).length_squared() > 0.001

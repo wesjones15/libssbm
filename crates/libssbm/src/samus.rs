@@ -19,6 +19,9 @@ const MORPH_BOX: u32 = 0x8001;
 const MORPH_HIT_TICKS: u32 = 8;
 const MORPH_DUST_TICKS: u32 = 6;
 const MORPH_BOUNCE_COOLDOWN: u32 = 8;
+/// The down-B clip is 54 frames: it morphs in by 13, holds the ball, and unfolds from
+/// 43. Freeze on 13 so the ball stays out instead of playing the unfold.
+const MORPH_BALL_FRAME: f32 = 13.;
 /// Host cap on the held ball: 10 seconds at 60 Hz.
 const MORPH_MAX_TICKS: u32 = 600;
 const MORPH_SPEED: f32 = 2.6;
@@ -68,7 +71,8 @@ impl Samus {
         Self::new(Specials::fixture(), None)
     }
     fn morph_roll(sim: &Sim) -> bool {
-        sim.current_move == Some(Move::SpecialLw) && sim.host_flags & HOST_MORPH_ROLL != 0
+        sim.current_move == Some(Move::SpecialLw)
+            && (sim.morph_roll_hold || sim.host_flags & HOST_MORPH_ROLL != 0)
     }
     fn hold_gravity(sim: &mut Sim, gravity: f32) {
         sim.pad_gravity = Some(Vec3::new(0., -gravity, 0.));
@@ -92,6 +96,7 @@ impl Samus {
         sim.stage_value = MORPH_SPEED * 0.5;
         sim.roll_break = false;
         sim.roll_still = 0;
+        sim.morph_roll_hold = true;
         sim.action.active.clear();
         sim.velocity.x = 0.;
         sim.velocity.z = 0.;
@@ -129,6 +134,7 @@ impl Samus {
     fn end_morph_roll(sim: &mut Sim) {
         sim.action.active.clear();
         sim.roll_break = false;
+        sim.morph_roll_hold = false;
         // The same shell-bit burst Yoshi's egg roll ends with (efSync 0x4CF).
         for _ in 0..3 {
             let shell = crate::effect::part_cue(sim, 1231, crate::effect::part::HIP_N);
@@ -152,6 +158,14 @@ impl Samus {
                 // seconds, dropping the ball pose while LT is still down.
                 sim.phase = Phase::Startup;
                 sim.phase_frame = 0;
+                // Freeze on the ball part of the morph clip. Its last frames are the
+                // unfold, which is why the old end-of-clip hold became folded Samus.
+                if matches!(sim.motion.clip, "SpecialLw" | "SpecialAirLw")
+                    && sim.motion.frame >= MORPH_BALL_FRAME
+                {
+                    sim.motion.frame = MORPH_BALL_FRAME;
+                    sim.motion.rate = 0.;
+                }
                 sim.stage_len = sim.stage_len.saturating_sub(1);
                 let movement = input.movement.with_y(0.);
                 if movement.length() > 0.3 {
@@ -409,9 +423,10 @@ impl Behavior for Samus {
     }
     fn next_stage(&self, sim: &mut Sim, _host: &mut dyn Host, _m: Move, _input: Input) -> bool {
         if Self::morph_roll(sim) {
-            // The down-B morph clip is a one-shot; hold its last frame while the ball
-            // rolls, so the ball does not re-morph every loop.
-            sim.motion.frame = (sim.motion.length(sim.motion.clip) - 1.).max(0.);
+            // If the freeze in tick_special is missed (a different clip rate), hold the
+            // ball frame here instead of ending on the clip's folded last frame.
+            sim.motion.frame = MORPH_BALL_FRAME;
+            sim.motion.rate = 0.;
             return true;
         }
         false
