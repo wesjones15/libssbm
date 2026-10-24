@@ -1,6 +1,35 @@
 use libssbm_assets::{Result, effects::Effects};
 use std::path::PathBuf;
 #[test]
+fn scope_foot_dust_is_an_animated_visible_model() -> Result<()> {
+    let dir = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../assets");
+    if !dir.join("EfCoData.dat").exists() {
+        eprintln!("SKIP: common effect archive absent");
+        return Ok(());
+    }
+    // efasync.c case 0x3FF: the directional ground smoke model, not 0x405's
+    // empty-click particle. The host repeats this at the feet during charging.
+    assert_eq!(libssbm::effect::resolve(0x3ff), libssbm::effect::Target::Model(5));
+    let mut dust = libssbm_assets::presentation::Presentation::effect(&dir, 5)?;
+    assert!(dust.duration > 8. && dust.duration < 120.);
+    dust.object_pose(0.);
+    let before: Vec<_> = (0..dust.model.batches.len())
+        .map(|i| dust.texture(i).map(|t| t.rgba.clone())).collect();
+    dust.object_pose(8.);
+    assert!((0..dust.model.batches.len()).any(|i|
+        before[i].as_ref() != dust.texture(i).map(|t| &t.rgba)), "dust texture animation is frozen");
+    assert!((0..dust.model.batches.len()).any(|i|
+        dust.color(i)[3] > 0.1 && dust.texture(i).is_some_and(|t|
+            t.rgba.chunks_exact(4).any(|p| p[3] > 64))), "dust is transparent");
+    let points: Vec<_> = (0..dust.model.batches.len())
+        .flat_map(|i| dust.model.skin(i, &dust.world).into_iter().map(|(p, _)| p)).collect();
+    let lo = points.iter().fold(glam::Vec3::splat(f32::INFINITY), |a, p| a.min(*p));
+    let hi = points.iter().fold(glam::Vec3::splat(f32::NEG_INFINITY), |a, p| a.max(*p));
+    assert!(lo.is_finite() && hi.is_finite() && (hi - lo).max_element() > 5.);
+    println!("foot dust: {} frames, bounds {lo:?}..{hi:?}", dust.duration);
+    Ok(())
+}
+#[test]
 fn screw_attack_ground_texture_moves_on_its_own_clock() -> Result<()> {
     let dir = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../assets");
     if !dir.join("EfSsData.dat").exists() { eprintln!("SKIP: effect archives absent"); return Ok(()); }

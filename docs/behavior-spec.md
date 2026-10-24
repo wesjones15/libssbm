@@ -638,3 +638,16 @@ verified in game.** Missing or partial: Quick Attack's body tilt along the zip
 bounce-back), the Thunder cloud model (only the poof and bolts are drawn), the
 tail-of-bolt scaling when it reaches the ground (`UnkMotion2`), Pichu/Kirby variants, and the effect puff choices for the shot's
 bounce/impact (particles 7001-7003 are best guesses pending a visual check).
+
+### Super Scope ground-smoke presentation
+
+The reference's curling ground smoke and trailing streaks visually match
+`EfCoData.dat` effect model 5 (`efasync.c`, cue `0x3FF`). This is a 20-frame
+animated mesh/material effect, not the `0x405` empty-click particle from
+`ftCo_ItemScopeFire.c::fn_800D84D4`. The existing shared `MeleeEffects` model path
+already renders its animated textures. Luigi's host charge presentation repeats
+it at the grounded fighter's feet every 12 frames after a 12-frame delay, with
+scale 0.65–0.875 according to charge level. Released/airborne charges stop emitting;
+existing waves finish. Timing and charge scaling are host-authored, not a claim
+that the original Start callback emitted this effect. Asset visibility/animation
+regression and local `scope_dust` viewer preview pass; RoR2 play is unverified.
