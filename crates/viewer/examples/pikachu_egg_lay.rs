@@ -62,8 +62,8 @@ async fn main() {
     loop {
         clear_background(Color::from_rgba(35, 40, 55, 255));
         set_camera(&Camera3D {
-            position: vec3(0., 4.5, 5.5),
-            target: vec3(0., 4.5, 0.),
+            position: vec3(0., 5.0, 12.0),
+            target: vec3(0., 4.0, 0.),
             up: Vec3::Y,
             fovy: 40.,
             ..Default::default()
