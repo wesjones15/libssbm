@@ -434,6 +434,11 @@ impl Sim {
                     if matches!(opcode, 17 | 54 | 55) {
                         self.queue_sound_command(opcode, &words);
                     }
+                    // ftAction_80071FC8: a random pick of up to six named sounds (the
+                    // pseudo-random SFX). Specials name their voice cries here.
+                    if opcode == 38 {
+                        self.queue_random_sfx(&words);
+                    }
                 }
             }
         }
@@ -559,20 +564,65 @@ impl Sim {
             self.queued_sounds.push(cue);
         }
     }
+    /// The mixer channel a sound behavior targets: the fighter's replaceable voice slot
+    /// (behavior 2, ft_800881D8), the replaceable x2148 slot (behavior 6, ft_80088328),
+    /// and the shared untracked one-shot channel for the rest.
+    fn sound_channel(behavior: u32) -> Option<u32> {
+        if behavior <= 6 || (10..=15).contains(&behavior) {
+            let slot = if behavior >= 10 { behavior - 9 } else { behavior };
+            Some(match slot {
+                2 => VOICE_CHANNEL,
+                6 => 6,
+                _ => 0,
+            })
+        } else {
+            None
+        }
+    }
     /// ftAction_80071B50: play/replace/stop a fighter sound slot. 54/55 supply the stored
     /// footstep/landing cue; world-surface substitution remains a host adaptation, using the
-    /// disc cue.
+    /// disc cue. The fighter has one replaceable voice slot (behavior 2, ft_800881D8) and one
+    /// replaceable x2148 slot (behavior 6, ft_80088328) — a new sound replaces the last there.
+    /// Behaviors 0/1/3/4/5 (ft_PlaySFX, ft_80088478, ft_80088510, ft_800885A8, ft_80088640)
+    /// are one-shot slots that coexist, so they share the untracked overlap channel.
     fn queue_sound_command(&mut self, opcode: u32, words: &[u32]) {
         let behavior = if opcode == 17 { words[0] >> 18 & 255 } else { 0 };
-        if behavior <= 6 || (10..=15).contains(&behavior) {
-            self.action.sounds.push(SoundCue {
-                sound: words[1],
-                volume: (words[2] >> 8) as u8,
-                pan: words[2] as u8,
-                channel: if behavior >= 10 { behavior - 9 } else { behavior },
-                stop: behavior >= 10,
-            });
-        }
+        let Some(channel) = Self::sound_channel(behavior) else {
+            return;
+        };
+        self.action.sounds.push(SoundCue {
+            sound: words[1],
+            volume: (words[2] >> 8) as u8,
+            pan: words[2] as u8,
+            channel,
+            stop: behavior >= 10,
+        });
+    }
+    /// ftAction_80071FC8: play one of up to six named sounds at random (the pseudo-random
+    /// SFX). Specials name their launch cries here (Fox's Fire Fox "Hyaa!"), and the behavior
+    /// picks the same replaceable voice slot a stored sound would. `voice_rng` keeps the choice
+    /// out of the sim's RNG, exactly as the smash grunt's pick does.
+    fn queue_random_sfx(&mut self, words: &[u32]) {
+        let volume = (words[0] >> 18 & 0xff) as u8;
+        let panning = (words[0] >> 10 & 0xff) as u8;
+        let behavior = words[0] >> 6 & 0xf;
+        let range = words[0] & 0x3f;
+        let Some(channel) = Self::sound_channel(behavior) else {
+            return;
+        };
+        let mut x = self.voice_rng;
+        x ^= x << 13;
+        x ^= x >> 17;
+        x ^= x << 5;
+        self.voice_rng = x;
+        let index = if range == 0 { 0 } else { x as usize % range.min(6) as usize };
+        self.action.sounds.push(SoundCue {
+            sound: words[1 + index],
+            volume,
+            pan: panning,
+            channel,
+            stop: false,
+        });
     }
     fn queue_sound(&mut self, words: &[u32]) {
         self.queue_sound_command(17, words);

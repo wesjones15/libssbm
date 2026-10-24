@@ -6,7 +6,7 @@ use glam::Vec3;
 use libssbm::{
     effect::{attached, resolve, Target},
     fox::Fox,
-    sim::{Contact, Event, EventKind, FlatHost, Host, DOWN_B, JUMP, NEUTRAL_B, SIDE_B, UP_B},
+    sim::{Contact, Event, EventKind, FlatHost, Host, DOWN_B, JUMP, NEUTRAL_B, SIDE_B, UP_B, VOICE_CHANNEL},
     Input, Sim,
 };
 use libssbm_assets::{Result, animation::Animations, fighter::FOX, presentation::Presentation};
@@ -377,6 +377,38 @@ fn jump_cancels_the_reflector_on_the_ground_and_in_the_air() -> Result<()> {
         let releases = host.events.iter().filter(|e| e.kind == EventKind::Hit && e.move_id == 24 && e.strength == 2.).count();
         assert_eq!(releases, 1, "the reflect should be announced down once");
     }
+    Ok(())
+}
+
+#[test]
+fn fire_fox_cries_with_his_launch_voice() -> Result<()> {
+    // ftfoxspecialhi.c has no voice call; the SpecialHi clip's script plays the
+    // "Hyaa!" through the pseudo-random SFX command (opcode 38, ftAction_80071FC8):
+    // behavior 2 (the replaceable voice slot) names 0x1add2 three times and 0x1adcc
+    // once in a range-4 pick. The sim must not drop it.
+    let Some(mut sim) = fox_at(false)? else { return Ok(()) };
+    let mut host = FlatHost { events: Vec::new() };
+    for _ in 0..4 {
+        step(&mut sim, &mut host, Input::idle());
+    }
+    let aim = Vec3::X;
+    step(&mut sim, &mut host, input(UP_B, aim));
+    let mut cry = None;
+    for _ in 0..200 {
+        step(&mut sim, &mut host, input(0, aim));
+        for sound in &sim.action.sounds {
+            if sound.channel == VOICE_CHANNEL {
+                cry = Some(sound.sound);
+            }
+        }
+        if sim.current_move.is_none() {
+            break;
+        }
+    }
+    assert!(
+        matches!(cry, Some(0x1add2) | Some(0x1adcc)),
+        "Fire Fox's launch cry never played: {cry:?}"
+    );
     Ok(())
 }
 
