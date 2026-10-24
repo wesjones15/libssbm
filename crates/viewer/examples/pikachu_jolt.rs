@@ -26,6 +26,15 @@ fn config() -> Conf {
 }
 
 fn draw_model(p: &Presentation, transform: ::glam::Mat4, alpha: &Material, additive: &Material) {
+    draw_model_tint(p, transform, alpha, additive, [1.; 3]);
+}
+fn draw_model_tint(
+    p: &Presentation,
+    transform: ::glam::Mat4,
+    alpha: &Material,
+    additive: &Material,
+    tint: [f32; 3],
+) {
     for (i, b) in p.model.batches.iter().enumerate() {
         if !p.visible(i) {
             continue;
@@ -70,7 +79,12 @@ fn draw_model(p: &Presentation, transform: ::glam::Mat4, alpha: &Material, addit
                     at.z,
                     uv.x,
                     uv.y,
-                    Color::new(c[0] * light, c[1] * light, c[2] * light, c[3]),
+                    Color::new(
+                        c[0] * v.color[0] * light * tint[0],
+                        c[1] * v.color[1] * light * tint[1],
+                        c[2] * v.color[2] * light * tint[2],
+                        c[3] * v.color[3],
+                    ),
                 )
             })
             .collect();
@@ -368,12 +382,15 @@ async fn main() {
         } else if mode == "arc" {
             // The host's bounce flash: article 2 (air jolt) at 0.6 scale for 24 ticks.
             article.object_pose(frame);
-            draw_model(
+            // The air-jolt item gets its blue from the item colour overlay, which the
+            // model viewer does not carry; tint the white source material to that blue.
+            draw_model_tint(
                 &article,
                 ::glam::Mat4::from_translation(::glam::Vec3::new(0., 10., 0.))
                     * ::glam::Mat4::from_scale(::glam::Vec3::splat(0.6)),
                 &alpha,
                 &additive,
+                [0.18, 0.55, 1.0],
             );
         } else if mode == "orb" {
             renderer.draw(&system, camera.position);
