@@ -105,11 +105,20 @@ fn samus_morph_roll_alternate_rolls_and_releases() {
     s.advance(&mut h, hop, 1. / 60.);
     assert!(s.velocity.y > 0., "morph ball cannot jump");
     assert_eq!(s.current_move, Some(Move::SpecialLw), "jumping ended the ball");
+    for _ in 0..300 {
+        s.advance(&mut h, roll, 1. / 60.);
+    }
+    assert_eq!(
+        s.current_move,
+        Some(Move::SpecialLw),
+        "the ball ended while LT was still held"
+    );
     let idle = Input { allowed: 0, ..Input::idle() };
     for _ in 0..20 {
         s.advance(&mut h, idle, 1. / 60.);
     }
     assert!(s.current_move.is_none(), "morph roll did not end on release");
+    assert_eq!(s.motion.clip, "Wait", "release did not return to normal Samus");
 }
 
 #[test]

@@ -15,13 +15,10 @@ use glam::Vec3;
 /// Host flag: Samus's down-B is the Morph Ball Roll alternate, not the bomb.
 pub const HOST_MORPH_ROLL: u32 = 4;
 const MORPH_ROLL: u32 = 20;
-const MORPH_ROLL_END: u32 = 21;
 const MORPH_BOX: u32 = 0x8001;
 const MORPH_HIT_TICKS: u32 = 8;
 const MORPH_DUST_TICKS: u32 = 6;
 const MORPH_BOUNCE_COOLDOWN: u32 = 8;
-const MORPH_MAX_TICKS: u32 = 600;
-const MORPH_STILL_TICKS: u32 = 120;
 const MORPH_SPEED: f32 = 2.6;
 const MORPH_ACCEL: f32 = 0.06;
 
@@ -128,8 +125,6 @@ impl Samus {
         );
     }
     fn end_morph_roll(sim: &mut Sim) {
-        sim.stage = MORPH_ROLL_END;
-        sim.stage_frame = 0;
         sim.action.active.clear();
         sim.roll_break = false;
         // The same shell-bit burst Yoshi's egg roll ends with (efSync 0x4CF).
@@ -137,12 +132,24 @@ impl Samus {
             let shell = crate::effect::part_cue(sim, 1231, crate::effect::part::HIP_N);
             sim.action.effects.push(shell);
         }
+        // Back to normal Samus at once, not the down-B's folded end pose.
+        Self::release_gravity(sim);
+        sim.current_move = None;
+        sim.set_phase(Phase::Free);
+        sim.motion.select("Wait", 1.);
+        sim.velocity.x = 0.;
+        sim.velocity.z = 0.;
     }
     fn tick_morph_roll(&self, sim: &mut Sim, input: Input, pressed: u32) {
         let scale = sim.options.speed_scale;
         match sim.stage {
             MORPH_ROLL => {
                 sim.stage_frame += 1;
+                // Keep the down-B action open for as long as the ball is held. Without
+                // this the generic startup/recovery clock ends the move after a few
+                // seconds, dropping the ball pose while LT is still down.
+                sim.phase = Phase::Startup;
+                sim.phase_frame = 0;
                 sim.stage_len = sim.stage_len.saturating_sub(1);
                 let movement = input.movement.with_y(0.);
                 if movement.length() > 0.3 {
@@ -191,24 +198,10 @@ impl Samus {
                 if sim.stage_frame == 1 || sim.stage_frame % MORPH_HIT_TICKS == 0 {
                     Self::morph_hitbox(sim);
                 }
-                if sim.stage_frame >= MORPH_MAX_TICKS
-                    || sim.roll_still >= MORPH_STILL_TICKS
-                    || sim.roll_break
-                    || input.buttons & DOWN_B == 0
-                {
+                // No duration or idle timeout: the ball lasts until LT is released
+                // or the host's armor breaks.
+                if sim.roll_break || input.buttons & DOWN_B == 0 {
                     Self::end_morph_roll(sim);
-                }
-            }
-            MORPH_ROLL_END => {
-                sim.stage_frame += 1;
-                sim.velocity.x *= 0.8;
-                sim.velocity.z *= 0.8;
-                if sim.stage_frame >= 10 {
-                    Self::release_gravity(sim);
-                    sim.action.active.clear();
-                    sim.current_move = None;
-                    sim.set_phase(Phase::Free);
-                    sim.motion.select("Wait", 1.);
                 }
             }
             _ => {}
