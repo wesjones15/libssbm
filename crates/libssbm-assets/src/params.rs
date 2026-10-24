@@ -585,7 +585,7 @@ pub fn load_scope(dir: &Path) -> Result<libssbm::scope::ScopeParams> {
         *cost = article.special[3 + level].round().max(0.) as u32;
     }
     let params = libssbm::scope::ScopeParams {
-        ammo: int(0),
+        ammo: 96,
         charge_floor: int(1),
         charge_levels: int(2),
         costs,
@@ -593,9 +593,9 @@ pub fn load_scope(dir: &Path) -> Result<libssbm::scope::ScopeParams> {
         hold_max: common.f32(global + 0x5B8)?,
         rapid_shots: common.u32(global + 0x5BC)?,
         refill_per_second: 0.,
-        // Host adaptation: the survivor's scope has no ammo cap (the source's 48-shot magazine would
-        // otherwise leave the skill useless on a long run). Fixtures keep the finite rules.
-        infinite: true,
+        // Host adaptation: a 96-shot magazine (the disc's 48 drained too fast) that comes back
+        // full two seconds after the last shot, including an emptied one's cooldown.
+        infinite: false,
     };
     if params.ammo == 0 || params.ammo > 1000 || params.charge_levels == 0 || params.charge_levels > 64 {
         return Err("the Super Scope's attributes are not the disc's".into());

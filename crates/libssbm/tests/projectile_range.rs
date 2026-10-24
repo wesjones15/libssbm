@@ -26,6 +26,7 @@ fn missile(life: f32) -> Projectile {
             explosion_frames: 10.,
             max_bounces: 0,
             bounce_factor: 0.5,
+            straight_distance: 0.,
         },
         Vec3::X,
     )
@@ -85,6 +86,7 @@ fn fireball_bounces_on_ground_then_terminates() {
             explosion_frames: 0.,
             max_bounces: 10,
             bounce_factor: 0.5,
+            straight_distance: 0.,
         },
         Vec3::X,
     );

@@ -94,6 +94,7 @@ impl Sim {
         }
         if let Some(scope) = self.scope.as_mut() {
             scope.state.jump_squat = None;
+            scope.state.trigger = NEUTRAL_B;
             scope.state.held = 0;
             scope.state.released = false;
             scope.state.level = None;
@@ -127,7 +128,8 @@ impl Sim {
                 self.jump(host, false, input);
             } else { scope.state.jump_squat = Some(tick + 1); }
         }
-        let held = input.buttons & NEUTRAL_B != 0;
+        let trigger = scope.state.trigger;
+        let held = input.buttons & trigger != 0;
         match self.stage {
             STAGE_START => {
                 if !scope.state.released {
@@ -162,7 +164,7 @@ impl Sim {
             }
             STAGE_RAPID => {
                 // ftCo_ItemScopeRapid_IASA: a press tops the burst up.
-                if pressed & NEUTRAL_B != 0 {
+                if pressed & trigger != 0 {
                     scope.state.shots_left = scope.params.rapid_shots;
                 }
                 // The next beat of the loop: the clip has come round (or ended, if the sim must restart it).
@@ -245,25 +247,35 @@ impl Sim {
         self.scope = Some(scope);
     }
 
-    /// The magazine's slow refill (`ScopeParams::refill_per_second`), only while the scope is not in use; each tick.
-    pub(super) fn scope_refill(&mut self, dt: f32) {
+    /// A hit that lands while the Scope is charging lets the shot go instead of losing it: the
+    /// level the hold reached is queued and delivered as this move's `Hit` on the next step.
+    /// The fighter still takes the hit and its reaction.
+    pub(crate) fn scope_release_on_hit(&mut self) {
+        if self.current_move != Some(Move::SuperScope) || self.stage != STAGE_START {
+            return;
+        }
+        let Some(scope) = self.scope.as_mut() else { return };
+        if scope.state.released {
+            return;
+        }
+        let Some(level) = scope.params.affordable(scope.state.ammo, scope.state.held) else { return };
+        scope.state.spend(&scope.params, level);
+        scope.state.released = true;
+        self.pending_scope_shot = Some(level);
+    }
+
+    /// Host adaptation: two seconds after the last shot (that is, an emptied magazine's cooldown,
+    /// or simply stopping) the magazine comes back full. The source never refills.
+    pub(super) fn scope_refill(&mut self, _dt: f32) {
         let in_use = self.current_move == Some(Move::SuperScope);
-        if let Some(scope) = self.scope.as_mut() {
-            let per_second = scope.params.refill_per_second;
-            if in_use {
-                scope.state.idle = 0;
-                return;
-            }
-            scope.state.idle = scope.state.idle.saturating_add(1);
-            // A second's pause after the last shot before it starts.
-            if scope.state.idle > 60 && scope.state.ammo < scope.params.ammo && per_second > 0. {
-                scope.state.refill_carry += per_second * dt;
-                let whole = scope.state.refill_carry.floor();
-                if whole >= 1. {
-                    scope.state.refill_carry -= whole;
-                    scope.state.ammo = (scope.state.ammo + whole as u32).min(scope.params.ammo);
-                }
-            }
+        let Some(scope) = self.scope.as_mut() else { return };
+        if in_use {
+            scope.state.idle = 0;
+            return;
+        }
+        scope.state.idle = scope.state.idle.saturating_add(1);
+        if scope.state.idle >= 120 {
+            scope.state.ammo = scope.params.ammo;
         }
     }
 }

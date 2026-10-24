@@ -234,6 +234,9 @@ pub struct Sim {
     pub phase_frame: u32,
     pub jumps_used: u32,
     pub shot_charge: u32,
+    /// Green Missile: horizontal distance flown since the launch (the ignition threshold is measured
+    /// from here). Reset on every launch.
+    pub(crate) missile_travel: f32,
     pub smash_charge: u32,
     pub facing: Vec3,
     host_facing: Option<Vec3>,
@@ -279,6 +282,8 @@ pub struct Sim {
     pub(crate) roll_still: u32,
     /// Samus's Morph Ball Roll is holding the ball form, independent of its clip.
     pub morph_roll_hold: bool,
+    /// Actual distance travelled in the held ball, used to rotate its model.
+    pub morph_roll_distance: f32,
     /// Host lock-on: world position of the enemy the player is locked onto or
     /// aiming nearest, refreshed every tick. Staged specials (Quick Attack)
     /// steer to it; `None` falls back to stick and camera aim.
@@ -297,6 +302,9 @@ pub struct Sim {
     /// landing clip plays at to last its landing lag.
     pub(crate) special_fall: Option<crate::behavior::SpecialFall>,
     pub(crate) landing_rate: f32,
+    /// A Super Scope charge that a hit interrupted: the level the shot was released at, delivered
+    /// as its `Hit` event on the next step instead of the charge being lost.
+    pub(crate) pending_scope_shot: Option<u32>,
     /// Set once Luigi's Cyclone has used its air lift; cleared on landing.
     pub(crate) air_charge: bool,
     /// The sword trail's state (fp->x2100): -1 off, otherwise the script turned it on and the
@@ -362,6 +370,7 @@ impl Sim {
             phase_frame: 0,
             jumps_used: 1,
             shot_charge: 0,
+            missile_travel: 0.,
             smash_charge: 0,
             facing: Vec3::X,
             host_facing: None,
@@ -397,6 +406,7 @@ impl Sim {
             roll_break: false,
             roll_still: 0,
             morph_roll_hold: false,
+            morph_roll_distance: 0.,
             lock_target: None,
             host_flags: 0,
             flutter: 0,
@@ -404,6 +414,7 @@ impl Sim {
             owns_gravity: false,
             special_fall: None,
             landing_rate: 1.,
+            pending_scope_shot: None,
             air_charge: false,
             afterimage: -1,
             face: [0.; 8],
@@ -502,6 +513,10 @@ impl Sim {
         if !dt.is_finite() || dt < 0. || !input.movement.is_finite() || !input.aim.is_finite() {
             return 0;
         }
+        // A Scope charge released by a hit: deliver it as this move's shot before the next tick.
+        if let Some(level) = self.pending_scope_shot.take() {
+            self.emit(host, EventKind::Hit, Move::SuperScope as u32, level as f32);
+        }
         self.pending_pressed |= input.buttons & !self.sampled_buttons;
         self.pending_released |= self.sampled_buttons & !input.buttons;
         self.sampled_buttons = input.buttons;
@@ -556,6 +571,7 @@ impl Sim {
         self.using_behavior(|b, s| b.on_connect(s));
     }
     pub fn teleport(&mut self, position: Vec3) {
+        self.morph_roll_hold = false;
         self.defense.mode = None;
         self.grabbed = false;
         self.suppress_initial_landing = true;
@@ -593,6 +609,7 @@ impl Sim {
     }
     /// Host crowd-control interruption. Stored neutral charge survives.
     pub fn interrupt(&mut self) {
+        self.morph_roll_hold = false;
         self.defense.mode = None;
         self.grabbed = false;
         self.current_move = None;
@@ -618,6 +635,8 @@ impl Sim {
         if self.entry.is_some() || self.rebirth.is_some() {
             return;
         }
+        // A charged Super Scope lets its shot go when the hit lands, rather than losing it.
+        self.scope_release_on_hit();
         self.interrupt();
         let stage = if self.grounded {
             crate::reaction::Stage::GroundHit
@@ -1249,7 +1268,11 @@ impl Sim {
             self.pad_gravity = None;
             // The up special's i-frames end on touchdown.
             self.up_special_invulnerable = false;
-            if !before {
+            // The up special's own touchdown is handled by its helpless phase after the
+            // move ends. While the move is still running its wind-up has zero root
+            // motion, so the floor probe re-grounds him for a frame; that is not a
+            // landing and must not cancel the jump.
+            if !before && self.current_move != Some(Move::SpecialHi) {
                 if matches!(
                     self.reaction,
                     Some(crate::reaction::Stage::AirHit | crate::reaction::Stage::Fall)
@@ -1266,11 +1289,12 @@ impl Sim {
                         Some(Move::DownAir) => "LandingAirLw",
                         Some(m) => self.behavior.landing(self, m),
                         None => {
-                            if self.phase == Phase::Helpless {
-                                "LandingFallSpecial"
-                            } else {
-                                "Landing"
-                            }
+                            // The disc's per-fighter archives carry a plain `Landing`
+                            // clip; there is no distinct `LandingFallSpecial` animation
+                            // (ftCo_LandingFallSpecial_Enter slows `Landing` to last the
+                            // landing lag). Selecting the missing name posed nothing, which
+                            // is the T-pose seen after an aerial up special lands.
+                            "Landing"
                         }
                     };
                     if landing != "Landing" {
@@ -1288,7 +1312,9 @@ impl Sim {
                         }
                     }
                     self.landing_rate = rate;
-                    if self.current_move == Some(Move::SuperScope) {
+                    // A held full-body ball must survive touchdown without
+                    // selecting Landing and restarting its frozen morph clip.
+                    if self.current_move == Some(Move::SuperScope) || self.morph_roll_hold {
                         self.locomotion.select(landing, rate);
                     } else { self.motion.select(landing, rate); }
                 }
@@ -1329,7 +1355,7 @@ impl Sim {
             && clip != self.motion.clip
             && clip.replace("Air", "") == self.motion.clip.replace("Air", "");
         let scope_frame = self.motion.frame;
-        self.motion.select(clip, rate);
+        self.motion.select(clip, rate * self.behavior.animation_rate(self));
         if scope_transition {
             self.motion.frame = scope_frame;
             self.action.script_clip = clip;

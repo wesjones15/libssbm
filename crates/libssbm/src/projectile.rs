@@ -28,6 +28,9 @@ pub struct Params {
     pub max_bounces: u32,
     /// Vertical velocity retained on each ground bounce.
     pub bounce_factor: f32,
+    /// Host adaptation: fly level (no gravity) for this many units before the arc begins.
+    /// Luigi's fireball goes straight at the crosshair first, then falls like the disc's.
+    pub straight_distance: f32,
 }
 /// Link's boomerang (itlinkboomerang.c): it decelerates on its way out until it
 /// reaches `min_speed`, then curves back toward its owner while speeding up to
@@ -229,7 +232,7 @@ impl Projectile {
                     }
                 }
                 0 => {
-                    if !self.grounded {
+                    if !self.grounded && self.position.length() >= self.params.straight_distance {
                         self.velocity.y =
                             (self.velocity.y - self.params.gravity).max(-self.params.max_fall);
                     }

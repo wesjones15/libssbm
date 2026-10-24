@@ -117,14 +117,27 @@ const LW_DONE: u32 = 2;
 
 /// FtPart_HipN, flagged so the host resolves it through the common bone table.
 const PART_HIP_N: usize = 4;
-/// The missile flies further than the 60 Hz source for open worlds (host adaptation).
-const TRAVEL_SCALE: f32 = 1.5;
+/// Host adaptation: the missile flies further than the 60 Hz source for open worlds.
+const TRAVEL_SCALE: f32 = 2.5;
+/// Host adaptation: distance flown (units; 60 m) after which the missile ignites — Fox's Fire Fox
+/// flame on the body — and its damage doubles for the rest of the flight.
+const MISSILE_IGNITE_DIST: f32 = 600.;
+const MISSILE_IGNITE_DAMAGE: f32 = 2.;
+/// Host adaptation: the missile gains this many charge frames a tick (the source gains one), so
+/// a full charge comes in half the time while the charged damage itself is unchanged.
+const MISSILE_CHARGE_RATE: u32 = 2;
+/// The Super Jump Punch climbs higher than the source's ~30 units for open-world traversal
+/// (host adaptation): doubled, it reaches about a RoR2 recovery jump, on top of `JumpScale`.
+const UP_B_LIFT_SCALE: f32 = 2.0;
 /// Ticks between the Cyclone's hits while its first hitboxes are up (host adaptation: the
 /// source's multi-hit comes from its hitbox refresh, which the shared sampler does not run).
 const CYCLONE_REHIT: u32 = 4;
 /// The Green Missile's gfx (efSync 0x50A on the hip) and the Cyclone's (0x509).
 const MISSILE_GFX: u32 = 0x50A;
 const CYCLONE_GFX: u32 = 0x509;
+/// `Sim::host_flags`: the host reports that the Super Scope is the special (LB) slot's
+/// alternate, so LB drives the scope instead of the Super Jump Punch.
+pub const HOST_SCOPE_ON_SPECIAL: u32 = 1;
 
 pub struct Luigi {
     specials: Specials,
@@ -215,6 +228,8 @@ impl Luigi {
         sim.stage_frame = 0;
         sim.stage_dir = sim.position;
         sim.stage_vec = sim.velocity.with_y(0.);
+        sim.missile_travel = 0.;
+        sim.action.variables[1] = 0;
         Self::hold_gravity(sim, 0.);
     }
     /// ftLg_SpecialS_OnGiveDamage / the wall and floor ends: the speed is cut and the End clip plays.
@@ -248,7 +263,11 @@ impl Luigi {
                 // The charge: one more frame each tick, launched on release or past the maximum.
                 Self::release_gravity(sim);
                 sim.stage_frame += 1;
-                sim.shot_charge = sim.shot_charge.saturating_add(1);
+                // Clamp to the source's maximum so a faster rate cannot overshoot the charged damage.
+                sim.shot_charge = sim
+                    .shot_charge
+                    .saturating_add(MISSILE_CHARGE_RATE)
+                    .min(s.max_charge.max(0.) as u32);
                 if input.buttons & SIDE_B == 0 || sim.shot_charge as f32 > s.max_charge {
                     self.begin_launch(sim);
                 }
@@ -271,6 +290,25 @@ impl Luigi {
                 // A floor or a wall ends the flight (ftLg_SpecialAirS2_Coll). The wall shows as
                 // the fighter covering far less ground than his speed asked for.
                 let moved = (sim.position - sim.stage_dir).with_y(0.).length();
+                sim.missile_travel += moved;
+                if sim.action.variables[1] == 0 && sim.missile_travel >= MISSILE_IGNITE_DIST {
+                    sim.action.variables[1] = 1;
+                    // Fox's Fire Fox launch flame (efalt.c 0x48C, EfCoData model 2004) on the body:
+                    // the missile catches fire and hits twice as hard from here on.
+                    sim.action.effects.push(crate::action::GfxCue {
+                        id: 0x48c,
+                        bone: 0,
+                        common: false,
+                        cycle: 0,
+                        destroy_on_change: false,
+                        offset: Vec3::ZERO,
+                        param: 1.,
+                        clip: "SpecialS",
+                        frame: 0.,
+                        origin: sim.position,
+                        facing: sim.facing,
+                    });
+                }
                 let wanted = sim.stage_vec.length();
                 let wall = sim.stage_frame > 2 && wanted > 0.05 && moved < wanted * 0.5;
                 let landed = sim.stage_frame > 2 && sim.grounded;
@@ -294,6 +332,7 @@ impl Luigi {
         }
         let s = &self.specials;
         let damage = sim.shot_charge as f32 * s.damage_slope + s.damage_tilt;
+        let damage = damage * if sim.action.variables[1] != 0 { MISSILE_IGNITE_DAMAGE } else { 1. };
         for active in sim.action.active.values_mut() {
             active.hitbox.damage = damage;
         }
@@ -314,7 +353,7 @@ impl Luigi {
         let s = &self.specials;
         sim.stage_frame += 1;
         Self::hold_gravity(sim, 0.);
-        let lift = self.lift(sim) * sim.options.jump_scale;
+        let lift = self.lift(sim) * sim.options.jump_scale * UP_B_LIFT_SCALE;
         if lift > 0.001 {
             sim.grounded = false;
         }
@@ -433,9 +472,17 @@ impl Behavior for Luigi {
     }
 
     fn select_special(&self, sim: &Sim, input: Input, movement: Vec3) -> Option<Move> {
-        // The host swapped the Fireball for the Super Scope (an alternate neutral special).
-        if sim.scope.is_some() && input.buttons & NEUTRAL_B != 0 {
-            return Some(Move::SuperScope);
+        // The Super Scope stands in for the Fireball (RT) or the Super Jump Punch (LB),
+        // whichever slot the loadout selected it in; the host reports the slot via `host_flags`.
+        if sim.scope.is_some() {
+            let scope_on_special = sim.host_flags & HOST_SCOPE_ON_SPECIAL != 0;
+            if scope_on_special {
+                if input.buttons & UP_B != 0 {
+                    return Some(Move::SuperScope);
+                }
+            } else if input.buttons & NEUTRAL_B != 0 {
+                return Some(Move::SuperScope);
+            }
         }
         Some(if input.buttons & NEUTRAL_B != 0 {
             Move::SpecialN
@@ -449,10 +496,17 @@ impl Behavior for Luigi {
             Move::SpecialN
         })
     }
-    fn enter_special(&self, sim: &mut Sim, _host: &mut dyn Host, m: Move, _input: Input) {
+    fn enter_special(&self, sim: &mut Sim, _host: &mut dyn Host, m: Move, input: Input) {
         let s = &self.specials;
         match m {
-            Move::SuperScope => sim.scope_begin(),
+            Move::SuperScope => {
+                sim.scope_begin();
+                // The Scope may be the primary (RT) or the special (LB) alternate; record which
+                // button drove it so the hold/charge and release read that button, not RT.
+                if let Some(scope) = sim.scope.as_mut() {
+                    scope.state.trigger = if input.buttons & UP_B != 0 { UP_B } else { NEUTRAL_B };
+                }
+            }
             Move::SpecialS => {
                 // ftLg_SpecialS_SetVars / _Enter: a smash input starts pre-charged, one launch in
                 // x44 misfires, and the wind-up slows him by x18.

@@ -118,6 +118,9 @@ pub struct Scope {
 pub struct ScopeState {
     /// Host lower-body jump-squat clock; independent of charge/fire timing.
     pub jump_squat: Option<u32>,
+    /// Native button bit that started this use (`NEUTRAL_B` on RT, `UP_B` on LB). The
+    /// hold, charge and release all read this so the Scope works on any skill slot.
+    pub trigger: u32,
     /// Shots left in the magazine.
     pub ammo: u32,
     /// Ticks the button has been held in this use (`mv.co.x0` timer, 0x2340).

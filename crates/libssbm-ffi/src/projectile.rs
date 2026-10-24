@@ -63,6 +63,7 @@ pub unsafe extern "C" fn ssbm_scope_beam_new(dir: *const c_char, level: u32, dir
                 explosion_frames: 0.,
                 max_bounces: 0,
                 bounce_factor: 0.,
+                straight_distance: 0.,
             };
             Ok(Handle { sim: Projectile::new(p, direction.into()), element: b.element, notified: false, explosion: Vec::new() })
         })();
@@ -146,6 +147,7 @@ pub unsafe extern "C" fn ssbm_projectile_new(
                 explosion_frames: 0.,
                 max_bounces: 0,
                 bounce_factor: 0.5,
+                straight_distance: 0.,
             };
             match fighter_kind {
                 0 => match kind {
@@ -200,10 +202,11 @@ pub unsafe extern "C" fn ssbm_projectile_new(
                 2 => {
                     p.speed = a[0] * 1.6;
                     p.life = a[1];
-                    // The disc item carries no gravity; give it a gentle fall so
-                    // it reaches the ground and bounces instead of flying level.
+                    // Host adaptation: fly straight at the crosshair for 20 m first, then fall
+                    // and bounce exactly as the disc's (the source item carries no gravity).
                     p.gravity = 0.06;
-                    p.initial_y = -0.4;
+                    p.initial_y = 0.;
+                    p.straight_distance = 200.;
                     p.max_bounces = 10;
                     p.bounce_factor = 1.0;
                 }

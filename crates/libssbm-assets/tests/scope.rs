@@ -19,7 +19,7 @@ fn dir() -> Option<PathBuf> {
 fn the_scope_tuning_is_the_discs() {
     let Some(dir) = dir() else { return };
     let p = params::load_scope(&dir).unwrap();
-    assert_eq!(p.ammo, 48);
+    assert_eq!(p.ammo, 96, "host adaptation: a 96-shot magazine");
     assert_eq!((p.charge_floor, p.charge_levels), (5, 8));
     assert_eq!(p.costs, [1, 2, 3, 4, 6, 8, 10, 12, 14, 16]);
     println!("hold_max {} rapid_shots {} muzzle {:?}", p.hold_max, p.rapid_shots, p.muzzle);
@@ -128,7 +128,8 @@ mod in_hand {
         // ftCommonData x5BC taps, counted down at the start of each loop: one fewer shots.
         assert_eq!(fired, vec![0; 2], "a tap's burst: {fired:?}");
         assert_eq!(sim.current_move, None, "the move did not end");
-        assert_eq!(sim.scope.as_ref().unwrap().state.ammo, 48 - 2);
+        // The 240-tick playout is longer than the two-second idle cooldown, so the magazine is back full.
+        assert_eq!(sim.scope.as_ref().unwrap().state.ammo, 96);
     }
 
     #[test]
@@ -159,7 +160,8 @@ mod in_hand {
         assert_eq!(fired.len(), 1, "a held shot fired {fired:?}");
         assert!((3..=6).contains(&fired[0]), "level {} for a 40-tick hold", fired[0]);
         let cost = [1, 2, 3, 4, 6, 8, 10, 12, 14, 16][fired[0] as usize];
-        assert_eq!(sim.scope.as_ref().unwrap().state.ammo, 48 - cost);
+        // The 240-tick playout is longer than the two-second idle cooldown, so the magazine is back full.
+        assert!(cost > 0 && sim.scope.as_ref().unwrap().state.ammo == 96);
     }
 
     #[test]

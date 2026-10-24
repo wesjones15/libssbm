@@ -2639,7 +2639,7 @@ mod tests {
             assert_eq!(ssbm_sim_scope(luigi, 1, 0.), 1, "{}", ERROR.with(|e| e.borrow().to_string_lossy().into_owned()));
             let mut info = ScopeInfo::default();
             assert_eq!(ssbm_sim_scope_state(luigi, &mut info), 1);
-            assert_eq!((info.ammo, info.capacity), (48, 48));
+            assert_eq!((info.ammo, info.capacity), (96, 96));
             SHOTS.lock().unwrap().clear();
             // Hold 40 ticks, then let go and play it out.
             for t in 0..400 {
@@ -2650,7 +2650,7 @@ mod tests {
             assert_eq!(shots.len(), 1, "a held shot: {shots:?}");
             assert!(shots[0].1 >= 3. && shots[0].1 <= 6., "level {}", shots[0].1);
             ssbm_sim_scope_state(luigi, &mut info);
-            assert_eq!(info.ammo, 48, "host Scope uses infinite ammunition");
+            assert_eq!(info.ammo, 96, "the magazine did not come back full after its idle cooldown");
 
             // The beam and the scope draw, and the beam flies.
             let beam = projectile::ssbm_scope_beam_new(cdir.as_ptr(), 4, V3 { x: 1., y: 0., z: 0. });
