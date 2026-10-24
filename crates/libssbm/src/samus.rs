@@ -19,6 +19,8 @@ const MORPH_BOX: u32 = 0x8001;
 const MORPH_HIT_TICKS: u32 = 8;
 const MORPH_DUST_TICKS: u32 = 6;
 const MORPH_BOUNCE_COOLDOWN: u32 = 8;
+/// Host cap on the held ball: 10 seconds at 60 Hz.
+const MORPH_MAX_TICKS: u32 = 600;
 const MORPH_SPEED: f32 = 2.6;
 const MORPH_ACCEL: f32 = 0.06;
 
@@ -198,9 +200,11 @@ impl Samus {
                 if sim.stage_frame == 1 || sim.stage_frame % MORPH_HIT_TICKS == 0 {
                     Self::morph_hitbox(sim);
                 }
-                // No duration or idle timeout: the ball lasts until LT is released
-                // or the host's armor breaks.
-                if sim.roll_break || input.buttons & DOWN_B == 0 {
+                // Up to ten seconds while held; release or an armor break ends it early.
+                if sim.stage_frame >= MORPH_MAX_TICKS
+                    || sim.roll_break
+                    || input.buttons & DOWN_B == 0
+                {
                     Self::end_morph_roll(sim);
                 }
             }

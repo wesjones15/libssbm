@@ -122,6 +122,25 @@ fn samus_morph_roll_alternate_rolls_and_releases() {
 }
 
 #[test]
+fn samus_morph_roll_caps_at_ten_seconds_and_stands() {
+    let mut s = Sim::new(Params::fixture(), Vec3::ZERO);
+    let mut h = FlatHost::default();
+    tick(&mut s, &mut h, 0);
+    s.host_flags = libssbm::samus::HOST_MORPH_ROLL;
+    let roll = Input {
+        buttons: DOWN_B,
+        allowed: 2,
+        ..Input::idle()
+    };
+    for _ in 0..650 {
+        s.advance(&mut h, roll, 1. / 60.);
+        if s.current_move.is_none() { break; }
+    }
+    assert!(s.current_move.is_none(), "a held morph roll never capped");
+    assert_eq!(s.motion.clip, "Wait", "the capped roll did not stand up");
+}
+
+#[test]
 fn host_jump_height_matches_short_full_and_aerial_apices() {
     for fps in [30, 60, 144] {
         for (aerial, short) in [(false, false), (false, true), (true, false)] {
