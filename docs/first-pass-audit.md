@@ -85,7 +85,7 @@ the libssbm working tree is shared with other agents, so commit only your own fi
 
 ### How to read the tables
 
-- Input columns give the Melee button first, then the RoR2 pad binding and the keyboard/mouse binding. The five skills are RT / LT / RB / LB / B on a pad and Primary / Secondary / Utility / Special / C on keyboard and mouse.
+- Input columns give the Melee button first, then the RoR2 pad binding and the keyboard/mouse binding. The five skills are RT / LT / RB / LB / B on a pad and Primary / Secondary / Utility / Special / C on keyboard and mouse. **A attacks are B; the down special (and its Shield / Air Feint alternate) is LT.**
   Pikachu is the only fighter whose specials are shuffled (RB is Thunder, LB is Quick Attack, B is Skull Bash).
 - Status: **OK** does what the disc says, **PARTIAL** runs but is missing stages or effects, **BROKEN** does not do its job, **ANIMATION ONLY** plays but has no effect.
 - "Should do" comes from the Melee decompilation (`melee-master/.../ft/kinds/ft<Name>/`) and the clip lists and scripts in each fighter's disc data.
@@ -94,14 +94,14 @@ the libssbm working tree is shared with other agents, so commit only your own fi
 
 ## Pikachu
 
-RT Thunder Shock, LT A attack, RB Thunder, LB Quick Attack, B Skull Bash (all cooldowns: 0.25 s, 0, 5 s, 3 s, 1.5 s).
+RT Thunder Shock, B A attack, RB Skull Bash, LB Quick Attack, LT Thunder (all cooldowns: 0.25 s, 0, 1.5 s, 3 s, 5 s).
 
 ### Specials
 
 | Move | Melee input | RoR2 input | Does now | Should do | Status |
 | --- | --- | --- | --- | --- | --- |
 | Thunder Jolt | B | RT / Primary | Fires an electric orb along the crosshair (`MeleeBouncingShot`, same arc and bounce as Luigi's fireball). Ground bounces and wall/ceiling reflects share one budget of ten surface contacts, then it fizzles; an enemy ends it. Damage drops to the ground jolt's after the first bounce. Grounded with a level or downward aim it plays `SpecialN`; fired from the air, or aimed above about 11 degrees, it plays `SpecialAirN`. The source's terrain-hugging crawl (`Crawl` mode, ddba74e) was reverted: it never bounced and rolled like a ball when shot upward. | The orb is gravity-arced like Luigi's (host adaptation); the source jolt crawls the floor. Particles are guesses. Unplayed. | PARTIAL |
-| Skull Bash | Side + B | B / C (fifth slot) | Hold to charge up to 90 frames, release to lunge. Travel 81 uncharged, 132 charged; damage and distance grow with the charge; stops on what it hits. Start, hold, lunge, end clips all chain. | Same, plus the wall rebound (Melee bounces him back off walls); stage clips match the disc. | PARTIAL |
+| Skull Bash | Side + B | LT / Secondary (fifth slot) | Hold to charge up to 90 frames, release to lunge. Travel 81 uncharged, 132 charged; damage and distance grow with the charge; stops on what it hits. Start, hold, lunge, end clips all chain. | Same, plus the wall rebound (Melee bounces him back off walls); stage clips match the disc. | PARTIAL |
 | Quick Attack | Up + B | LB / Special | Two zips to the lock-on (nearest the crosshair, prefer in front, up to 25 m), or along stick and camera with no target; arrives in two zips at any distance, never rubber-bands; 2% hits at the start and end. | Body tilt toward the zip direction (not done); Melee ends in a helpless fall when used in the air (not modelled for any fighter here). | OK |
 | Thunder | Down + B | RB / Utility | A cloud and four bolt segments drop on him, the bolt shocks its column (events 1), then the strike (17%, event 2) electrifies the area around him; 83 ticks. | Same sequence; the cloud has no model yet. | PARTIAL |
 | Shield / Air Feint | Shield (L/R) | B, when chosen in the loadout's fifth row | Ground shield bubble, one air evade. | Same. | OK |
@@ -133,7 +133,7 @@ Not reachable from the generic attack picker: angled forward tilts (`AttackS3Hi`
 
 ## Captain Falcon
 
-RT Falcon Punch, LT A attack, RB Raptor Boost, LB Falcon Dive, B Falcon Kick (cooldowns 0.5 s, 0, 1 s, 3 s, 1 s). Skill text, driver and combat code are otherwise the generic path.
+RT Falcon Punch, B A attack, RB Raptor Boost, LB Falcon Dive, LT Falcon Kick (cooldowns 0.5 s, 0, 1 s, 3 s, 1 s). Skill text, driver and combat code are otherwise the generic path.
 
 ### Specials
 
@@ -142,8 +142,8 @@ RT Falcon Punch, LT A attack, RB Raptor Boost, LB Falcon Dive, B Falcon Kick (co
 | Falcon Punch | B | RT / Primary | Ground: the 100-tick clip with its root motion (12.7 units forward), one hit window on frame 52 (fire 27% / 25% / 23%), a force multiplier of 10 for the host. Facing follows the camera until frame 48, so turning around during the wind-up reverses the punch; it then commits. Air: at frame 50 he launches along the camera pitch (within 30 degrees) at the disc's 1.95. No cooldown. | Same. | PARTIAL (unplayed) |
 | Raptor Boost | Side + B | RB / Utility | Staged: `SpecialSStart` lunges 60 units (x1.5 here) by the clip's root motion with the disc's inert trigger boxes live on frames 15-35. The host reports a trigger touching an enemy; the move becomes `SpecialS`: the 7% uppercut on the ground (angle 90) and the downward spike in the air (angle 270), force x5, with the speed cut by the disc's 0.18 factor. A miss simply ends. The old "speed 0.18" was this factor, not a speed. | The same; the source adds miss landing lag. | PARTIAL (unplayed) |
 | Falcon Dive | Up + B | LB / Special | Staged: the leap rises to the jump apex with the disc's grab boxes (frames 13-34). A grab takes hold of the enemy, **bosses included** (an ordinary enemy is held in front of him; a boss cannot be moved, so he clings to the spot he hit). `SpecialHiCatch` explodes (5% fire, 7.8 radius), then `SpecialHiThrow` launches the victim (6500 N up and away) while he rebounds backward by the clip's root motion. A miss is a plain leap. | The same; special fall afterwards is not modelled. | PARTIAL (unplayed) |
-| Falcon Kick | Down + B | B / C (fifth slot) | Staged: `SpecialLw` travels 80 units (x1.5 here) by the clip's root motion with the 15% / 12% / 9% fire hits, then `SpecialLwEnd`. In the air it dives diagonally (as far down as forward) and goes into the recovery on touchdown. Force x6. | The same; the on-hit speed modifier is not applied. | PARTIAL (unplayed) |
-| Shield / Air Feint | Shield | B (alt) | Ground shield bubble, one air evade. | Same. | OK |
+| Falcon Kick | Down + B | LT / Secondary (fifth slot) | Staged: `SpecialLw` travels 80 units (x1.5 here) by the clip's root motion with the 15% / 12% / 9% fire hits, then `SpecialLwEnd`. In the air it dives diagonally (as far down as forward) and goes into the recovery on touchdown. Force x6. | The same; the on-hit speed modifier is not applied. | PARTIAL (unplayed) |
+| Shield / Air Feint | Shield | LT (alt) | Ground shield bubble, one air evade. | Same. | OK |
 
 ### Normals, tilts, smashes and aerials (grab, pummel and throws: see the shared section below)
 
@@ -177,7 +177,7 @@ Not reachable: angled tilts (`AttackS3Hi`, `AttackS3Lw` and their `...S` forms),
 
 ## Link
 
-RT Hero's Bow, LT A attack, RB Boomerang, LB Spin Attack, B Bomb (cooldowns 0.3 s, 0, 1 s, 3 s, 1 s).
+RT Hero's Bow, B A attack, RB Boomerang, LB Spin Attack, LT Bomb (cooldowns 0.3 s, 0, 1 s, 3 s, 1 s).
 
 ### Specials
 
@@ -186,8 +186,8 @@ RT Hero's Bow, LT A attack, RB Boomerang, LB Spin Attack, B Bomb (cooldowns 0.3 
 | Hero's Bow | B | RT / Primary | Staged (libssbm link.rs): draw SpecialN, hold SpecialNLoop at full charge, release SpecialNEnd. The charge climbs once the draw is ready (frame 18); a tap fires a weak arrow (strength 0.02 in the audit), a full hold 1.0. The arrow's speed runs from the item's min to max (6 to 10 units a tick), it flies at the crosshair and bursts on contact, range capped at 200 m. Damage 4% to 12% is a placeholder (the source authors it in code). No cooldown. | Same. | PARTIAL (unplayed; damage placeholder) |
 | Boomerang | Side + B | RB / Utility | Thrown on frame 23 of the 46-frame throw clip along the camera aim from the left hand. libssbm steps its flight with the item's numbers (decelerates, turns for Link, speeds up, is caught): out about 12 m and back in about 1.6 s with Link standing still (distances doubled for open worlds). Hits on both passes, bounces off walls, and while it is out the empty-handed clip plays and nothing is thrown. No cooldown. | The same, plus the `SpecialS2` catch pose (not played: the catch is silent). | PARTIAL (unplayed) |
 | Spin Attack | Up + B | LB / Special | Rising spin with four 15% hits (ground) / 4-6% multi-hits (air), slash effect, rises 28 above start, then lands. | Same clips; Melee follows with special fall (not modelled for any fighter). | OK |
-| Bomb | Down + B | B / C (fifth slot) | `SpecialLw` pulls a bomb into the left hand (frame 16). It is carried: LT throws it along the camera aim, B drops it, it explodes on touching an enemy or after a 5 s fuse (adaptation; the item's timer is not read), 3.5 m blast with outward and upward force, and the blast launches Link too (bomb jumping). No second bomb while one is held. Damage is a placeholder. | Same; the source also lets him throw with the stick. | PARTIAL (unplayed; placeholders) |
-| Shield / Air Feint | Shield | B (alt) | Ground shield bubble, one air evade. | Same. | OK |
+| Bomb | Down + B | LT / Secondary (fifth slot) | `SpecialLw` pulls a bomb into the left hand (frame 16). It is carried: B throws it along the camera aim, LT drops it, it explodes on touching an enemy or after a 5 s fuse (adaptation; the item's timer is not read), 3.5 m blast with outward and upward force, and the blast launches Link too (bomb jumping). No second bomb while one is held. Damage is a placeholder. | Same; the source also lets him throw with the stick. | PARTIAL (unplayed; placeholders) |
+| Shield / Air Feint | Shield | LT (alt) | Ground shield bubble, one air evade. | Same. | OK |
 
 ### Normals, tilts, smashes and aerials (grab, pummel and throws: see the shared section below)
 
@@ -220,7 +220,7 @@ Not reachable: the second hit of the forward smash
 
 ## Yoshi
 
-RT Egg Lay, LT A attack, RB Egg Roll, LB Egg Throw, B Yoshi Bomb (cooldowns 0.5 s, 0, 1 s, 2 s, 1 s).
+RT Egg Lay, B A attack, RB Egg Roll, LB Egg Throw, LT Yoshi Bomb (cooldowns 0.5 s, 0, 1 s, 2 s, 1 s).
 
 ### Specials
 
@@ -229,8 +229,8 @@ RT Egg Lay, LT A attack, RB Egg Roll, LB Egg Throw, B Yoshi Bomb (cooldowns 0.5 
 | Egg Lay | B | RT / Primary | Staged: `SpecialN1` (tongue), `SpecialN2` (swallow). The tongue event fires on frame 20; the host draws a 20 m lash from the mouth and overlaps a 20 m capsule along the camera aim, swallowing the first enemy in line of sight, **bosses included**. The victim is stuck to the tongue tip, shrinks into Yoshi's mouth and is held inside; Yoshi then carries it at 45% walk speed using the disc's heavy-carry clips (`WaitItem`, `HeavyWalk1/2`). After a 0.3 s carry he lays the egg behind him automatically with `SpecialN2` and the source lay cue; the victim stays inside until the egg is laid. The egg uses the costume's own egg DObj 35, sized to the victim and not to scale: at most 2.4 m radius for ordinary enemies, 3 to 5.5 m for bosses. It falls under gravity, can be knocked around by hits, and its mass scales with size: small-egg hits send it flying, large eggs move less and boss eggs barely move. It can still be hit meanwhile. No cooldown. | The source lays the egg at the end of `SpecialN2`; the carry state is a host adaptation. | PARTIAL (unplayed) |
 | Egg Roll | Side + B | RB / Utility | Staged: `SpecialS` (curl up), `SpecialSLoop` (rolling), `SpecialSEnd`. **Hold RB to keep rolling for up to 10 s; release to break out** (the source's 360-tick cap and 50-tick B wait are dropped; the host caps at 600 ticks). The skill recharges in 5 s. The body is hidden and the costume's egg DObj 35 is drawn in its place, spun about the egg's centre by the distance rolled. Speed climbs to the disc's 3.0 units a tick (top 5.0). A host-side armor pool of **50% of maximum health** absorbs every hit while rolling (including BypassBlock damage), so Yoshi takes **no health damage in the egg**; when the pool is empty the egg breaks and the roll ends. The authored 4% roll hitboxes are refreshed every 8 ticks and hit for **2.5x damage and 3x knockback**, so the egg bowls enemies away. The move stick steers him and a wall bounces him back. The disc clip's own 25-unit TransN travel is pinned to the sim position, so the model no longer lurches forward and snaps back when the loop restarts. | Same; the source reads one stick axis and has slope terms and a separate air roll. | PARTIAL (unplayed) |
 | Egg Throw | Up + B | LB / Special | Hops and throws an egg from the hand on a ballistic arc: the camera pitch sets the angle (pitch + 22 degrees, 5 to 70), launch speed 4.5 units a tick, gravity 0.08, bounces up to four times and bursts on the first enemy or wall in a 2 m blast. The source throw cue (`0x44612`) and egg-break cue (`0x44618`) play, and the break spawns the shell-bit effect (`0x4CF`). No cooldown. | The source's speed grows with the time the reticle is up; here the angle is the control. | PARTIAL (unplayed; damage a placeholder) |
-| Yoshi Bomb | Down + B | B / C (fifth slot) | Grounded: a short hop (35% of the host jump) and hang for the 28-frame `SpecialLw`, then a dive; airborne: the dive starts at once (`SpecialAirLw`, straight down at the disc's 5.0 units a tick). A 14% hitbox rides the dive. The landing plays `SpecialLwLanding` (40 frames), hits everything within 4.5 m and sends eight stars running out along the ground. | Same; the source spawns two stars (left and right). | PARTIAL (unplayed) |
-| Shield / Air Feint | Shield | B (alt) | Ground shield, one air evade. | Same (Yoshi's disc shield clips are `GuardOn`/`GuardOff` only). | OK |
+| Yoshi Bomb | Down + B | LT / Secondary (fifth slot) | Grounded: a short hop (35% of the host jump) and hang for the 28-frame `SpecialLw`, then a dive; airborne: the dive starts at once (`SpecialAirLw`, straight down at the disc's 5.0 units a tick). A 14% hitbox rides the dive. The landing plays `SpecialLwLanding` (40 frames), hits everything within 4.5 m and sends eight stars running out along the ground. | Same; the source spawns two stars (left and right). | PARTIAL (unplayed) |
+| Shield / Air Feint | Shield | LT (alt) | Ground shield, one air evade. | Same (Yoshi's disc shield clips are `GuardOn`/`GuardOff` only). | OK |
 
 ### Normals, tilts, smashes and aerials (grab, pummel and throws: see the shared section below)
 
@@ -259,7 +259,7 @@ Not reachable: angled tilts (`AttackS3Hi/Lw` and `...S` forms) and angled smashe
 
 ## Donkey Kong
 
-RT Giant Punch, LT A attack, RB Headbutt, LB Spinning Kong, B Hand Slap (cooldowns 0.5 s, 0, 1 s, 3 s, 1 s).
+RT Giant Punch, B A attack, RB Headbutt, LB Spinning Kong, LT Hand Slap (cooldowns 0.5 s, 0, 1 s, 3 s, 1 s).
 
 ### Specials
 
@@ -268,8 +268,8 @@ RT Giant Punch, LT A attack, RB Headbutt, LB Spinning Kong, B Hand Slap (cooldow
 | Giant Punch | B | RT / Primary | Staged: hold RT to wind up (`SpecialNStart` then `SpecialNLoop`, one stored swing per 12 ticks up to the disc's 10); letting go releases `SpecialN`, whose hit gains the disc's 2% a swing and extra knockback; ten swings let go by themselves. Shield cancels with the swings kept (they persist between uses, as in the source). Force x10. No cooldown. | The same; the source toggles on a second press and has a `Full` state. | PARTIAL (unplayed) |
 | Headbutt | Side + B | RB / Utility | He stays where he is (no lunge). The ground hit (element 9) **buries** what it hits for three seconds (held helpless), bosses included; the air version's hit points straight down, a spike. Force x6. The buried look (sinking into the floor) is not done. | Same. | PARTIAL (unplayed) |
 | Spinning Kong | Up + B | LB / Special | The disc's multi-hit spin (a 12% first hit, force x4), a limited rise (the host jump apex) and horizontal travel the move stick steers. | Same. | OK (unplayed) |
-| Hand Slap | Down + B | B / C (fifth slot) | Staged: `SpecialLw`, then `SpecialLwLoop` repeating for as long as B is held (two slams a pass, frames 5 and 16), then `SpecialLwEnd`. He is planted throughout. Every slam sends a 9 m shockwave along the ground that hits grounded enemies (3.5 coefficient) and holds them for 0.5 s; the next slam renews it, so a held slap locks an enemy, **Mithrix included**, with no falloff. No cooldown. | Same. | PARTIAL (unplayed) |
-| Shield / Air Feint | Shield | B (alt) | Ground shield, one air evade. | Same. | OK |
+| Hand Slap | Down + B | LT / Secondary (fifth slot) | Staged: `SpecialLw`, then `SpecialLwLoop` repeating for as long as LT is held (two slams a pass, frames 5 and 16), then `SpecialLwEnd`. He is planted throughout. Every slam sends a 9 m shockwave along the ground that hits grounded enemies (3.5 coefficient) and holds them for 0.5 s; the next slam renews it, so a held slap locks an enemy, **Mithrix included**, with no falloff. No cooldown. | Same. | PARTIAL (unplayed) |
+| Shield / Air Feint | Shield | LT (alt) | Ground shield, one air evade. | Same. | OK |
 
 ### Normals, tilts, smashes and aerials (grab, pummel and throws: see the shared section below)
 
@@ -332,7 +332,7 @@ Fox and Luigi were not part of the first audit; Fox now has the pattern the othe
 | Blaster | B | RT / Primary | `Start` 7 + `Loop` 10 + `End` 24 frames, one pass. Every tap fires, at most one shot per 0.12 s (7 ticks; a tap replays the Loop clip early); holding replays the 10-tick Loop clip, one shot per 1/6 s (ftfoxspecialn.c). Headless-tested, not played. The laser keeps its authored damage and radius after impact (it has no explosion). The gun model (article 1) is drawn on the right thumb bone. Placement and rotation unseen. |
 | Illusion | Side + B | RB / Utility | A blue streak and dash of about 96 units over 6 frames (about 10 m). The disc's 7% slash hitbox rides the dash, each enemy in the path hit once. |
 | Fire Fox | Up + B | LB / Special | Stage one: he holds position in space for about 43 frames with the flame charge. Stage two: he launches along the camera aim in a fire ball, 20% hits (the host scales the disc damage by 1.4 and the radius to 9), travelling 100+ units. The select-screen intro aims up so it plays. The far travel, size and damage are RoR2 adaptation, not disc values. |
-| Reflector | Down + B | B / C (fifth slot) | Centred on the hips, not the floor. One burst event at the start of the held shine; the C# side deals AOE damage in a 2.8 m sphere with outward force 4500, upward 2200, coefficient 3.5. Holding B keeps the shine up; release plays `End`. |
+| Reflector | Down + B | LT / Secondary (fifth slot) | Centred on the hips, not the floor. One burst event at the start of the held shine; the C# side deals AOE damage in a 2.8 m sphere with outward force 4500, upward 2200, coefficient 3.5. Holding LT keeps the shine up; release plays `End`. |
 
 The shape to copy, all in `Behavior` (`crates/libssbm/src/behavior.rs`): `enter_special` sets up the move; `tick_special` runs every tick and drives velocity, gravity ownership (`owns_gravity` / `pad_gravity`) and stage changes;
 `next_stage` is called when a clip finishes and returns true after moving to the next stage (the behavior's `clip` then names the next clip) or false to end the move; `aim_frozen`, `facing_locked_now` and `script_muted` change per stage;
@@ -352,7 +352,7 @@ The Reflector (`fox.rs`, `FoxCombat.cs`, `FoxDriver.cs`): the start event (stren
 | Fireball | RT | Unchanged: the shared bouncing shot, no recharge. |
 | Green Missile | RB | `SpecialSStart`, looping `SpecialSHold` (one charge frame per tick, up to `xC` = 90; a smash flick starts at `x8` = 20), launch clip `SpecialS`. One launch in `x44` = 8 misfires (`Sim::random`; tests force it). A charged launch flies at `charge * x28 + x24` with lift from `x2C`, hits for `charge * x14 + x10` percent, gravity `x30` and terminal `x34`; a misfire flies at `x48`/`x4C` and keeps the clip's own 25% hitbox. The fly flag is the clip's cmd-var 0 at frame 4. It stops (speed divided by `x38`, `SpecialSEnd`/`SpecialAirSEnd`) on a hit (`on_connect`), a wall (the fighter covering less than half the ground his speed asks for), the floor or the end of the clip. The damage is rewritten in `Behavior::after_script`, so no sample sees the clip's 25%. The disc has no separate misfire, air launch or fly clip: all three play `SpecialS`. Travel is scaled by 1.5 for open worlds. The old code read the wrong button for the hold and fired uncharged. |
 | Super Jump Punch | LB | The rise is the clip's own vertical root motion (`MotionDef::root_up`, the TransN Y channel; about 37 units): the fire sweetspot is the clip's frame-5 hitbox (25% grounded, 20% aerial, radius 1.95), the wider weak hitboxes (1%, element 4) pay gold. The stick tilts the climb at most `x60` = 2 degrees, so almost no horizontal travel; air momentum is dropped (`x64` = 0). It ends in a special fall (`Behavior::special_fall`, `Phase::Helpless`): drift at `x50` = 0.6, and landing plays `LandingFallSpecial` stretched to `x54` = 40 frames. |
-| Cyclone | B | Clip `SpecialLw` or `SpecialAirLw` (the one the move started in, so it never restarts). While the spin flags are up: hit events 1 (pull on) and 2 (pull off); the first hitboxes re-hit every 4 ticks (host adaptation for the source's hitbox refresh), the clip's last 12% hit launches. Steering: ground cap `x74`, accel `x7C`; air cap `x78`, accel `x80`; the cap loses `x84` a tick once the spin winds down. Each B press while the tap window is open sets the vertical speed to at least `x8C` = 0.8, once per airtime (`Sim::air_charge`, cleared on landing). The host pulls enemies within 7 m toward him at 14 m/s while the pull is on (bosses included), no recharge. |
+| Cyclone | B | Clip `SpecialLw` or `SpecialAirLw` (the one the move started in, so it never restarts). While the spin flags are up: hit events 1 (pull on) and 2 (pull off); the first hitboxes re-hit every 4 ticks (host adaptation for the source's hitbox refresh), the clip's last 12% hit launches. Steering: ground cap `x74`, accel `x7C`; air cap `x78`, accel `x80`; the cap loses `x84` a tick once the spin winds down. Each LT press while the tap window is open sets the vertical speed to at least `x8C` = 0.8, once per airtime (`Sim::air_charge`, cleared on landing). The host pulls enemies within 7 m toward him at 14 m/s while the pull is on (bosses included), no recharge. |
 
 Not done: the source's Luigi does not embed himself in walls; the spec asked for it and it is not in the decomp, so nothing implements it. Slippery movement comes from the disc's own numbers through the shared sim and was checked at the data level: Luigi's ground friction is 0.025 against 0.06 to 0.09 for Samus, Fox, Pikachu and Falcon, and his air speed (0.68) and acceleration (0.025) are the lowest of those; how it feels in RoR2 is unplayed. The wall detection for the missile is a heuristic.
 

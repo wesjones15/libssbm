@@ -52,7 +52,7 @@ fn explicit_skills_ignore_camera_and_stick_and_respect_five_stock_masks() {
             (NEUTRAL_B, Move::SpecialN, 0),
             (SIDE_B, Move::SpecialS2, 2),
             (UP_B, Move::SpecialHi, 3),
-            (DOWN_B, Move::SpecialLw, 4),
+            (DOWN_B, Move::SpecialLw, 1),
         ] {
             for ready in [false, true] {
                 let mut s = Sim::new(Params::fixture(), Vec3::ZERO);

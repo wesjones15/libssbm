@@ -435,13 +435,13 @@ impl Pikachu {
 
 impl Behavior for Pikachu {
     fn slot(&self, m: Move) -> u32 {
-        // RoR2 button shuffle: Thunder on RB (Utility), Skull Bash on the B slot.
+        // Thunder is the down special (LT); Skull Bash is the side special (RB).
         match m {
             Move::SpecialN => 0,
-            Move::SpecialLw => 2,
+            Move::SpecialLw => 1,
             Move::SpecialHi => 3,
-            Move::SpecialS | Move::SpecialS2 => 4,
-            _ => 1,
+            Move::SpecialS | Move::SpecialS2 => 2,
+            _ => 4,
         }
     }
     fn mobile_moves(&self) -> u64 {

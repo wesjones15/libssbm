@@ -409,8 +409,8 @@ impl Behavior for Fox {
             Move::SpecialN => 0,
             Move::SpecialS | Move::SpecialS2 => 2,
             Move::SpecialHi => 3,
-            Move::SpecialLw => 4,
-            _ => 1,
+            Move::SpecialLw => 1,
+            _ => 4,
         }
     }
     fn mobile_moves(&self) -> u64 {
