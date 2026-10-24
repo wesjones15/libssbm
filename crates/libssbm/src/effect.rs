@@ -53,6 +53,7 @@ pub fn resolve(id: u32) -> Target {
         1065 => Particle(206),
         1067 => Model(25), // efasync.c 0x42B: standard blast-zone KO
         1068 => Model(26), // alternate KO presentation
+        1072 => Particle(0x140), // efasync.c 0x430: Super Scope muzzle flash (generator 0x140)
         1080 => Model(34),
         1086 => Model(36),
         1087 => Particle(202), // efasync.c 0x43F: rebirth ring
@@ -185,6 +186,19 @@ pub fn part_cue(sim: &crate::sim::Sim, id: u32, bone: usize) -> crate::action::G
         frame: sim.motion.frame,
         origin: sim.position,
         facing: sim.facing,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{resolve, Target};
+
+    #[test]
+    fn the_scope_effects_are_common_particles() {
+        // efasync.c 0x405: the empty-click smoke puff (generator 0x2C), reused for the held charge.
+        assert_eq!(resolve(0x405), Target::Particle(44));
+        // efasync.c 0x430: the shot's muzzle flash (generator 0x140).
+        assert_eq!(resolve(0x430), Target::Particle(0x140));
     }
 }
 
