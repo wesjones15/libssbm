@@ -528,6 +528,9 @@ pub fn mobile_pose_over(
     if let (Some(root), Some(pitch)) = (upper_root, sim.scope_upper_pitch()) {
         pitch_upper_body(model, &mut pose, root, pitch);
     }
+    if let (Some(root), Some(pitch)) = (upper_root, sim.tongue_upper_pitch()) {
+        pitch_upper_body(model, &mut pose, root, pitch);
+    }
     pose
 }
 /// Turn the torso toward camera aim without changing the source cannon motion.

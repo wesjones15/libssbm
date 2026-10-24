@@ -6,7 +6,7 @@ use crate::{behavior::Behavior, Params};
 use glam::Vec3;
 mod actions;
 mod scope_move;
-pub use scope_move::scope_aim_pitch;
+pub use scope_move::{aim_pitch, scope_aim_pitch};
 
 pub const TICK_HZ: f64 = 60.;
 pub const JUMP: u32 = 1;

@@ -96,6 +96,66 @@ fn egg_lay_sticks_its_tongue_out_once_and_swallows_on_contact() -> Result<()> {
     Ok(())
 }
 
+/// The host's tongue pose: the upper rig follows camera elevation during Egg Lay, leaving
+/// the hips and legs on the gait, and stops doing so when the move ends.
+#[test]
+fn egg_lay_pitches_the_upper_body_with_live_camera_aim() -> Result<()> {
+    use libssbm_assets::{animation::Animations, model::Model, presentation::mobile_pose};
+    let Some(mut sim) = yoshi_at(Vec3::ZERO, true)? else { return Ok(()) };
+    let Some(mut control) = yoshi_at(Vec3::ZERO, true)? else { return Ok(()) };
+    let dir = dir();
+    let model = Model::load_for(&dir, 0, &YOSHI)?;
+    let animations = Animations::load_for(&dir, &YOSHI)?;
+    let root = YOSHI.upper_body_root.expect("Yoshi has an upper-body root");
+    let mut upper = vec![false; model.joints.len()];
+    for (i, joint) in model.joints.iter().enumerate() {
+        upper[i] = i == root || joint.parent.is_some_and(|p| upper[p]);
+    }
+    let mouth = 42;
+    assert!(upper[mouth], "the mouth bone is outside the upper-body subtree");
+
+    let mut host = FlatHost::default();
+    settle(&mut sim, &mut host);
+    settle(&mut control, &mut host);
+    let start = Input { buttons: NEUTRAL_B, aim: Vec3::X, ..Input::idle() };
+    step(&mut sim, &mut host, start);
+    step(&mut control, &mut host, start);
+    for _ in 0..4 {
+        step(&mut sim, &mut host, Input { aim: Vec3::X, ..Input::idle() });
+        step(&mut control, &mut host, Input { aim: Vec3::X, ..Input::idle() });
+    }
+    assert_eq!(sim.current_move, Some(Move::SpecialN), "Egg Lay did not start");
+    assert!(sim.tongue_upper_pitch().is_some_and(|p| p.abs() < 1e-4), "level aim did not start neutral");
+
+    for pitch in [0.9_f32, -0.9] {
+        let aimed = Input { aim: Vec3::new(pitch.cos(), pitch.sin(), 0.), ..Input::idle() };
+        step(&mut sim, &mut host, aimed);
+        step(&mut control, &mut host, Input { aim: Vec3::X, ..Input::idle() });
+        let got = sim.tongue_upper_pitch().unwrap();
+        assert!((got - pitch).abs() < 1e-4, "pitch did not follow the live aim: got {got}, want {pitch}");
+        let frame = sim.motion.render_frame(sim.alpha());
+        let posed = mobile_pose(&model, &animations, &sim, frame, Some(root));
+        let flat = mobile_pose(&model, &animations, &control, frame, Some(root));
+        for i in 0..posed.len() {
+            if !upper[i] {
+                assert!(posed[i].abs_diff_eq(flat[i], 1e-4), "pitch moved lower joint {i}");
+            }
+        }
+        let moved = (posed[mouth].transform_point3(Vec3::ZERO)
+            - flat[mouth].transform_point3(Vec3::ZERO)).length();
+        assert!(moved > 0.1, "the mouth did not follow the camera: {moved}");
+        assert!(model.skin(0, &posed).iter().all(|(p, n)| p.is_finite() && n.is_finite()));
+    }
+    assert!((libssbm::aim_pitch(Vec3::Y) - 60_f32.to_radians()).abs() < 1e-4);
+
+    for _ in 0..200 {
+        if sim.current_move.is_none() { break; }
+        step(&mut sim, &mut host, Input::idle());
+    }
+    assert!(sim.tongue_upper_pitch().is_none(), "tongue pitch leaked out of Egg Lay");
+    Ok(())
+}
+
 #[test]
 fn egg_roll_curls_up_rolls_steers_and_ends() -> Result<()> {
     let Some(mut sim) = yoshi_at(Vec3::ZERO, true)? else { return Ok(()) };

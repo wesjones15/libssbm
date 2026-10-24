@@ -268,8 +268,14 @@ impl Sim {
     }
 }
 
-/// Bounded torso bend for a +Z-forward model; projectiles retain full camera aim.
-pub fn scope_aim_pitch(aim: Vec3) -> f32 {
+/// Bounded bend of a +Z-forward upper rig toward a camera aim; projectiles keep
+/// the full aim. Used by the Super Scope's torso and Yoshi's tongue head.
+pub fn aim_pitch(aim: Vec3) -> f32 {
     if !aim.is_finite() { return 0.; }
     aim.y.atan2(aim.with_y(0.).length()).clamp(-60_f32.to_radians(), 60_f32.to_radians())
+}
+
+/// The Super Scope's torso bend (see [`aim_pitch`]).
+pub fn scope_aim_pitch(aim: Vec3) -> f32 {
+    aim_pitch(aim)
 }
