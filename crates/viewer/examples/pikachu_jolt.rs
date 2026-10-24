@@ -241,7 +241,10 @@ async fn main() {
         .expect("Pikachu article 2 (air-jolt trail model)");
     let alpha = models::blended(false).unwrap();
     let additive = models::blended(true).unwrap();
-    let renderer = particles::Renderer::new(&bank).unwrap();
+    let mut renderer = particles::Renderer::new(&bank).unwrap();
+    // Match the host: 7002 is drawn as a soft, centred radial glow instead of its
+    // corner-centred source texture.
+    renderer.set_glow(7002, 0.45, 0.60);
     let mut system = libssbm::particle::System::default();
     system.definitions = bank.emitters.clone();
 
@@ -331,6 +334,13 @@ async fn main() {
                 fovy: 42.,
                 ..Default::default()
             },
+            "arc" => Camera3D {
+                position: vec3(0., 12., 38.),
+                target: vec3(0., 10., 0.),
+                up: Vec3::Y,
+                fovy: 42.,
+                ..Default::default()
+            },
             _ => Camera3D {
                 position: vec3(0., 12., 48.),
                 target: vec3(0., 10., 0.),
@@ -355,6 +365,16 @@ async fn main() {
                 &additive,
             );
             renderer.draw(&system, camera.position);
+        } else if mode == "arc" {
+            // The host's bounce flash: article 2 (air jolt) at 0.6 scale for 24 ticks.
+            article.object_pose(frame);
+            draw_model(
+                &article,
+                ::glam::Mat4::from_translation(::glam::Vec3::new(0., 10., 0.))
+                    * ::glam::Mat4::from_scale(::glam::Vec3::splat(0.6)),
+                &alpha,
+                &additive,
+            );
         } else if mode == "orb" {
             renderer.draw(&system, camera.position);
         } else if emitter_id.is_some() {
@@ -377,10 +397,11 @@ async fn main() {
         let label = match mode {
             "trail" => "Thunder Jolt trail | efSync 0x4BD -> EfPkData generator 7000 | article 2 model".to_string(),
             "orb" => format!("Thunder Jolt orb | efSync 0x4BD -> EfPkData generator 7000 | tick {frame:.0}"),
+            "arc" => format!("Thunder Jolt bounce arc | article 2 air jolt | 24-tick flash | frame {frame:.0} | 0.6 scale"),
             _ => "Thunder Jolt orb | article 2 (air-jolt trail model) | Object animation frames".to_string(),
         };
         draw_text(&label, 20., 30., 24., WHITE);
-        if mode != "trail" && mode != "orb" && emitter_id.is_none() {
+        if mode != "trail" && mode != "orb" && mode != "arc" && emitter_id.is_none() {
             for i in 0..4 {
                 draw_text(
                     &format!("frame {:.0}", frame * i as f32 / 3.),

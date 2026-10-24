@@ -87,6 +87,16 @@ pub unsafe extern "C" fn ssbm_projectile_lifetime(h: *mut Handle, frames: f32) {
     }
 }
 /// # Safety
+/// Unique live projectile handle or null. Distance in Melee units before gravity starts.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn ssbm_projectile_straight(h: *mut Handle, units: f32) {
+    if !h.is_null() && units.is_finite() && units >= 0. {
+        unsafe {
+            (&mut *h).sim.params.straight_distance = units;
+        }
+    }
+}
+/// # Safety
 /// NUL-terminated asset path. New unique handle, freed with projectile_free.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn ssbm_projectile_new(

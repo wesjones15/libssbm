@@ -226,7 +226,7 @@ impl Projectile {
             }
             match self.params.kind {
                 _ if self.arc => {
-                    if !self.grounded {
+                    if !self.grounded && self.position.length() >= self.params.straight_distance {
                         self.velocity.y =
                             (self.velocity.y - self.params.gravity).max(-self.params.max_fall);
                     }

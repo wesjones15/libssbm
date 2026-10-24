@@ -58,6 +58,47 @@ fn limited_missile_still_slows_after_homing_and_detonates_at_its_life() {
     assert!(p.impacted);
 }
 
+#[test]
+fn arc_shot_flies_level_until_its_straight_distance() {
+    let mut p = Projectile::new(
+        Params {
+            kind: 1,
+            state: 0,
+            life: f32::INFINITY,
+            speed: 10.,
+            acceleration: 0.,
+            max_speed: 10.,
+            delay: 0.,
+            homing_frames: 0.,
+            decay: 1.,
+            min_speed: 0.,
+            turn_accel: 0.,
+            max_turn: 0.,
+            min_angle: 0.,
+            gravity: 0.06,
+            max_fall: 2.,
+            initial_y: 0.,
+            damage: 10.,
+            radius: 1.,
+            explosion_radius: 1.,
+            explosion_frames: 0.,
+            max_bounces: 10,
+            bounce_factor: 1.,
+            straight_distance: 200.,
+        },
+        Vec3::X,
+    );
+    p.arc = true;
+    for _ in 0..19 {
+        p.advance(1. / 60., None);
+    }
+    assert!(p.position.y.abs() < 1e-6, "arc began before 20 m: y {}", p.position.y);
+    for _ in 0..3 {
+        p.advance(1. / 60., None);
+    }
+    assert!(p.position.y < 0., "arc never began after 20 m: y {}", p.position.y);
+}
+
 // Luigi's Fireball: a downward ground contact reflects upward (damped) and the
 // projectile terminates after its bounce budget, never bouncing a wall/ceiling.
 #[test]

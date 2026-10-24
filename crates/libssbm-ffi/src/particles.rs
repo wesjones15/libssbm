@@ -81,6 +81,10 @@ pub struct Particles {
     system: System,
     bank: Arc<Bank>,
     clock: f64,
+    /// Host presentation overrides for one emitter: (size multiplier, alpha multiplier,
+    /// radial glow). The source's 0x4BD aura has a 27.5-unit additive sprite whose texture
+    /// holds its deepest colour in a corner; Pikachu draws a soft centred radial mask.
+    tuning: BTreeMap<u32, (f32, f32, bool)>,
 }
 #[repr(C)]
 #[derive(Clone, Copy, Default)]
@@ -93,6 +97,8 @@ pub struct Sprite {
     pub environment: [f32; 4],
     pub texture: u32,
     pub flags: u32,
+    /// Host presentation: draw a soft radial mask instead of the source texture.
+    pub glow: u32,
 }
 /// # Safety
 /// UTF-8 NUL-terminated cache directory. Free returned handle exactly once.
@@ -108,6 +114,7 @@ pub unsafe extern "C" fn ssbm_particles_new(dir: *const c_char) -> *mut Particle
                     system,
                     bank,
                     clock: 0.,
+                    tuning: BTreeMap::new(),
                 }))
             }
             Err(e) => {
@@ -187,6 +194,28 @@ pub unsafe extern "C" fn ssbm_particles_stop(handle: *mut Particles, key: u64) {
     }
 }
 /// # Safety
+/// Unique handle, or null. Host presentation override for one emitter's size, alpha and
+/// whether to replace the source texture with a soft radial glow mask.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn ssbm_particles_tune(
+    handle: *mut Particles,
+    id: u32,
+    scale: f32,
+    alpha: f32,
+    glow: u32,
+) -> u32 {
+    if handle.is_null() || !scale.is_finite() || !alpha.is_finite() || scale <= 0. || alpha < 0. {
+        return 0;
+    }
+    guarded(0, || {
+        unsafe { &mut *handle }.tuning.insert(
+            id,
+            (scale.clamp(0.01, 4.), alpha.clamp(0., 1.), glow != 0),
+        );
+        1
+    })
+}
+/// # Safety
 /// Unique live handle. dt is seconds; fixed stepping retains fractional ticks.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn ssbm_particles_step(handle: *mut Particles, dt: f64) -> u32 {
@@ -255,15 +284,20 @@ pub unsafe extern "C" fn ssbm_particles_draws(
                 return 0;
             };
             let size_scale = p.transform.transform_vector3(Vec3::Y).length();
+            let (tune_size, tune_alpha, tune_glow) =
+                h.tuning.get(&p.emitter).copied().unwrap_or((1., 1., false));
+            let mut color = p.color.to_array();
+            color[3] *= tune_alpha;
             let result = Sprite {
                 position: p.transform.transform_point3(p.position).into(),
                 velocity: p.transform.transform_vector3(p.velocity).into(),
-                size: p.size * size_scale,
+                size: p.size * size_scale * tune_size,
                 rotation: p.rotation,
-                color: p.color.to_array(),
+                color,
                 environment: p.environment.to_array(),
                 texture,
                 flags: p.kind,
+                glow: tune_glow as u32,
             };
             unsafe {
                 *out.add(i) = result;
