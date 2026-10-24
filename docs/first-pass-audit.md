@@ -51,6 +51,11 @@ All commits are in the libssbm / ror2-common / ror2-samus repos; hashes are pref
 - **Dead clip aliases fixed** (libssbm `337dbf7`): Pikachu's forward smash (`AttackS4S` -> `AttackS4`) and Link's forward tilt and forward smash
   (`AttackS3S` -> `AttackS3`, `AttackS4S` -> `AttackS41`) now resolve, so those three BROKEN normals hit again. Pikachu's `sortPosition` 105 collided with
   Captain Falcon's and is now 107 (ror2-samus `8828157`).
+- **Goobo Jr. clones** (ror2-common/ror2-samus, 2026-10-24, unplayed): every Melee survivor registers an AI master, and one shared
+  `MeleeBrain` presses the fighter's controls for it. It aims at the AI's enemy, sprints/hops after it, alternates the B A-attack with a ready
+  skill, holds charge moves through a wind-up and releases them (Samus's stored charge gets its second press), and evades a hit with a shield
+  or a sideways hop. A clone is drawn in RoR2's gummy clone material. Per-fighter overrides go through `MeleeDriver.CreateBrain`; none are
+  needed yet. No in-game playtest.
 
 ## 3. Still open, in the order to do it
 
@@ -65,7 +70,8 @@ All commits are in the libssbm / ror2-common / ror2-samus repos; hashes are pref
 6. **Skill and pause text promises things that do not happen yet.** See section 7.
 7. **Not modelled for any fighter:** the helpless special fall after an up special, wall rebounds, Pikachu's body tilt toward a Quick Attack zip, a helpless fall after an aerial Quick Attack.
 8. **Play-test list (all unverified):** Falcon's travel scale, Dive grab reach and force multipliers; DK's shockwave reach, burial and force multipliers; Link's arrow, boomerang and bomb numbers; Yoshi's egg size and tongue reach; Fox gun model position and rotation, Illusion distance, Fire Fox travel and damage, Reflector knockback; generic grab feel (capture reach, hold position, throw launch force 1800); model scaling against hitboxes;
-   upper-body walk split for the seven fighters; `SpeedScale` feel; pause window fit.
+   upper-body walk split for the seven fighters; `SpeedScale` feel; pause window fit; Goobo Jr.'s clone aggression, skill
+   timing, shield/hop evade and gummy material.
 
 ## 4. How to reproduce and check
 
@@ -86,7 +92,7 @@ the libssbm working tree is shared with other agents, so commit only your own fi
 ### How to read the tables
 
 - Input columns give the Melee button first, then the RoR2 pad binding and the keyboard/mouse binding. The five skills are RT / LT / RB / LB / B on a pad and Primary / Secondary / Utility / Special / C on keyboard and mouse. **A attacks are B; the down special (and its Shield / Air Feint alternate) is LT.**
-- **Samus also has a second LT alternate, Morph Ball Roll**: the down-B morph animation without the bomb. Hold LT to roll; it has a 3% no-knockback contact hitbox, bounces off enemies and walls, and uses 25% of maximum health as armor. Its dust, wall-bonk and shell-bit effects are Yoshi's egg-roll cues. Not played.
+- **Samus LT is now Morph Ball Bomb** (2026-10-24), combining Bomb and the former roll alternate. One bomb drops on entry, on ground or in air, with 2x damage and 1.5x blast radius. Hold LT to roll without a duration cap; the frame-13 ball mesh spins with travel and keeps Yoshi's smoke trail in air. Release or depletion of its 25%-maximum-health armor restores the normal body immediately. Four-second recharge, one stock; Shield remains an alternate. Local viewer captures plus 30/60/144 FPS Rust/native checks; not yet played.
   Pikachu is the only fighter whose specials are shuffled (RB is Thunder, LB is Quick Attack, B is Skull Bash).
 - Status: **OK** does what the disc says, **PARTIAL** runs but is missing stages or effects, **BROKEN** does not do its job, **ANIMATION ONLY** plays but has no effect.
 - "Should do" comes from the Melee decompilation (`melee-master/.../ft/kinds/ft<Name>/`) and the clip lists and scripts in each fighter's disc data.
@@ -360,7 +366,7 @@ still unverified.
 | --- | --- | --- |
 | Fireball | RT | Unchanged: the shared bouncing shot, no recharge. |
 | Green Missile | RB | `SpecialSStart`, looping `SpecialSHold` (one charge frame per tick, up to `xC` = 90; a smash flick starts at `x8` = 20), launch clip `SpecialS`. One launch in `x44` = 8 misfires (`Sim::random`; tests force it). A charged launch flies at `charge * x28 + x24` with lift from `x2C`, hits for `charge * x14 + x10` percent, gravity `x30` and terminal `x34`; a misfire flies at `x48`/`x4C` and keeps the clip's own 25% hitbox. The fly flag is the clip's cmd-var 0 at frame 4. It stops (speed divided by `x38`, `SpecialSEnd`/`SpecialAirSEnd`) on a hit (`on_connect`), a wall (the fighter covering less than half the ground his speed asks for), the floor or the end of the clip. The damage is rewritten in `Behavior::after_script`, so no sample sees the clip's 25%. The disc has no separate misfire, air launch or fly clip: all three play `SpecialS`. Travel is scaled by 1.5 for open worlds. The old code read the wrong button for the hold and fired uncharged. |
-| Super Jump Punch | LB | The rise is the clip's own vertical root motion (`MotionDef::root_up`, the TransN Y channel; about 37 units): the fire sweetspot is the clip's frame-5 hitbox (25% grounded, 20% aerial, radius 1.95), the wider weak hitboxes (1%, element 4) pay gold. The stick tilts the climb at most `x60` = 2 degrees, so almost no horizontal travel; air momentum is dropped (`x64` = 0). It ends in a special fall (`Behavior::special_fall`, `Phase::Helpless`): drift at `x50` = 0.6, and landing plays `LandingFallSpecial` stretched to `x54` = 40 frames. |
+| Super Jump Punch | LB | The rise is the clip's own vertical root motion (`MotionDef::root_up`, the TransN Y channel; about 37 units): the fire sweetspot is the clip's frame-5 hitbox (25% grounded, 20% aerial, radius 1.95), the wider weak hitboxes (1%, element 4) pay gold. The stick tilts the climb at most `x60` = 2 degrees, so almost no horizontal travel; air momentum is dropped (`x64` = 0). It ends in a special fall (`Behavior::special_fall`, `Phase::Helpless`): drift at `x50` = 0.6, and landing plays the shared `Landing` clip stretched to `x54` = 40 frames (the disc has no separate `LandingFallSpecial` animation; `ftCo_LandingFallSpecial_Enter` slows `Landing`). |
 | Cyclone | B | Clip `SpecialLw` or `SpecialAirLw` (the one the move started in, so it never restarts). While the spin flags are up: hit events 1 (pull on) and 2 (pull off); the first hitboxes re-hit every 4 ticks (host adaptation for the source's hitbox refresh), the clip's last 12% hit launches. Steering: ground cap `x74`, accel `x7C`; air cap `x78`, accel `x80`; the cap loses `x84` a tick once the spin winds down. Each LT press while the tap window is open sets the vertical speed to at least `x8C` = 0.8, once per airtime (`Sim::air_charge`, cleared on landing). The host pulls enemies within 7 m toward him at 14 m/s while the pull is on (bosses included), no recharge. |
 
 Not done: the source's Luigi does not embed himself in walls; the spec asked for it and it is not in the decomp, so nothing implements it. Slippery movement comes from the disc's own numbers through the shared sim and was checked at the data level: Luigi's ground friction is 0.025 against 0.06 to 0.09 for Samus, Fox, Pikachu and Falcon, and his air speed (0.68) and acceleration (0.025) are the lowest of those; how it feels in RoR2 is unplayed. The wall detection for the missile is a heuristic.
