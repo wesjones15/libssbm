@@ -593,6 +593,9 @@ pub fn load_scope(dir: &Path) -> Result<libssbm::scope::ScopeParams> {
         hold_max: common.f32(global + 0x5B8)?,
         rapid_shots: common.u32(global + 0x5BC)?,
         refill_per_second: 0.,
+        // Host adaptation: the survivor's scope has no ammo cap (the source's 48-shot magazine would
+        // otherwise leave the skill useless on a long run). Fixtures keep the finite rules.
+        infinite: true,
     };
     if params.ammo == 0 || params.ammo > 1000 || params.charge_levels == 0 || params.charge_levels > 64 {
         return Err("the Super Scope's attributes are not the disc's".into());

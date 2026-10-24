@@ -81,7 +81,9 @@ mod in_hand {
         }
         sim.grounded = true;
         sim.facing = Vec3::X;
-        sim.set_scope(Some(libssbm_assets::params::load_scope(&dir).unwrap()));
+        let mut scope = libssbm_assets::params::load_scope(&dir).unwrap();
+        scope.infinite = false; // these tests exercise the source's finite magazine
+        sim.set_scope(Some(scope));
         if let Some(ammo) = ammo {
             sim.scope.as_mut().unwrap().state.ammo = ammo;
         }
@@ -172,6 +174,25 @@ mod in_hand {
         let Some((mut sim, mut host)) = luigi(Some(0)) else { return };
         use_scope(&mut sim, &mut host, 0);
         assert!(shots(&host).is_empty(), "an empty scope fired");
+    }
+
+    #[test]
+    fn the_runtime_scope_never_runs_out_of_ammo() {
+        let Some((mut sim, mut host)) = luigi(Some(0)) else { return };
+        sim.scope.as_mut().unwrap().params.infinite = true;
+        use_scope(&mut sim, &mut host, 40);
+        assert!(!shots(&host).is_empty(), "an infinite scope with 0 shown ammo did not fire");
+    }
+
+    #[test]
+    fn luigi_walks_while_charging_the_scope() {
+        let Some((mut sim, mut host)) = luigi(None) else { return };
+        let input = Input { buttons: NEUTRAL_B, movement: Vec3::Z, aim: Vec3::X, ..Input::idle() };
+        for _ in 0..40 {
+            sim.advance(&mut host, input, 1. / 60.);
+        }
+        assert_eq!(sim.current_move, Some(Move::SuperScope));
+        assert!(sim.position.z > 0.2, "Luigi did not walk while charging: {:?}", sim.position);
     }
 
     #[test]

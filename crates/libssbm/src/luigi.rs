@@ -421,10 +421,12 @@ impl Behavior for Luigi {
         }
     }
     fn mobile_moves(&self) -> u64 {
-        1u64 << Move::SpecialN as u32
+        // The scope is held and fired with the upper body, like Samus's Charge Shot:
+        // the legs keep the gait layer so Luigi can walk while charging.
+        (1u64 << Move::SpecialN as u32) | (1u64 << Move::SuperScope as u32)
     }
     fn upper_body_root(&self) -> Option<usize> {
-        None
+        Some(5) // LUIGI.upper_body_root: torso root above HipN (arms + head)
     }
     fn is_up_special(&self, m: Move) -> bool {
         m == Move::SpecialHi

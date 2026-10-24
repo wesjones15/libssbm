@@ -30,6 +30,9 @@ pub struct ScopeParams {
     /// Host adaptation: shots of ammo the magazine refills a second once the scope has been idle a moment
     /// (0: it never refills, as in the source).
     pub refill_per_second: f32,
+    /// Host adaptation: the magazine never spends. The runtime loader turns this on; fixtures keep the
+    /// source's finite magazine so the ammo rules stay testable.
+    pub infinite: bool,
 }
 
 impl ScopeParams {
@@ -44,6 +47,7 @@ impl ScopeParams {
             hold_max: 90.,
             rapid_shots: 10,
             refill_per_second: 0.,
+            infinite: false,
         }
     }
 
@@ -68,6 +72,9 @@ impl ScopeParams {
     /// source's search being that it takes a level whose cost the ammo covers exactly, or the next one
     /// up, which uses the last of it.
     pub fn affordable(&self, ammo: u32, held: u32) -> Option<u32> {
+        if self.infinite {
+            return Some(self.level(held));
+        }
         if ammo == 0 {
             return None;
         }
@@ -137,7 +144,9 @@ impl ScopeState {
 
     /// `it_80291F14`: pays for a shot of `level`; a magazine never goes below empty.
     pub fn spend(&mut self, params: &ScopeParams, level: u32) {
-        self.ammo = self.ammo.saturating_sub(params.cost(level));
+        if !params.infinite {
+            self.ammo = self.ammo.saturating_sub(params.cost(level));
+        }
         self.idle = 0;
     }
 }
