@@ -95,7 +95,7 @@ fn shoulder_modifiers_select_vertical_smashes() {
     }
 }
 #[test]
-fn charge_can_be_stored_then_fired_and_air_shot_does_not_charge() {
+fn charge_can_be_stored_then_fired_and_air_shot_charges() {
     let (mut s, mut h, mut p) = scene();
     p.buttons = SPECIAL;
     frames(&mut s, &mut h, p, 1);
@@ -122,12 +122,22 @@ fn charge_can_be_stored_then_fired_and_air_shot_does_not_charge() {
             .iter()
             .any(|e| e.kind == EventKind::Hit && e.move_id == 20)
     );
+    // An airborne charge now charges instead of firing immediately.
     let (mut s, mut h, mut p) = scene();
     s.teleport(Vec3::Y * 50.);
     p.buttons = SPECIAL;
     frames(&mut s, &mut h, p, 20);
-    assert_eq!(s.shot_charge, 0);
-    assert_eq!(s.phase, Phase::Recovery);
+    assert!(s.shot_charge > 0);
+    assert_eq!(s.phase, Phase::ChargeShot);
+    // A jump keeps the charge held (the split anim carries it airborne).
+    let (mut s, mut h, mut p) = scene();
+    p.buttons = SPECIAL;
+    frames(&mut s, &mut h, p, 20);
+    assert!(s.shot_charge > 0);
+    p.buttons = SPECIAL | JUMP;
+    frames(&mut s, &mut h, p, 1);
+    assert_eq!(s.phase, Phase::ChargeShot);
+    assert!(!s.grounded);
 }
 #[test]
 fn host_skill_gate_blocks_move_and_extra_jumps_extend_double_jump() {

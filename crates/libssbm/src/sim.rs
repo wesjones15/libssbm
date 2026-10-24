@@ -477,14 +477,26 @@ impl Sim {
     /// How much of the gait/idle pose replaces the action's own legs: all of it for side-B,
     /// the walking blend for other mobile moves, none otherwise.
     pub fn gait_layer_weight(&self) -> f32 {
-        if self.side_special_layered() || self.current_move == Some(Move::SuperScope)
-            && (!self.grounded || self.scope.as_ref().is_some_and(|s| s.state.jump_squat.is_some())) {
+        if self.side_special_layered()
+            || self.charge_shot_layered()
+            || self.current_move == Some(Move::SuperScope)
+                && (!self.grounded || self.scope.as_ref().is_some_and(|s| s.state.jump_squat.is_some()))
+        {
             1.
         } else if self.mobile_action() && !self.spins_whole_body() {
             self.locomotion_weight
         } else {
             0.
         }
+    }
+    /// Samus's Charge Shot held airborne: draw the charging cannon over the jump/fall legs
+    /// (the split anim), rather than the full grounded charge pose.
+    pub fn charge_shot_layered(&self) -> bool {
+        self.phase == Phase::ChargeShot
+            && !self.grounded
+            && self
+                .current_move
+                .is_some_and(|m| self.behavior.is_charge_move(m))
     }
     /// Melee's side-B cannon fires toward local +X in the extracted pose. Turn only its
     /// upper rig toward the live camera ray; locomotion and body yaw stay put.
@@ -891,6 +903,39 @@ impl Sim {
             }
         }
         if !scope_jump { self.set_phase(Phase::Free); }
+        self.emit(host, EventKind::Jump, 0, self.jumps_used as f32);
+    }
+    /// A jump that keeps the current phase (Samus's airborne Charge Shot): the locomotion
+    /// layer carries the jump/fall while the action stays the charge pose, so the split anim
+    /// shows the cannon charging over the legs. Mirrors `jump`, but selects `locomotion`
+    /// instead of `motion` and leaves the phase untouched.
+    pub(crate) fn jump_holding(&mut self, host: &mut dyn Host, input: Input) {
+        let stick = input.movement.with_y(0.).clamp_length_max(1.);
+        self.locomotion.select("JumpF", 1.);
+        let horizontal = (self.velocity.with_y(0.) * self.params.jump_momentum
+            + stick * self.params.jump_horizontal * self.options.speed_scale)
+            .clamp_length_max(self.params.jump_horizontal_max * self.options.speed_scale);
+        self.velocity.x = horizontal.x;
+        self.velocity.z = horizontal.z;
+        if self.params.jump_sound != u32::MAX && self.params.jump_sound != 0x83d60 {
+            self.action.sounds.push(crate::action::SoundCue {
+                sound: self.params.jump_sound,
+                volume: 127,
+                pan: 64,
+                channel: 0,
+                stop: false,
+            });
+        }
+        self.pad_gravity = None;
+        self.grounded = false;
+        self.velocity.y = if let Some(height) = self.host_jump_height {
+            crate::controls::jump_velocity(height, self.params.gravity)
+        } else if self.short_hop {
+            self.params.short_hop_speed
+        } else {
+            self.params.jump_speed
+        } * self.options.jump_scale;
+        self.jumps_used += 1;
         self.emit(host, EventKind::Jump, 0, self.jumps_used as f32);
     }
     fn tick(&mut self, host: &mut impl Host, input: Input, mut pressed: u32) {

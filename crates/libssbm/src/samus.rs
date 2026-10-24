@@ -375,7 +375,6 @@ impl Behavior for Samus {
     fn resolve_startup(&self, sim: &mut Sim, input: Input) -> bool {
         if Self::morph_roll(sim) { return true; }
         if sim.current_move == Some(Move::SpecialN)
-            && sim.grounded
             && sim.shot_charge < self.specials.charge_steps
             && !(sim.options.hold_charge && input.buttons & crate::sim::SPECIAL == 0)
         {
@@ -402,7 +401,14 @@ impl Behavior for Samus {
             sim.charge_clock = 0;
             sim.shot_charge = (sim.shot_charge + 1).min(self.specials.charge_steps);
         }
-        if pressed & (crate::sim::CANCEL | crate::sim::GRAB | crate::sim::JUMP) != 0
+        if pressed & crate::sim::JUMP != 0
+            && (sim.grounded || sim.jumps_used < sim.params.jumps)
+        {
+            // Jump while keeping the charge: the split anim layers the charge upper
+            // body over the jump/fall legs instead of ending the hold.
+            sim.short_hop = false;
+            sim.jump_holding(host, input);
+        } else if pressed & (crate::sim::CANCEL | crate::sim::GRAB) != 0
             || sim.shot_charge >= self.specials.charge_steps
         {
             // SpecialNHold_Anim starts colour animation 53 at maximum, not the
@@ -419,10 +425,6 @@ impl Behavior for Samus {
                 Phase::ChargeCancel
             });
             sim.current_move = None;
-            if pressed & crate::sim::JUMP != 0 && sim.grounded {
-                sim.short_hop = false;
-                sim.set_phase(Phase::JumpSquat);
-            }
         } else if (sim.options.hold_charge && input.buttons & crate::sim::SPECIAL == 0)
             || (!sim.options.hold_charge && pressed & crate::sim::SPECIAL != 0)
         {
