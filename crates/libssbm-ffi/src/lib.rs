@@ -2844,6 +2844,14 @@ mod tests {
             assert!(info.vertex_count > 0, "kind {kind} view has no vertices");
             unsafe { ssbm_view_free(view) };
             if kind == 6 {
+                // The thrown egg article the host draws for Egg Throw (kind 0, state 0).
+                let egg_article = unsafe { ssbm_article_new(cdir.as_ptr(), kind, 0, 0) };
+                assert!(!egg_article.is_null(), "yoshi egg article failed: {}", ERROR.with(|e| e.borrow().to_string_lossy().into_owned()));
+                assert_eq!(unsafe { ssbm_object_update(egg_article, 0.) }, 1);
+                let mut article_info = ModelInfo::default();
+                assert_eq!(unsafe { ssbm_view_model(egg_article, &mut article_info) }, 1);
+                assert!(article_info.vertex_count > 0, "yoshi egg article has no vertices");
+                unsafe { ssbm_view_free(egg_article) };
                 // Yoshi's alternate model is the egg; the host uses it for the roll and
                 // for the laid egg without a sim.
                 let egg = unsafe { ssbm_view_new_choice(cdir.as_ptr(), kind, 0, 1) };
