@@ -83,6 +83,8 @@ const ROLL_DUST_TICKS: u32 = 6;
 const ROLL_HIT_TICKS: u32 = 8;
 /// Host cap on a held roll: 10 seconds at the source's 60 Hz tick.
 const ROLL_MAX_TICKS: u32 = 600;
+/// A roll that has not moved horizontally for two seconds is wedged; end it.
+const ROLL_STILL_TICKS: u32 = 120;
 /// The slam's hitbox follows Yoshi down (the AirLw clip's 14% at its last frame,
 /// carried the whole dive so a falling Yoshi hits what he falls on).
 const DIVE_BOX: u32 = 91;
@@ -131,6 +133,8 @@ impl Yoshi {
         sim.stage_dir = sim.facing.with_y(0.).normalize_or_zero();
         sim.stage_vec = sim.position;
         sim.stage_value = self.specials.egg_roll_speed * 0.5;
+        sim.roll_break = false;
+        sim.roll_still = 0;
         sim.action.active.clear();
     }
     /// End the roll: back to `SpecialSEnd`, no more roll hitboxes, and the shell bits the
@@ -164,6 +168,16 @@ impl Yoshi {
             ROLL_LOOP => {
                 sim.stage_frame += 1;
                 sim.stage_len = sim.stage_len.saturating_sub(1);
+                let moved = (sim.position - sim.stage_vec).with_y(0.).length();
+                if moved < 0.005 {
+                    sim.roll_still = sim.roll_still.saturating_add(1);
+                } else {
+                    sim.roll_still = 0;
+                }
+                if sim.roll_still >= ROLL_STILL_TICKS {
+                    self.end_roll(sim);
+                    return;
+                }
                 // Steer toward the stick (ftYs_SpecialAirSLoop_0_IASA turns him around on
                 // a stick past x9C; here the whole heading follows it).
                 let want = input.movement.with_y(0.);
@@ -188,7 +202,6 @@ impl Yoshi {
                 speed = speed.min(self.specials.egg_roll_max);
                 // A wall or an enemy stops the egg dead: bounce back off it.
                 if sim.stage_frame > 8 && sim.stage_len == 0 {
-                    let moved = (sim.position - sim.stage_vec).with_y(0.).length();
                     if moved < speed * scale * 0.3 {
                         sim.stage_dir = -sim.stage_dir;
                         speed *= self.specials.egg_roll_wall_bounce.abs().max(0.3);
@@ -444,11 +457,17 @@ impl Behavior for Yoshi {
 
     fn tick_special(&self, sim: &mut Sim, host: &mut dyn Host, input: Input, _pressed: u32) {
         let mine = matches!(sim.current_move, Some(Move::SpecialN | Move::SpecialS | Move::SpecialLw));
-        if !mine || sim.phase == Phase::Free {
-            // Ended or interrupted: never leave a held gravity override or the dive
-            // hitbox behind.
+        if !mine {
             Self::release_gravity(sim);
             sim.action.active.remove(&DIVE_BOX);
+            return;
+        }
+        if sim.phase == Phase::Free {
+            // Safety net: a move left over after its phase was forced free must not keep
+            // the roll pose, spin, gravity override or hitboxes alive forever.
+            sim.current_move = None;
+            Self::release_gravity(sim);
+            sim.action.active.clear();
             return;
         }
         match sim.current_move {
