@@ -40,6 +40,11 @@ pub struct FighterAssets<'a> {
     /// is "Wait1", his side smash "AttackS4", and his Blaster is split into
     /// SpecialNStart/Loop/End).
     pub clip_aliases: &'a [(&'a str, &'a str)],
+    /// Joints that ignore clip animation and keep their bind pose, so a gravity-hung
+    /// part hangs down instead of following the authored pose. DK's tie chain
+    /// (ftDonkey) stores its animation X-rotation negated, which would swing the tie
+    /// out through his face; pinning the chain to bind lets it hang and follow the neck.
+    pub rigid_joints: &'a [usize],
 }
 pub const COMMON_DATA: Archive<'static> = Archive {
     file: "PlCo.dat",
@@ -112,6 +117,7 @@ pub const SAMUS: FighterAssets<'static> = FighterAssets {
     },
     announce_sound: 0x7C84E,
     clip_aliases: &[],
+    rigid_joints: &[],
 };
 /// Fox's asset profile. Blaster/Illusion/Fire Fox/Reflector article layouts and
 /// the CSS portrait indices are TODO until Fox's disc assets are exercised.
@@ -166,6 +172,7 @@ pub const FOX: FighterAssets<'static> = FighterAssets {
         ("SpecialLw", "SpecialLwStart"),
         ("SpecialAirLw", "SpecialAirLwStart"),
     ],
+    rigid_joints: &[],
 };
 /// Luigi's asset profile. Fireball is a single-state article; Green Missile /
 /// Super Jump Punch / Luigi Cyclone use the fighter's ext_attr tuning.
@@ -215,6 +222,7 @@ pub const LUIGI: FighterAssets<'static> = FighterAssets {
     // AttackS4Hi / AttackS4Lw clips are the angled forward smashes, so they must
     // not be aliased onto the up/down smash names.
     clip_aliases: &[("Wait", "Wait1")],
+    rigid_joints: &[],
 };
 /// Pikachu's asset profile. Articles follow ftDataPikachu.x48_items order
 /// (ft/types.h item table): Thunder, Thunder Jolt (travelling orb) and the
@@ -260,6 +268,7 @@ pub const PIKACHU: FighterAssets<'static> = FighterAssets {
     },
     announce_sound: 0x7C84D, // CKind_Pikachu -> gm_1601.c::gm_80168C5C case 13
     clip_aliases: &[("AttackS4S", "AttackS4")],
+    rigid_joints: &[],
 };
 /// Captain Falcon's asset profile. Every special (Falcon Punch, Raptor Boost,
 /// Falcon Dive, Falcon Kick) is a body move, so `articles` is empty.
@@ -305,6 +314,7 @@ pub const CAPTAIN: FighterAssets<'static> = FighterAssets {
     // Captain's idle is "Wait1"; the special clips (SpecialN/SpecialS/SpecialHi/
     // SpecialLw and their Air forms) already match the generic names.
     clip_aliases: &[("Wait", "Wait1")],
+    rigid_joints: &[],
 };
 /// Link's asset profile. His three spawned articles are the Hero's Bow arrow,
 /// the Boomerang and the Bomb (the bow itself is a held item, not an article).
@@ -363,6 +373,7 @@ pub const LINK: FighterAssets<'static> = FighterAssets {
         ("AttackS3S", "AttackS3"),
         ("AttackS4S", "AttackS41"),
     ],
+    rigid_joints: &[],
 };
 /// Yoshi's asset profile. Egg Throw spawns the thrown egg article; Egg Lay and
 /// Yoshi Bomb are body moves (their articles are spawned by the disc action
@@ -422,6 +433,7 @@ pub const YOSHI: FighterAssets<'static> = FighterAssets {
         ("SpecialS", "SpecialSStart"),
         ("SpecialAirS", "SpecialAirSStart"),
     ],
+    rigid_joints: &[],
 };
 /// Donkey Kong's asset profile. Every special is a body move, so `articles` is
 /// empty. ftdonkey.c::ftDk_Init_CostumeStrings order: Nr, Bk, Re, Bu, Gr.
@@ -466,6 +478,7 @@ pub const DONKEY: FighterAssets<'static> = FighterAssets {
     // aliased onto HeavyWait/HeavyWalk* (the carry pose; grabs use ThrowFWait /
     // ThrowFWalk*). Only Hand Slap is split into Start/Loop/End.
     clip_aliases: &[("SpecialLw", "SpecialLwStart")],
+    rigid_joints: &[66, 67, 68, 69, 70],
 };
 /// The FFI's fighter selector. Adding a fighter means adding a variant here, a
 /// `FighterAssets` definition, and returning it from [`FighterKind::assets`].

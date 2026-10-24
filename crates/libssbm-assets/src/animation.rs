@@ -31,6 +31,9 @@ pub struct Clip {
 #[derive(Clone)]
 pub struct Animations {
     pub clips: BTreeMap<String, Clip>,
+    /// Joints that keep their bind pose; a clip's tracks for these joints are ignored so
+    /// gravity-hung parts (DK's tie) hang down instead of following the authored pose.
+    pub rigid: Vec<usize>,
 }
 /// A part animation laid over the main pose (ftAnim_ApplyPartAnim): the clip, how far into it
 /// the pose is, and how much of it replaces the main pose's value (1 once the blend-in ends).
@@ -471,6 +474,7 @@ impl Animations {
                     tracks,
                 },
             )]),
+            rigid: Vec::new(),
         })
     }
     pub fn motion_definitions(&self) -> BTreeMap<String, libssbm::motion::MotionDef> {
@@ -530,6 +534,7 @@ impl Animations {
     pub fn load_for(dir: &Path, fighter: &crate::fighter::FighterAssets<'_>) -> Result<Self> {
         fighter.required()?;
         let mut animations = Self::parse(&std::fs::read(dir.join(fighter.animations))?, fighter.clip_aliases)?;
+        animations.rigid = fighter.rigid_joints.to_vec();
         // Fighter_ChangeMotionState / ftAnim_8006E9B4 select TransN from the
         // common bone map and extract it only for flagged motion descriptors.
         let bytes = std::fs::read(dir.join(fighter.data.file))?;
@@ -642,7 +647,7 @@ impl Animations {
         if clips.is_empty() {
             return Err("no fighter animation clips".into());
         }
-        Ok(Self { clips })
+        Ok(Self { clips, rigid: Vec::new() })
     }
     pub fn pose(&self, model: &Model, name: &str, frame: f32, looping: bool) -> Vec<Mat4> {
         self.pose_inner(model, name, frame, looping, true, &[])
@@ -688,7 +693,7 @@ impl Animations {
             };
             for track in &clip.tracks {
                 let j = track.joint;
-                if j >= model.joints.len() {
+                if j >= model.joints.len() || self.rigid.contains(&j) {
                     continue;
                 }
                 let Some(v) = track.sample(frame) else {

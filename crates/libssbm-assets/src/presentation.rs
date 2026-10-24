@@ -45,6 +45,7 @@ impl Presentation {
             world,
             animations: Animations {
                 clips: Default::default(),
+                rigid: Vec::new(),
             },
             clip: "Object".into(),
             frame: 0.,
