@@ -12,3 +12,18 @@ publish = false
 glam = "0.30"
 libssbm = { path = "crates/libssbm" }
 libssbm-assets = { path = "crates/libssbm-assets" }
+
+# The asset-bound tests pose every fighter and effect model for thousands of frames; unoptimized
+# debug builds spend minutes there (one `cargo test` run was 314 s, 95% of a full build). Optimizing
+# just the two hot crates keeps test builds quick without slowing the rest of the workspace.
+[profile.dev.package.libssbm]
+opt-level = 2
+
+[profile.dev.package.libssbm-assets]
+opt-level = 2
+
+[profile.test.package.libssbm]
+opt-level = 2
+
+[profile.test.package.libssbm-assets]
+opt-level = 2
