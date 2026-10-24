@@ -22,7 +22,32 @@ pub struct Vertex {
     pub position: Vec3,
     pub normal: Vec3,
     pub uv: Vec2,
+    /// GX CLR0, the source's per-vertex colour (the flat model part of an untextured
+    /// material; the ghost and projectile models rely on it).
+    pub color: [f32; 4],
     pub weights: Vec<(usize, f32)>,
+}
+/// GX colour attribute formats (GXEnum.h GXColorFormat), not texture formats.
+/// RGB565, RGB888, RGB8, RGBA4, RGBA6, RGBA8.
+fn vertex_color(format: u32, b: &[u8]) -> Result<[f32; 4]> {
+    let r = |v: u32, max: u32| v as f32 / max as f32;
+    Ok(match format {
+        0 => {
+            let v = u16::from_be_bytes(b.try_into()?) as u32;
+            [r(v >> 11, 31), r((v >> 5) & 63, 63), r(v & 31, 31), 1.]
+        }
+        1 | 2 => [b[0] as f32 / 255., b[1] as f32 / 255., b[2] as f32 / 255., 1.],
+        3 => {
+            let v = u16::from_be_bytes(b.try_into()?) as u32;
+            [r(v >> 12, 15), r((v >> 8) & 15, 15), r((v >> 4) & 15, 15), r(v & 15, 15)]
+        }
+        4 => {
+            let v = u32::from_be_bytes([0, b[0], b[1], b[2]]);
+            [r(v >> 18, 63), r((v >> 12) & 63, 63), r((v >> 6) & 63, 63), r(v & 63, 63)]
+        }
+        5 => [b[0] as f32 / 255., b[1] as f32 / 255., b[2] as f32 / 255., b[3] as f32 / 255.],
+        _ => return Err("bad GX vertex colour format".into()),
+    })
 }
 #[derive(Clone, Debug)]
 pub struct Texture {
@@ -202,7 +227,7 @@ impl Model {
                 if !seen.insert(at) || seen.len() > 4096 {
                     return Err("cyclic DObj".into());
                 }
-                let (color, texture, texture_alpha, texture_blend) = material(d, d.ptr(at + 8)?)?;
+                let (color, ambient, texture, texture_alpha, texture_blend) = material(d, d.ptr(at + 8)?)?;
                 let (blend, lit) = render_flags(d, d.ptr(at + 8)?)?;
                 let texture_transform = texture_transform(d, d.ptr(at + 8)?)?;
                 let uv_matrix = texture_transform.map_or(Mat4::IDENTITY, |t| t.matrix());
@@ -236,6 +261,9 @@ impl Model {
                     for vertex in &mut batch.vertices {
                         let uv = uv_matrix.transform_point3(vertex.uv.extend(0.));
                         vertex.uv = uv.truncate();
+                    }
+                    if batch.texture.is_none() {
+                        apply_untextured_color(&mut batch, ambient);
                     }
                     batches.push(batch);
                 }
@@ -417,12 +445,17 @@ fn visibility(
     }
     Ok(visible)
 }
-fn material(d: &Dat, at: Option<usize>) -> Result<([f32; 4], Option<Texture>, u8, f32)> {
+fn material(d: &Dat, at: Option<usize>) -> Result<([f32; 4], [f32; 3], Option<Texture>, u8, f32)> {
     let Some(at) = at else {
-        return Ok(([1.; 4], None, 3, 1.));
+        return Ok(([1.; 4], [0.5; 3], None, 3, 1.));
     };
     let mut color = [1.; 4];
+    let mut ambient = [0.5; 3];
     if let Some(m) = d.ptr(at + 12)? {
+        let a = d.bytes(m, 3)?;
+        for i in 0..3 {
+            ambient[i] = a[i] as f32 / 255.;
+        }
         let c = d.bytes(m + 4, 4)?;
         for i in 0..3 {
             color[i] = c[i] as f32 / 255.;
@@ -454,6 +487,7 @@ fn material(d: &Dat, at: Option<usize>) -> Result<([f32; 4], Option<Texture>, u8
             let rgba = crate::texture::decode(d.data, start, width, height, fmt, pal)?;
             return Ok((
                 color,
+                ambient,
                 Some(Texture {
                     wrap_s: wrap_mode(d.u32(t + 0x34)?),
                     wrap_t: wrap_mode(d.u32(t + 0x38)?),
@@ -467,7 +501,36 @@ fn material(d: &Dat, at: Option<usize>) -> Result<([f32; 4], Option<Texture>, u8
         }
         tex = d.ptr(t + 4)?;
     }
-    Ok((color, None, 3, 1.))
+    Ok((color, ambient, None, 3, 1.))
+}
+/// Untextured effect models carry their colour in the vertex stream (Fox's red Blaster
+/// bolts) or in the material's ambient register (the blue Illusion ghosts); neither is
+/// the diffuse colour the textured path uses. The host draws one colour per batch, so
+/// fold the per-vertex colour and ambient into it.
+fn apply_untextured_color(batch: &mut Batch, ambient: [f32; 3]) {
+    if batch.vertices.is_empty() {
+        return;
+    }
+    let n = batch.vertices.len() as f32;
+    let mut v = [0f32; 4];
+    for vertex in &batch.vertices {
+        for c in 0..4 {
+            v[c] += vertex.color[c];
+        }
+    }
+    for c in &mut v {
+        *c /= n;
+    }
+    let white = v[..3].iter().all(|c| (c - 1.).abs() < 0.01);
+    let gray_ambient = ambient.iter().all(|c| (c - ambient[0]).abs() < 0.01);
+    let rgb = if !white {
+        [v[0], v[1], v[2]]
+    } else if !gray_ambient {
+        ambient
+    } else {
+        return;
+    };
+    batch.color = [rgb[0], rgb[1], rgb[2], batch.color[3] * v[3]];
 }
 pub(crate) fn texture_frame(d: &Dat, image: usize, palette: Option<usize>, base: &Texture) -> Result<Texture> {
     let palette = palette.map(|p| -> Result<_> {
@@ -619,6 +682,7 @@ fn polygon(
             let mut pos = Vec3::ZERO;
             let mut normal = Vec3::Y;
             let mut uv = Vec2::ZERO;
+            let mut color = [1.; 4];
             let mut matrix = 0;
             for a in &attrs {
                 if a.storage == 0 {
@@ -631,7 +695,7 @@ fn polygon(
                     cursor += 1;
                     continue;
                 }
-                let color = matches!(a.kind, 11 | 12);
+                let is_color = matches!(a.kind, 11 | 12);
                 let components = match a.kind {
                     9 => {
                         if a.count == 0 {
@@ -657,7 +721,7 @@ fn polygon(
                     }
                     _ => return Err("unknown GX attribute".into()),
                 };
-                let width = if color {
+                let width = if is_color {
                     match a.format {
                         0 | 3 => 2,
                         1 | 4 => 3,
@@ -702,7 +766,12 @@ fn polygon(
                     }
                     _ => return Err("bad GX storage".into()),
                 };
-                if color {
+                if is_color {
+                    // CLR0 is the diffuse vertex colour; CLR1 is a secondary/specular
+                    // channel the port's single-colour materials do not use.
+                    if a.kind == 11 {
+                        color = vertex_color(a.format, data)?;
+                    }
                     continue;
                 }
                 let mut value = [0.; 9];
@@ -753,6 +822,7 @@ fn polygon(
                 position: pos,
                 normal,
                 uv,
+                color,
                 weights,
             });
         }

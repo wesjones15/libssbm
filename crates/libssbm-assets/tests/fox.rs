@@ -133,6 +133,21 @@ fn illusion_ghost_is_a_translucent_blue_fox_trail() -> Result<()> {
 }
 
 #[test]
+fn blaster_bolt_keeps_its_source_red_vertex_colour() -> Result<()> {
+    let dir = dir();
+    if !dir.join("IfAll.usd").exists() {
+        eprintln!("SKIP: item archive absent");
+        return Ok(());
+    }
+    let bolt = Presentation::article_for(&dir, 0, 0, &FOX)?;
+    let core = bolt.model.batches.first().ok_or("empty Blaster bolt")?;
+    assert!(core.color[0] > 0.9 && core.color[1] < 0.1 && core.color[2] < 0.1, "bolt is not red: {:?}", core.color);
+    // The red is a CLR0 vertex attribute on the untextured bolt.
+    assert!(core.vertices.iter().all(|v| v.color[0] > 0.9 && v.color[1] < 0.1), "bolt vertex colour lost");
+    Ok(())
+}
+
+#[test]
 fn fire_fox_holds_in_place_then_launches_along_the_aim() -> Result<()> {
     let Some(mut sim) = fox_at(false)? else { return Ok(()) };
     let mut host = FlatHost { events: Vec::new() };
