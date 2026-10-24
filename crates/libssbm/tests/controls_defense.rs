@@ -262,6 +262,19 @@ fn shield_uses_native_meter_break_release_and_jump_cancel() {
 }
 
 #[test]
+fn attack_cancels_air_hit_fall() {
+    let mut s = fighter();
+    let mut h = FlatHost::default();
+    s.grounded = false;
+    s.phase = Phase::Free;
+    s.reaction = Some(crate::reaction::Stage::Fall);
+    s.motion.select("DamageFall", 1.);
+    tick(&mut s, &mut h, 2);
+    assert!(s.reaction.is_none(), "air fall still locked after an attack");
+    assert!(s.current_move.is_some(), "attack did not start from air fall");
+}
+
+#[test]
 fn air_feint_invulnerability_follows_source_commands_and_ends_helpless() {
     for fps in [30, 60, 144] {
         let mut s = fighter();
@@ -307,5 +320,10 @@ fn air_feint_invulnerability_follows_source_commands_and_ends_helpless() {
         tick(&mut s, &mut h, 0);
         tick(&mut s, &mut h, DEFEND);
         assert_eq!(s.defense_flags(), 0, "second air dodge");
+        // An A attack cancels the helpless fall for every fighter.
+        tick(&mut s, &mut h, 0);
+        tick(&mut s, &mut h, 2);
+        assert_ne!(s.phase, Phase::Helpless, "attack did not cancel helpless at fps={fps}");
+        assert!(s.current_move.is_some(), "attack did not start at fps={fps}");
     }
 }

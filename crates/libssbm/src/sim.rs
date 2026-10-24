@@ -1005,6 +1005,18 @@ impl Sim {
             return;
         }
         if let Some(stage) = self.reaction {
+            // Falling out of hitstun can be cancelled into an A attack; hitstun itself
+            // cannot. This applies to every fighter.
+            if stage == crate::reaction::Stage::Fall && !self.grounded && pressed & ATTACK != 0 {
+                self.reaction = None;
+                self.buffered_attack = 0;
+                self.special_fall = None;
+                self.set_phase(Phase::Free);
+                let attack = self.choose_attack(input);
+                self.start(host, attack, input);
+                self.previous = input;
+                return;
+            }
             if self.motion.finished() {
                 self.reaction = stage.after();
                 if self.reaction.is_none() {
@@ -1171,6 +1183,13 @@ impl Sim {
             Phase::Helpless => {
                 if self.grounded {
                     self.set_phase(Phase::Free);
+                } else if pressed & ATTACK != 0 {
+                    // Host adaptation for every fighter: an A attack cancels the helpless
+                    // special fall instead of waiting for touchdown.
+                    self.special_fall = None;
+                    self.set_phase(Phase::Free);
+                    let attack = self.choose_attack(input);
+                    self.start(host, attack, input);
                 }
             }
             Phase::ChargeCancel => {

@@ -687,6 +687,8 @@ released whenever the move ends or is interrupted. Flagged TransN travel now
 commits for **DashGrab** as well as Dash Attack. New exports:
 `ssbm_sim_lock_target`, `ssbm_sim_connect`, `ssbm_projectile_reflect`.
 
+### Airborne attack cancellation\nEvery fighter can cancel a special fall (Phase::Helpless, including Luigi's Super Jump Punch and the Air Feint) or the airborne DamageFall reaction into an A attack. Hitstun itself is not cancelled.
+
 ### Verification and limits
 Headless (`libssbm-assets/tests/pikachu.rs`, `pikachu_presentation.rs`, ffi
 tests, `NativeCheck`): camera-vector Quick Attack zips without snap-back,
