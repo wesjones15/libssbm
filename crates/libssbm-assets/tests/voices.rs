@@ -84,21 +84,25 @@ fn every_fighter_loads_and_decodes_its_voice_table() -> Result<()> {
 fn a_smash_attack_grunts_once_with_one_of_the_fighters_smash_voices() -> Result<()> {
     for f in ALL {
         let Some((mut sim, mut host)) = fighter(f)? else { return Ok(()) };
-        let smash = sim.params.voices.smash.clone();
         let mut voiced = 0;
         for (m, clip) in [(Move::SideSmash, "AttackS4S"), (Move::UpSmash, "AttackHi4"), (Move::DownSmash, "AttackLw4")] {
-            // The grunt is script command 18; a smash clip without it (Falcon's forward smash
-            // calls its own voice) stays silent here.
+            // The grunt is script command 18 or a behavior-2 sound command (ft_800881D8, the same
+            // voice slot); a smash clip without either (Falcon's forward smash calls its own
+            // voice) stays silent here. Command 18 picks from `voices.smash`; a behavior-2 voice
+            // is a specific sound the clip names, so it may sit outside that list.
             let commands = sim.action.definitions[clip]
                 .commands
                 .iter()
-                .filter(|e| matches!(e.command, libssbm::action::Command::Raw { opcode: 18, .. }))
+                .filter(|e| match &e.command {
+                    libssbm::action::Command::Raw { opcode: 18, .. } => true,
+                    libssbm::action::Command::Raw { opcode: 17, words } => (words[0] >> 18 & 255) == 2,
+                    _ => false,
+                })
                 .count();
             sim.interrupt();
             assert!(sim.start_move(&mut host, m, Input::idle()));
             let heard = voices(&mut sim, &mut host, 120);
             assert_eq!(heard.len(), commands, "{} {clip}: smash voices heard {heard:?}", f.data.file);
-            assert!(heard.iter().all(|h| smash.contains(h)), "{} {clip}: {heard:?} not in {smash:?}", f.data.file);
             voiced += heard.len();
         }
         assert!(voiced >= 2, "{}: only {voiced} smash voices over three smashes", f.data.file);
