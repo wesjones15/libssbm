@@ -660,3 +660,18 @@ Scope action, limited to +/-60 degrees of torso bend; projectile aim remains
 unrestricted. This is a host adaptation to Melee's ItemScope clips, not original
 Melee behavior. Real-disc pose tests and up/down viewer captures verify the bend;
 the C# boundary regression checks that the hand moves while the hip stays fixed.
+
+### Egg Lay tongue presentation
+
+Yoshi's tongue is a host-drawn lash (the disc has no tongue model) where the sim's
+`SpecialN1` grab command fires. It now aims from the mouth toward the point the
+camera crosshair is on, using the shared `MeleeAim.ProjectileDirection` convergence
+also used by the Charge Shot and Scope, rather than the camera's parallel forward
+ray, which starts above the mouth and puts close or low targets below the lash.
+The lash's reach and the grab capsule stop at the first terrain met by a narrow
+centre probe (the shared large-shot rule, so the lash's own thickness does not
+stop it on a floor it passes over), and the drawn curve is clamped to that contact
+each frame. Egg Lay's skill charge is spent when the tongue swallows an enemy, not
+when it is thrown, so a miss or a terrain stop costs no cooldown. These are host
+adaptations; the sim's `SpecialN` timing is unchanged. The shared camera/sweep and
+damage-permission checks pass; RoR2 play is unverified.
