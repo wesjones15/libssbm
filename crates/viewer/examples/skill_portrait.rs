@@ -49,13 +49,13 @@ fn spec(name: &str, skill: &str) -> Option<Spec> {
             // The bomb is a small flat disc at icon size; Morph Ball Samus reads
             // as the move and is the form the bomb belongs to.
             "bomb" => Spec { fighter: &fighter::SAMUS, clip: "SpecialLw", frame: 20., effect: EffectSpec::None, char_offset: ::glam::Vec3::ZERO, show_body: true, trail: None, trail_offset: ::glam::Vec3::ZERO, offset: ::glam::Vec3::ZERO, yaw: 0.5, zoom: 1.0 },
-            "missile" => Spec { fighter: &fighter::SAMUS, clip: "SpecialS", frame: 8., effect: EffectSpec::Article(2, 0), char_offset: ::glam::Vec3::new(-2., 0., 1.), show_body: false, trail: Some(2014), trail_offset: ::glam::Vec3::new(2., 7., 8.), offset: ::glam::Vec3::new(2., 7., 8.), yaw: 0.35, zoom: 0.9 },
-            "screw" => Spec { fighter: &fighter::SAMUS, clip: "SpecialHi", frame: 10., effect: EffectSpec::Effect(2000), char_offset: ::glam::Vec3::ZERO, show_body: true, trail: None, trail_offset: ::glam::Vec3::ZERO, offset: ::glam::Vec3::new(0., 6., 0.), yaw: 0.4, zoom: 1.0 },
+            "missile" => Spec { fighter: &fighter::SAMUS, clip: "SpecialS", frame: 8., effect: EffectSpec::Article(2, 0), char_offset: ::glam::Vec3::new(-2., 0., 1.), show_body: false, trail: Some(2014), trail_offset: ::glam::Vec3::new(2., 7., 2.), offset: ::glam::Vec3::new(2., 7., 8.), yaw: 0.35, zoom: 1.4 },
+            "screw" => Spec { fighter: &fighter::SAMUS, clip: "SpecialHi", frame: 10., effect: EffectSpec::Effect(2000), char_offset: ::glam::Vec3::new(0., 8., 0.), show_body: true, trail: None, trail_offset: ::glam::Vec3::ZERO, offset: ::glam::Vec3::new(0., 6., 0.), yaw: 0.4, zoom: 1.0 },
             "shield" => Spec { fighter: &fighter::SAMUS, clip: "GuardOn", frame: 4., effect: EffectSpec::Effect(14), char_offset: ::glam::Vec3::ZERO, show_body: true, trail: None, trail_offset: ::glam::Vec3::ZERO, offset: ::glam::Vec3::new(0., 6., 0.), yaw: 0.4, zoom: 1.2 },
             _ => return None,
         },
         "fox" => match skill {
-            "blaster" => Spec { fighter: &fighter::FOX, clip: "SpecialNStart", frame: 2., effect: EffectSpec::Article(1, 0), char_offset: ::glam::Vec3::ZERO, show_body: true, trail: None, trail_offset: ::glam::Vec3::ZERO, offset: ::glam::Vec3::new(0., 8., 7.), yaw: 0.4, zoom: 0.9 },
+            "blaster" => Spec { fighter: &fighter::FOX, clip: "SpecialNStart", frame: 2., effect: EffectSpec::Effect(18), char_offset: ::glam::Vec3::ZERO, show_body: true, trail: None, trail_offset: ::glam::Vec3::ZERO, offset: ::glam::Vec3::ZERO, yaw: 0.4, zoom: 1.2 },
             "reflector" => Spec { fighter: &fighter::FOX, clip: "SpecialLwStart", frame: 4., effect: EffectSpec::Effect(2000), char_offset: ::glam::Vec3::ZERO, show_body: true, trail: None, trail_offset: ::glam::Vec3::ZERO, offset: ::glam::Vec3::new(0., 6., 0.), yaw: 0.4, zoom: 1.0 },
             "illusion" => Spec { fighter: &fighter::FOX, clip: "SpecialS", frame: 2., effect: EffectSpec::Article(2, 0), char_offset: ::glam::Vec3::ZERO, show_body: true, trail: None, trail_offset: ::glam::Vec3::ZERO, offset: ::glam::Vec3::new(0., 6., 4.), yaw: 0.4, zoom: 1.0 },
             "firefox" => Spec { fighter: &fighter::FOX, clip: "SpecialHi", frame: 8., effect: EffectSpec::Effect(2004), char_offset: ::glam::Vec3::ZERO, show_body: true, trail: None, trail_offset: ::glam::Vec3::ZERO, offset: ::glam::Vec3::new(0., 6., 0.), yaw: 0.4, zoom: 1.0 },
@@ -116,6 +116,7 @@ async fn main() {
     let fighter_name = args.get(2).map(String::as_str).unwrap_or("samus");
     let skill = args.get(3).map(String::as_str).unwrap_or("charge");
     let char_yaw: f32 = args.get(4).and_then(|s| s.parse().ok()).unwrap_or(0.);
+    let no_body = args.iter().any(|s| s == "nobody");
     let Some(spec) = spec(fighter_name, skill) else {
         eprintln!("unknown skill {fighter_name}/{skill}");
         return;
@@ -143,7 +144,7 @@ async fn main() {
         let mut system = libssbm::particle::System::default();
         system.definitions = bank.emitters.clone();
         system.spawn(id, ::glam::Mat4::from_translation(spec.trail_offset), 1).unwrap();
-        for _ in 0..20 { system.tick(); }
+        for _ in 0..if fighter_name == "samus" && skill == "missile" { 10 } else { 20 } { system.tick(); }
         particle_renderer = Some(particles::Renderer::new(&bank).unwrap());
         particle_system = Some(system);
     }
@@ -165,28 +166,33 @@ async fn main() {
 
     loop {
         clear_background(Color::from_rgba(18, 22, 30, 255));
-        // A soft disc behind the asset, so the icon reads at HUD size.
-        for i in (0..232).rev() {
-            let t = i as f32 / 232.;
-            draw_circle(256., 256., i as f32, Color::new(0.06 + 0.10 * (1. - t), 0.11 + 0.10 * (1. - t), 0.17 + 0.12 * (1. - t), 1.));
+        // RoR2 skill icons are square, not discs: a full-bleed card with a
+        // subtle vertical gradient and a thin square frame.
+        for y in 0..512 {
+            let t = y as f32 / 511.;
+            draw_rectangle(0., y as f32, 512., 1., Color::new(0.055 + 0.055 * (1. - t), 0.075 + 0.075 * (1. - t), 0.105 + 0.095 * (1. - t), 1.));
         }
         let camera = sv(effect_center) + vec3(spec.yaw.sin() * distance, distance * 0.20, spec.yaw.cos() * distance);
+        let missile = fighter_name == "samus" && skill == "missile";
         if let Some(e) = effect.as_mut() {
-            e.face_camera(::glam::Vec3::new(camera.x, camera.y, camera.z) - spec.offset);
+            if !missile { e.face_camera(::glam::Vec3::new(camera.x, camera.y, camera.z) - spec.offset); }
         }
         set_camera(&Camera3D { position: camera, target: sv(effect_center), up: Vec3::Y, fovy: 30., ..Default::default() });
-        if spec.show_body {
+        if spec.show_body && !no_body {
             draw(&body, ::glam::Mat4::from_translation(spec.char_offset), &alpha, &additive);
         }
         if let Some(e) = effect.as_ref() {
-            draw(e, ::glam::Mat4::from_translation(spec.offset), &alpha, &additive);
+            let xform = if missile {
+                ::glam::Mat4::from_translation(spec.offset) * ::glam::Mat4::from_rotation_y(-1.45) * ::glam::Mat4::from_rotation_z(0.22)
+            } else { ::glam::Mat4::from_translation(spec.offset) };
+            draw(e, xform, &alpha, &additive);
         }
         if let (Some(renderer), Some(system)) = (&particle_renderer, &particle_system) {
             renderer.draw(system, camera);
         }
         set_default_camera();
-        // A thin rim keeps the icon legible on RoR2's dark HUD.
-        draw_circle_lines(256., 256., 232., 2., Color::from_rgba(230, 180, 100, 180));
+        // A square frame, matching RoR2's skill slots.
+        draw_rectangle_lines(8., 8., 496., 496., 3., Color::from_rgba(230, 180, 100, 200));
         if get_frame_time() > 0. {
             get_screen_data().export_png(&out);
             println!("wrote {out}");
