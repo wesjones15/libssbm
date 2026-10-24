@@ -601,9 +601,10 @@ long shot). Bounce/impact/despawn puffs are off for this shot.
 The primary slot's alternate replaces Thunder Jolt with Yoshi's Egg Lay. The sim
 uses `Move::SpecialN` and the Yoshi stage machine (`ftYoshi/ftyoshispecialn.c`:
 tongue, swallow), gated by `Sim::host_flags & pikachu::HOST_EGG_LAY`. Both stages
-play Pikachu's tense Thunder start (`SpecialLwStart` / `SpecialAirLwStart`) instead
-of Yoshi's `SpecialN1`/`SpecialN2`; the second stage restarts that clip. The clip's
-own Thunder script is muted, so no cloud, bolt, hitbox or Pikachu voice leaks in.
+hold Pikachu's upright Thunder cast pose (`SpecialLwStart` / `SpecialAirLwStart`
+frame 15) instead of Yoshi's `SpecialN1`/`SpecialN2`; `Behavior::held_pose` pins
+the presentation frame while the action clock and both stage clocks continue. The
+clip's own Thunder script is muted, so no cloud, bolt, hitbox or Pikachu voice leaks in.
 `Sim::tongue_upper_pitch` already reports `SpecialN`, so the upper rig pitches with
 camera elevation around Pikachu's torso root (joint 5); hips and legs stay.
 The host draws Yoshi's tongue from Pikachu's forward snout joint 16, catches up to
@@ -652,7 +653,10 @@ strength 2, restarts the loop clip unmuted (its 17% electric hitbox, effects
 and sounds), hops him `xB4` in the air under `xB8` gravity, and plays the
 crackle (1216). While waiting the clip's script is muted (`script_muted`), so
 the hitbox and effects of the struck state do not fire early. Enemies in the
-bolt's column are hit once for the bolt's 10%.
+bolt's column are hit once for the bolt's 10%. Host presentation: four fixed
+4 m article-0 segments stacked into a 16 m column above Pikachu -- no world
+ceiling raycast and no dynamic stretch; the top segment starts at 16 m and the
+bottom reaches his feet.
 
 ### Shared mechanisms added for staged specials
 `Sim::{stage, stage_frame, stage_len, stage_vec, stage_dir, stage_value,
