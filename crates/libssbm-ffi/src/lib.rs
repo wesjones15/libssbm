@@ -1294,6 +1294,20 @@ pub unsafe extern "C" fn ssbm_sim_place(handle: *mut Handle, v: V3, kind: u32) {
         }
     }
 }
+/// Move a live fighter without touching its action, velocity or clocks (a host
+/// terrain correction, e.g. lifting an Illusion out of an uphill slope).
+/// # Safety
+/// Live handle; finite vector.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn ssbm_sim_nudge(handle: *mut Handle, v: V3, grounded: u32) {
+    if handle.is_null() || !Vec3::from(v).is_finite() {
+        return;
+    }
+    let h = unsafe { &mut *handle };
+    if !h.poisoned {
+        h.sim.nudge(v.into(), grounded != 0);
+    }
+}
 /// Supply the host's resolved horizontal heading without changing momentum or
 /// the aim ray. Existing ABI-4 layouts are unchanged.
 /// # Safety

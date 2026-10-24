@@ -6,7 +6,7 @@ use glam::Vec3;
 use libssbm::{
     effect::{attached, resolve, Target},
     fox::Fox,
-    sim::{EventKind, FlatHost, DOWN_B, JUMP, NEUTRAL_B, SIDE_B, UP_B},
+    sim::{Contact, Event, EventKind, FlatHost, Host, DOWN_B, JUMP, NEUTRAL_B, SIDE_B, UP_B},
     Input, Sim,
 };
 use libssbm_assets::{Result, animation::Animations, fighter::FOX, presentation::Presentation};
@@ -42,11 +42,27 @@ fn fox_at(grounded: bool) -> Result<Option<Sim>> {
 fn input(buttons: u32, aim: Vec3) -> Input {
     Input { buttons, aim, ..Input::idle() }
 }
-fn step(sim: &mut Sim, host: &mut FlatHost, i: Input) {
+fn step<H: Host>(sim: &mut Sim, host: &mut H, i: Input) {
     sim.advance(host, i, 1. / 60.);
 }
 fn shots(host: &FlatHost) -> usize {
     host.events.iter().filter(|e| e.kind == EventKind::Hit && e.move_id == 20).count()
+}
+/// Ground that rises 0.5 units per unit of +X, for the uphill Illusion case.
+struct SlopeHost { events: Vec<Event> }
+impl Host for SlopeHost {
+    fn collide(&mut self, from: Vec3, desired: Vec3) -> Contact {
+        let mut position = desired;
+        let floor = |x: f32| 0.5 * x;
+        let ground = floor(position.x);
+        if position.x > 0. && position.y < ground {
+            position.y = ground;
+        }
+        let grounded = position.y <= floor(position.x) + 0.01;
+        let _ = from;
+        Contact { position, grounded, ceiling: false }
+    }
+    fn event(&mut self, event: Event) { self.events.push(event); }
 }
 
 #[test]
@@ -109,6 +125,44 @@ fn illusion_dashes_through_a_hitbox_and_ends() -> Result<()> {
     assert!(attached(1165), "the Illusion streak is not joint-bound");
     assert_eq!(resolve(1165), Target::Particle(3008));
     assert!(sim.position.x > 80., "illusion covered only {}", sim.position.x);
+    Ok(())
+}
+
+#[test]
+fn illusion_follows_the_stick_direction_during_its_startup() -> Result<()> {
+    let Some(mut sim) = fox_at(true)? else { return Ok(()) };
+    let mut host = FlatHost { events: Vec::new() };
+    for _ in 0..4 {
+        step(&mut sim, &mut host, Input::idle());
+    }
+    // Fox faces +X, but the player holds the stick toward +Z.
+    let dash = Input { buttons: SIDE_B, aim: Vec3::X, movement: Vec3::Z, ..Input::idle() };
+    step(&mut sim, &mut host, dash);
+    for _ in 0..30 {
+        step(&mut sim, &mut host, Input { movement: Vec3::Z, ..Input::idle() });
+    }
+    assert!(sim.position.z > 25., "illusion ignored the stick: {:?}", sim.position);
+    assert!(sim.position.x.abs() < 12., "illusion kept its old facing: {:?}", sim.position);
+    Ok(())
+}
+
+#[test]
+fn illusion_stays_on_an_uphill_slope() -> Result<()> {
+    let Some(mut sim) = fox_at(true)? else { return Ok(()) };
+    let mut host = SlopeHost { events: Vec::new() };
+    for _ in 0..4 {
+        step(&mut sim, &mut host, Input::idle());
+    }
+    step(&mut sim, &mut host, input(SIDE_B, Vec3::X));
+    for _ in 0..40 {
+        step(&mut sim, &mut host, Input::idle());
+        assert!(
+            sim.position.y + 0.05 >= 0.5 * sim.position.x.max(0.),
+            "illusion fell under the slope at {:?}",
+            sim.position
+        );
+    }
+    assert!(sim.position.x > 50., "illusion did not climb the slope: {:?}", sim.position);
     Ok(())
 }
 

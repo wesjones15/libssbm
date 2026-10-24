@@ -295,9 +295,16 @@ impl Fox {
             sim.stage_frame = 1;
         }
     }
-    fn tick_illusion(&self, sim: &mut Sim) {
+    fn tick_illusion(&self, sim: &mut Sim, input: Input) {
         match sim.stage {
             S_START => {
+                // Host adaptation: the source dashes along Fox's facing. In an open
+                // world the stick chooses the direction during the start clip, while
+                // no stick keeps the camera/host facing.
+                let movement = input.movement.with_y(0.);
+                if movement.length() > 0.3 {
+                    sim.facing = movement.normalize();
+                }
                 // Gravity waits through the start; momentum is divided by x28.
                 Self::hold_gravity(sim, 0.);
                 if sim.stage_frame == 0 {
@@ -556,7 +563,7 @@ impl Behavior for Fox {
         }
         match sim.current_move {
             Some(Move::SpecialN) => self.tick_blaster(sim, input, pressed),
-            Some(Move::SpecialS) => self.tick_illusion(sim),
+            Some(Move::SpecialS) => self.tick_illusion(sim, input),
             Some(Move::SpecialHi) => self.tick_firefox(sim, host),
             Some(Move::SpecialLw) => self.tick_reflector(sim, host, input, pressed),
             _ => {}
