@@ -673,7 +673,7 @@ the hitbox and effects of the struck state do not fire early. Enemies in the
 bolt's column are hit once for the bolt's 10%. Host presentation: four fixed
 4 m article-0 segments stacked into a 16 m column above Pikachu -- no world
 ceiling raycast and no dynamic stretch; the top segment starts at 16 m and the
-bottom reaches his feet. The bolt is forced additive and tinted yellow, so the texture's black border contributes nothing and the result reads as a yellow glow.
+bottom reaches his feet. The bolt is forced additive and tinted yellow; the texture's black border is recoloured by a distance-faded yellow halo, so it reads as a glow around the core.
 
 ### Shared mechanisms added for staged specials
 `Sim::{stage, stage_frame, stage_len, stage_vec, stage_dir, stage_value,

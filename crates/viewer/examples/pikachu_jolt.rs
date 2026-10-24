@@ -26,7 +26,7 @@ fn config() -> Conf {
 }
 
 fn draw_model(p: &Presentation, transform: ::glam::Mat4, alpha: &Material, additive: &Material) {
-    draw_model_tint(p, transform, alpha, additive, [1.; 3]);
+    draw_model_tint(p, transform, alpha, additive, [1.; 3], false);
 }
 fn draw_model_tint(
     p: &Presentation,
@@ -34,13 +34,44 @@ fn draw_model_tint(
     alpha: &Material,
     additive: &Material,
     tint: [f32; 3],
+    glow_black: bool,
 ) {
     for (i, b) in p.model.batches.iter().enumerate() {
         if !p.visible(i) {
             continue;
         }
         let texture = p.texture(i).map(|t| {
-            let tex = Texture2D::from_rgba8(t.width, t.height, &t.rgba);
+            let mut rgba = t.rgba.clone();
+            if glow_black {
+                let w = t.width as usize;
+                let h = t.height as usize;
+                let n = w * h;
+                let mut dist = vec![i32::MAX; n];
+                let mut queue = std::collections::VecDeque::new();
+                for i in 0..n {
+                    let p = i * 4;
+                    if rgba[p + 3] == 0 { continue; }
+                    let bright = rgba[p].max(rgba[p + 1]).max(rgba[p + 2]);
+                    if bright >= 80 { dist[i] = 0; queue.push_back(i); }
+                }
+                while let Some(i) = queue.pop_front() {
+                    let x = i % w; let y = i / w;
+                    let d = dist[i] + 1;
+                    if x > 0 && dist[i - 1] > d { dist[i - 1] = d; queue.push_back(i - 1); }
+                    if x + 1 < w && dist[i + 1] > d { dist[i + 1] = d; queue.push_back(i + 1); }
+                    if y > 0 && dist[i - w] > d { dist[i - w] = d; queue.push_back(i - w); }
+                    if y + 1 < h && dist[i + w] > d { dist[i + w] = d; queue.push_back(i + w); }
+                }
+                for i in 0..n {
+                    if dist[i] == i32::MAX || dist[i] == 0 || dist[i] > 6 { continue; }
+                    let p = i * 4;
+                    if !(rgba[p] < 40 && rgba[p + 1] < 40 && rgba[p + 2] < 40) { continue; }
+                    let fade = 1. - dist[i] as f32 / 7.;
+                    rgba[p] = 255; rgba[p + 1] = 200; rgba[p + 2] = 30;
+                    rgba[p + 3] = (255. * fade).round() as u8;
+                }
+            }
+            let tex = Texture2D::from_rgba8(t.width, t.height, &rgba);
             tex.set_filter(FilterMode::Linear);
             let wrap = |n| match n {
                 1 => miniquad::TextureWrap::Clamp,
@@ -412,6 +443,7 @@ async fn main() {
                 &alpha,
                 &additive,
                 [0.18, 0.55, 1.0],
+                false,
             );
         } else if mode == "bolt" {
             article.object_pose(frame);
@@ -443,6 +475,7 @@ async fn main() {
                     &alpha,
                     &additive,
                     [1., 0.92, 0.3],
+                    true,
                 );
             }
         } else if mode == "orb" {
