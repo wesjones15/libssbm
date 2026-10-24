@@ -595,7 +595,7 @@ bounce. This is the Luigi-fireball arc, not the source's terrain-hugging crawl
 (`itpikachutjoltground.c`), by request. Speed `x8 * 1.6` and the gentle gravity
 are host adaptations shared with Luigi's fireball; spawn is chest height, not
 foot height. The orb flies level for 20 m before the gentle arc begins (host
-adaptation, `MeleeBouncingShot.StraightMetres`); the ten-surface bounce budget and
+adaptation, `MeleeBouncingShot.StraightMetres`); a surface hit sooner still bounces normally; the ten-surface bounce budget and
 bounce response are unchanged.
 
 **Visual.** Article 1 (the travelling ground jolt) has no model. The source
@@ -673,7 +673,7 @@ the hitbox and effects of the struck state do not fire early. Enemies in the
 bolt's column are hit once for the bolt's 10%. Host presentation: four fixed
 4 m article-0 segments stacked into a 16 m column above Pikachu -- no world
 ceiling raycast and no dynamic stretch; the top segment starts at 16 m and the
-bottom reaches his feet. The bolt is forced additive and tinted yellow; the texture's black border is recoloured by a distance-faded yellow halo, so it reads as a glow around the core.
+bottom reaches his feet. The source storm cloud (efSync 0x4C3 -> common generator 0x24C) is spawned at the top of the column. The bolt is forced additive and tinted yellow; the texture's black border is recoloured by a distance-faded yellow halo, so it reads as a glow around the core.
 
 ### Shared mechanisms added for staged specials
 `Sim::{stage, stage_frame, stage_len, stage_vec, stage_dir, stage_value,
