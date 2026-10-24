@@ -36,6 +36,11 @@ fn scope_sound(sound: u32, stop: bool) -> SoundCue {
 }
 
 impl Sim {
+    /// Host adaptation: aim the Scope's upper rig with camera elevation while
+    /// retaining the source ItemScope clips and lower-body locomotion layer.
+    pub fn scope_upper_pitch(&self) -> Option<f32> {
+        self.scope_stage().map(|_| scope_aim_pitch(self.move_aim))
+    }
     /// Gives the fighter the Super Scope (with a full magazine), or takes it away.
     pub fn set_scope(&mut self, params: Option<ScopeParams>) {
         self.scope_stop_charge_sound(true);
@@ -83,7 +88,12 @@ impl Sim {
     /// A move start: the hold begins again; the magazine is as it was.
     pub(crate) fn scope_begin(&mut self) {
         self.scope_stop_charge_sound(false);
+        if !self.grounded && self.motion.clip.starts_with("Jump") {
+            self.locomotion.select(self.motion.clip, self.motion.rate);
+            self.locomotion.frame = self.motion.frame;
+        }
         if let Some(scope) = self.scope.as_mut() {
+            scope.state.jump_squat = None;
             scope.state.held = 0;
             scope.state.released = false;
             scope.state.level = None;
@@ -94,11 +104,29 @@ impl Sim {
 
     /// Ticks the scope's use each step: ftCo_ItemScopeStart_IASA (the charge and what it becomes once its clip has
     /// played), the rapid burst's beat and the end.
-    pub(super) fn update_scope(&mut self, _host: &mut impl Host, input: Input, pressed: u32) {
+    pub(super) fn update_scope(&mut self, host: &mut impl Host, input: Input, pressed: u32) {
         let Some(mut scope) = self.scope.take() else {
             self.finish_disc_action();
             return;
         };
+        // Host adaptation: reuse the normal jump physics/sounds, but keep the
+        // Scope action clock and run KneeBend/Jump on the lower-body clock.
+        if pressed & JUMP != 0 {
+            if self.grounded && scope.state.jump_squat.is_none() {
+                scope.state.jump_squat = Some(0);
+                self.short_hop = false;
+            } else if !self.grounded && self.jumps_used < self.params.jumps + self.options.extra_jumps {
+                self.jump(host, true, input);
+            }
+        }
+        if let Some(tick) = scope.state.jump_squat {
+            self.short_hop |= input.buttons & JUMP == 0;
+            if !self.grounded { scope.state.jump_squat = None; }
+            else if tick >= self.params.jump_squat {
+                scope.state.jump_squat = None;
+                self.jump(host, false, input);
+            } else { scope.state.jump_squat = Some(tick + 1); }
+        }
         let held = input.buttons & NEUTRAL_B != 0;
         match self.stage {
             STAGE_START => {
@@ -238,4 +266,10 @@ impl Sim {
             }
         }
     }
+}
+
+/// Bounded torso bend for a +Z-forward model; projectiles retain full camera aim.
+pub fn scope_aim_pitch(aim: Vec3) -> f32 {
+    if !aim.is_finite() { return 0.; }
+    aim.y.atan2(aim.with_y(0.).length()).clamp(-60_f32.to_radians(), 60_f32.to_radians())
 }

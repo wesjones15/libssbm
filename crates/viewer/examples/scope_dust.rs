@@ -1,4 +1,4 @@
-//! Local-disc preview: cargo run --release -p ssbm-viewer --example scope_dust -- assets [capture.png] [frame]
+//! Local-disc preview: cargo run --release -p ssbm-viewer --example scope_dust -- assets [capture.png] [frame] [pitch-degrees]
 //! Host-authored charge timing, using the original common ground-smoke model.
 use libssbm_assets::{presentation::Presentation, fighter, dat::Dat};
 use macroquad::prelude::*;
@@ -34,6 +34,14 @@ async fn main() {
     luigi.clip = "ItemScopeStart".into();
     luigi.frame = 15.;
     luigi.world = luigi.animations.pose(&luigi.model, &luigi.clip, 15., false);
+    if let Some(jump) = args.get(4) {
+        let lower = luigi.animations.pose(&luigi.model, jump, 7., false);
+        luigi.world = libssbm_assets::presentation::splice_pose(&luigi.model, &lower,
+            &luigi.world, fighter::LUIGI.upper_body_root.unwrap());
+    }
+    let pitch = args.get(3).map(|s| s.parse::<f32>().unwrap()).unwrap_or(0.).to_radians();
+    libssbm_assets::presentation::pitch_upper_body(&luigi.model, &mut luigi.world,
+        fighter::LUIGI.upper_body_root.unwrap(), libssbm::scope_aim_pitch(::glam::Vec3::new(0., pitch.sin(), pitch.cos())));
     let mut scope = Presentation::item_for(dir, libssbm_assets::article::Item::SuperScope, 0).unwrap();
     scope.object_pose(0.);
     let bytes = std::fs::read(dir.join(fighter::COMMON_DATA.file)).unwrap();

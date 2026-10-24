@@ -196,6 +196,86 @@ mod in_hand {
     }
 
     #[test]
+    fn scope_camera_pitch_moves_only_the_upper_rig_and_tracks_live_aim() {
+        use libssbm_assets::{model::Model, presentation::mobile_pose};
+        let Some((mut sim, mut host)) = luigi(None) else { return };
+        let dir = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../assets");
+        let model = Model::load_for(&dir, 0, &LUIGI).unwrap();
+        let animations = Animations::load_for(&dir, &LUIGI).unwrap();
+        let root = LUIGI.upper_body_root.unwrap();
+        for _ in 0..30 { step(&mut sim, &mut host, true); }
+        let neutral = mobile_pose(&model, &animations, &sim, 15., Some(root));
+        let mut upper = vec![false; model.joints.len()];
+        for (i, j) in model.joints.iter().enumerate() {
+            upper[i] = i == root || j.parent.is_some_and(|p| upper[p]);
+        }
+        for pitch in [0.6_f32, -0.6, 0.] {
+            sim.advance(&mut host, Input { buttons: NEUTRAL_B,
+                aim: Vec3::new(pitch.cos(), pitch.sin(), 0.), ..Input::idle() }, 1. / 60.);
+            assert!((sim.scope_upper_pitch().unwrap() - pitch).abs() < 0.0001);
+            let posed = mobile_pose(&model, &animations, &sim, 15., Some(root));
+            for i in 0..posed.len() {
+                if !upper[i] { assert!(posed[i].abs_diff_eq(neutral[i], 0.0001), "pitch moved lower joint {i}"); }
+            }
+            let axis = posed[root].transform_vector3(neutral[root].inverse().transform_vector3(Vec3::Z));
+            assert!((axis.y - pitch.sin()).abs() < 0.0001, "torso pitches in the wrong direction: {axis:?}");
+            assert!(model.skin(0, &posed).iter().all(|(p, n)| p.is_finite() && n.is_finite()));
+        }
+        use_scope(&mut sim, &mut host, 0);
+        assert!(sim.scope_upper_pitch().is_none(), "pitch leaked into idle");
+        assert!((libssbm::scope_aim_pitch(Vec3::Y) - 60_f32.to_radians()).abs() < 0.0001);
+    }
+
+    #[test]
+    fn jumping_keeps_scope_charge_and_fire_clocks_and_uses_jump_legs() {
+        use libssbm_assets::{model::Model, presentation::mobile_pose};
+        let Some((mut sim, mut host)) = luigi(None) else { return };
+        let dir = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../assets");
+        let model = Model::load_for(&dir, 0, &LUIGI).unwrap();
+        let animations = Animations::load_for(&dir, &LUIGI).unwrap();
+        let root = LUIGI.upper_body_root.unwrap();
+        for _ in 0..30 { step(&mut sim, &mut host, true); }
+        let held_before = sim.scope.as_ref().unwrap().state.held;
+        let jump_input = Input { buttons: NEUTRAL_B | libssbm::JUMP, aim: Vec3::X, ..Input::idle() };
+        for _ in 0..sim.params.jump_squat + 2 { sim.advance(&mut host, jump_input, 1. / 60.); }
+        assert!(!sim.grounded && sim.velocity.y > 0.);
+        assert_eq!(sim.current_move, Some(Move::SuperScope));
+        assert_eq!(sim.motion.clip, "ItemScopeAirStart");
+        assert!(sim.scope.as_ref().unwrap().state.held > held_before);
+        assert_eq!(sim.locomotion.clip, "JumpF");
+        assert_eq!(sim.gait_layer_weight(), 1.);
+        let pose = mobile_pose(&model, &animations, &sim, sim.motion.frame, Some(root));
+        let lower = animations.pose(&model, sim.locomotion.clip, sim.locomotion.render_frame(sim.alpha()), false);
+        let mut upper = vec![false; model.joints.len()];
+        for (i, j) in model.joints.iter().enumerate() {
+            upper[i] = i == root || j.parent.is_some_and(|p| upper[p]);
+            if !upper[i] { assert!(pose[i].abs_diff_eq(lower[i], 0.001), "joint {i} did not use jump pose"); }
+        }
+        step(&mut sim, &mut host, true); // release Jump, retain charge
+        sim.advance(&mut host, jump_input, 1. / 60.);
+        assert_eq!(sim.jumps_used, 2);
+        assert_eq!(sim.locomotion.clip, "JumpAerialF");
+        assert_eq!(sim.current_move, Some(Move::SuperScope));
+        use_scope(&mut sim, &mut host, 0); // fire in air, then land
+        assert_eq!(shots(&host).len(), 1, "jump/landing replayed a shot");
+        assert!(sim.grounded && sim.current_move.is_none());
+    }
+
+    #[test]
+    fn jumping_during_scope_fire_does_not_cancel_or_repeat_the_shot() {
+        let Some((mut sim, mut host)) = luigi(None) else { return };
+        for _ in 0..35 { step(&mut sim, &mut host, true); }
+        step(&mut sim, &mut host, false);
+        assert_eq!(sim.scope_stage(), Some(1));
+        for _ in 0..sim.params.jump_squat + 2 {
+            sim.advance(&mut host, Input { buttons: libssbm::JUMP, aim: Vec3::X, ..Input::idle() }, 1. / 60.);
+        }
+        assert!(!sim.grounded && sim.position.y > 0., "could not jump while firing");
+        for _ in 0..240 { step(&mut sim, &mut host, false); }
+        assert_eq!(shots(&host).len(), 1);
+    }
+
+    #[test]
     fn the_scope_ends_back_in_idle_and_the_fireball_is_back_without_it() {
         let Some((mut sim, mut host)) = luigi(None) else { return };
         use_scope(&mut sim, &mut host, 12);

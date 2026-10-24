@@ -116,6 +116,8 @@ pub struct Scope {
 /// The scope's state across ticks: its ammo, and the hold being built up.
 #[derive(Clone, Debug, Default)]
 pub struct ScopeState {
+    /// Host lower-body jump-squat clock; independent of charge/fire timing.
+    pub jump_squat: Option<u32>,
     /// Shots left in the magazine.
     pub ammo: u32,
     /// Ticks the button has been held in this use (`mv.co.x0` timer, 0x2340).

@@ -346,6 +346,13 @@ The Reflector (`fox.rs`, `FoxCombat.cs`, `FoxDriver.cs`): the start event (stren
 
 ## 6b. Luigi, rebuilt as staged specials (2026-10-20 night)
 
+2026-10-24 Scope presentation: shared upper-body posing now follows live camera
+elevation (torso bend capped at +/-60 degrees) while preserving the leg/gait
+pose. Held Scope and shot-origin bone use that same pose. Ground charge smoke
+uses animated common model 5 / cue 0x3FF, replacing the earlier 0x405 puffs.
+Viewer/asset and native-boundary checks cover these adaptations; RoR2 play is
+still unverified.
+
 `crates/libssbm/src/luigi.rs`, tests in `crates/libssbm-assets/tests/luigi.rs` (real disc). Tuning is the whole of `ftLuigiAttributes`; before this pass three of the offsets were wrong (`super_jump_velocity` read the climb damping `x6C`).
 
 | Move | RoR2 input | Does now |

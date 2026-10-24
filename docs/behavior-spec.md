@@ -651,3 +651,12 @@ scale 0.65–0.875 according to charge level. Released/airborne charges stop emi
 existing waves finish. Timing and charge scaling are host-authored, not a claim
 that the original Start callback emitted this effect. Asset visibility/animation
 regression and local `scope_dust` viewer preview pass; RoR2 play is unverified.
+
+Scope camera elevation now pitches only the upper-body subtree around its torso
+pivot, after the shared action/gait blend. Hips and legs retain their original
+pose. The same transform is used by rendering, common-bone queries (held Scope),
+and the shot event's hand attachment. Elevation follows live aim throughout the
+Scope action, limited to +/-60 degrees of torso bend; projectile aim remains
+unrestricted. This is a host adaptation to Melee's ItemScope clips, not original
+Melee behavior. Real-disc pose tests and up/down viewer captures verify the bend;
+the C# boundary regression checks that the hand moves while the hip stays fixed.

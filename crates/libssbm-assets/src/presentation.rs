@@ -525,19 +525,31 @@ pub fn mobile_pose_over(
     if let (Some(root), Some((_, yaw))) = (upper_root, sim.side_special_upper_aim()) {
         aim_upper_body(model, &mut pose, root, yaw);
     }
+    if let (Some(root), Some(pitch)) = (upper_root, sim.scope_upper_pitch()) {
+        pitch_upper_body(model, &mut pose, root, pitch);
+    }
     pose
 }
 /// Turn the torso toward camera aim without changing the source cannon motion.
 pub fn aim_upper_body(model: &Model, pose: &mut [Mat4], root: usize, yaw: f32) {
+    if !yaw.is_finite() { return; }
+    rotate_upper_body(model, pose, root, Mat4::from_rotation_y(yaw));
+}
+/// Pitch the +Z-forward upper rig about its torso pivot, preserving hips/legs.
+/// Used by both rendering and physical attachment/event poses.
+pub fn pitch_upper_body(model: &Model, pose: &mut [Mat4], root: usize, pitch: f32) {
+    if !pitch.is_finite() { return; }
+    rotate_upper_body(model, pose, root, Mat4::from_rotation_x(-pitch));
+}
+fn rotate_upper_body(model: &Model, pose: &mut [Mat4], root: usize, rotation: Mat4) {
     if root >= model.joints.len()
         || pose.len() != model.joints.len()
-        || !yaw.is_finite()
     {
         return;
     }
     let pivot = pose[root].transform_point3(glam::Vec3::ZERO);
     let turn = Mat4::from_translation(pivot)
-        * Mat4::from_rotation_y(yaw)
+        * rotation
         * Mat4::from_translation(-pivot);
     let mut branch = vec![false; model.joints.len()];
     for (i, joint) in model.joints.iter().enumerate() {

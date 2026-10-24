@@ -6,6 +6,7 @@ use crate::{behavior::Behavior, Params};
 use glam::Vec3;
 mod actions;
 mod scope_move;
+pub use scope_move::scope_aim_pitch;
 
 pub const TICK_HZ: f64 = 60.;
 pub const JUMP: u32 = 1;
@@ -462,7 +463,8 @@ impl Sim {
     /// How much of the gait/idle pose replaces the action's own legs: all of it for side-B,
     /// the walking blend for other mobile moves, none otherwise.
     pub fn gait_layer_weight(&self) -> f32 {
-        if self.side_special_layered() {
+        if self.side_special_layered() || self.current_move == Some(Move::SuperScope)
+            && (!self.grounded || self.scope.as_ref().is_some_and(|s| s.state.jump_squat.is_some())) {
             1.
         } else if self.mobile_action() && !self.spins_whole_body() {
             self.locomotion_weight
@@ -807,7 +809,9 @@ impl Sim {
     fn jump(&mut self, host: &mut impl Host, aerial: bool, input: Input) {
         let stick = input.movement.with_y(0.).clamp_length_max(1.);
         let backwards = stick.dot(self.facing) < -0.3;
-        self.motion.select(
+        let scope_jump = self.current_move == Some(Move::SuperScope);
+        let jump_motion = if scope_jump { &mut self.locomotion } else { &mut self.motion };
+        jump_motion.select(
             match (aerial, backwards) {
                 (true, true) => "JumpAerialB",
                 (true, false) => "JumpAerialF",
@@ -863,7 +867,7 @@ impl Sim {
                 self.velocity.y *= flutter.boost;
             }
         }
-        self.set_phase(Phase::Free);
+        if !scope_jump { self.set_phase(Phase::Free); }
         self.emit(host, EventKind::Jump, 0, self.jumps_used as f32);
     }
     fn tick(&mut self, host: &mut impl Host, input: Input, mut pressed: u32) {
@@ -1284,7 +1288,9 @@ impl Sim {
                         }
                     }
                     self.landing_rate = rate;
-                    self.motion.select(landing, rate);
+                    if self.current_move == Some(Move::SuperScope) {
+                        self.locomotion.select(landing, rate);
+                    } else { self.motion.select(landing, rate); }
                 }
                 self.emit(host, EventKind::Land, 0, -self.velocity.y);
             }
@@ -1317,7 +1323,17 @@ impl Sim {
         }
         self.locomotion.select(gait, gait_rate);
         self.locomotion.advance();
+        // ftCo_ItemScopeStart/Fire ground-air transitions preserve animation
+        // progress. Do not replay cocking/shot commands when the feet leave ground.
+        let scope_transition = self.current_move == Some(Move::SuperScope)
+            && clip != self.motion.clip
+            && clip.replace("Air", "") == self.motion.clip.replace("Air", "");
+        let scope_frame = self.motion.frame;
         self.motion.select(clip, rate);
+        if scope_transition {
+            self.motion.frame = scope_frame;
+            self.action.script_clip = clip;
+        }
         self.motion.advance();
         if was_mobile && !self.mobile_action() && clip == self.locomotion.clip {
             // Handoff to ordinary locomotion without restarting the foot cycle.
