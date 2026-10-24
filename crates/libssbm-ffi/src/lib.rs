@@ -149,6 +149,11 @@ pub struct Handle {
     sim: Sim,
     rig: Rig,
     audio: libssbm_assets::audio::Mixer,
+    /// Sound played from another fighter's bank (Pikachu's borrowed Egg Lay uses Yoshi's
+    /// swallow/lay/egg-break cues), merged into `ssbm_sim_audio`.
+    foreign_audio: std::collections::BTreeMap<u32, libssbm_assets::audio::Mixer>,
+    /// Reused additive scratch for the foreign mixers; the audio callback must not allocate.
+    audio_scratch: Vec<f32>,
     kind: libssbm_assets::fighter::FighterKind,
     poisoned: bool,
     /// A sword trail's tuning and bone (Link), and the last three blade samples, newest first.
@@ -549,6 +554,8 @@ pub unsafe extern "C" fn ssbm_sim_new_fighter(dir: *const c_char, pos: V3, kind:
                     sim,
                     rig,
                     audio,
+                    foreign_audio: std::collections::BTreeMap::new(),
+                    audio_scratch: Vec::new(),
                     kind,
                     poisoned: false,
                     trail,
@@ -1178,8 +1185,27 @@ pub unsafe extern "C" fn ssbm_sim_audio(handle: *mut Handle, out: *mut f32, fram
         return 0;
     }
     guarded(0, || {
-        h.audio
-            .render(unsafe { std::slice::from_raw_parts_mut(out, frames as usize * 2) });
+        let out = unsafe { std::slice::from_raw_parts_mut(out, frames as usize * 2) };
+        h.audio.render(out);
+        if !h.foreign_audio.is_empty() {
+            let mut extra = std::mem::take(&mut h.audio_scratch);
+            extra.clear();
+            extra.resize(out.len(), 0.);
+            for mixer in h.foreign_audio.values_mut() {
+                extra.fill(0.);
+                mixer.render(&mut extra);
+                for (dst, add) in out.iter_mut().zip(&extra) {
+                    *dst += *add;
+                }
+            }
+            h.audio_scratch = extra;
+            if let Some(mixer) = h.foreign_audio.values().find(|m| !m.errors.is_empty()) {
+                if let Some(e) = mixer.errors.last() {
+                    error(e);
+                    return 0;
+                }
+            }
+        }
         if let Some(e) = h.audio.errors.pop() {
             error(e);
             return 0;
@@ -1207,6 +1233,59 @@ pub unsafe extern "C" fn ssbm_sim_play_sound(handle: *mut Handle, sound: u32) ->
         }
     })
 }
+/// Play one source sound from another fighter's extracted SEM/SSM banks. The borrowed
+/// Egg Lay on Pikachu uses Yoshi's swallow/lay/egg-break cues without importing Yoshi's
+/// voice; `ssbm_sim_audio` mixes the foreign bank into the same stream.
+/// # Safety
+/// Unique live fighter; call outside host callbacks.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn ssbm_sim_play_sound_from(
+    handle: *mut Handle,
+    fighter_kind: u32,
+    sound: u32,
+) -> u32 {
+    if handle.is_null() {
+        return 0;
+    }
+    let h = unsafe { &mut *handle };
+    if h.poisoned {
+        return 0;
+    }
+    guarded(0, || {
+        let fighter = match fighter_assets(fighter_kind) {
+            Ok(f) => f,
+            Err(e) => {
+                error(e);
+                return 0;
+            }
+        };
+        if !h.foreign_audio.contains_key(&fighter_kind) {
+            let dir = h.net.dir.clone();
+            match libssbm_assets::audio::Bank::load_for(&dir, fighter) {
+                Ok(bank) => {
+                    h.foreign_audio.insert(
+                        fighter_kind,
+                        libssbm_assets::audio::Mixer::new(bank),
+                    );
+                }
+                Err(e) => {
+                    error(e);
+                    return 0;
+                }
+            }
+        }
+        let Some(mixer) = h.foreign_audio.get_mut(&fighter_kind) else {
+            return 0;
+        };
+        match mixer.play(sound, 127, 64, 0) {
+            Ok(()) => 1,
+            Err(e) => {
+                error(e);
+                0
+            }
+        }
+    })
+}
 /// Whether any fighter audio (a name call, an action cue) is still playing.
 /// # Safety
 /// Unique live fighter; call outside host callbacks.
@@ -1220,6 +1299,7 @@ pub unsafe extern "C" fn ssbm_sim_audio_active(handle: *const Handle) -> u32 {
         return 0;
     }
     h.audio.active() as u32
+        | (h.foreign_audio.values().any(|m| m.active()) as u32)
 }
 /// # Safety
 /// Live handle and writable State pointer. Returns 0 for poisoned handles.
@@ -2363,6 +2443,29 @@ mod tests {
         Ok(())
     }
     #[test]
+    fn borrowed_egg_lay_sound_reads_yoshis_bank_through_pikachu() -> libssbm_assets::Result<()> {
+        let dir = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../assets");
+        if !libssbm_assets::fighter::PIKACHU.complete(&dir)
+            || !libssbm_assets::fighter::YOSHI.complete(&dir)
+        {
+            eprintln!("SKIP: Pikachu/Yoshi disc cache absent");
+            return Ok(());
+        }
+        let cdir = std::ffi::CString::new(dir.to_string_lossy().as_bytes()).unwrap();
+        let sim = unsafe { ssbm_sim_new_fighter(cdir.as_ptr(), V3::default(), 3) };
+        assert!(!sim.is_null(), "Pikachu sim");
+        // Yoshi's SpecialN2 frame-25 lay cue, resolved from Yoshi's bank on a Pikachu sim.
+        assert_eq!(unsafe { ssbm_sim_play_sound_from(sim, 6, 0x4460c) }, 1);
+        let mut pcm = vec![0f32; 32000 * 2];
+        assert_eq!(unsafe { ssbm_sim_audio(sim, pcm.as_mut_ptr(), 32000) }, 32000);
+        assert!(
+            pcm.iter().any(|x| x.abs() > 0.0001),
+            "Yoshi's lay cue decoded silence on Pikachu"
+        );
+        unsafe { ssbm_sim_free(sim) };
+        Ok(())
+    }
+    #[test]
     fn fox_assets_load_and_sim_steps() -> libssbm_assets::Result<()> {
         let dir = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../assets");
         let fox = &libssbm_assets::fighter::FOX;
@@ -2961,6 +3064,8 @@ mod tests {
             ),
             rig: Rig::load_for(&dir, &libssbm_assets::fighter::SAMUS)?,
             audio: libssbm_assets::audio::Mixer::new(libssbm_assets::audio::Bank::load(&dir)?),
+            foreign_audio: std::collections::BTreeMap::new(),
+            audio_scratch: Vec::new(),
             kind: libssbm_assets::fighter::FighterKind::Samus,
             poisoned: false,
             trail: None,
