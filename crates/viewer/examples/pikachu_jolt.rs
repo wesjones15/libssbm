@@ -370,8 +370,8 @@ async fn main() {
                 ..Default::default()
             },
             "boltstack" => Camera3D {
-                position: vec3(0., 80., 300.),
-                target: vec3(0., 80., 0.),
+                position: vec3(0., 10., 45.),
+                target: vec3(0., 8., 0.),
                 up: Vec3::Y,
                 fovy: 42.,
                 ..Default::default()
