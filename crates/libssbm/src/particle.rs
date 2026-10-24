@@ -53,8 +53,10 @@ pub struct Particle {
     rotation_time: u32,
     color_target: Vec4,
     color_time: u32,
+    color_count: u32,
     env_target: Vec4,
     env_time: u32,
+    env_count: u32,
 }
 struct Generator {
     id: u32,
@@ -105,6 +107,10 @@ impl System {
                 } else {
                     0.9999999
                 }
+            } else if d.kind & 0x2 != 0 || kind.is_some() {
+                // HSD generator type 0x100 (set for every child created by 0xA5/0xEF/0xF0):
+                // emit a single particle when the generator is created.
+                1.
             } else {
                 0.
             },
@@ -336,8 +342,10 @@ impl Particle {
             rotation_time: 0,
             color_target: Vec4::ONE,
             color_time: 0,
+            color_count: 0,
             env_target: Vec4::ZERO,
             env_time: 0,
+            env_count: 0,
         }
     }
     fn tick(&mut self, d: &Emitter, rng: &mut u32) -> Result<Vec<Child>, String> {
@@ -429,7 +437,10 @@ impl Particle {
                             cls == 0xb9,
                         )),
                         0xa5 | 0xef | 0xf0 => {
-                            let id = r.word()?;
+                            // particle.c 0xA5/0xEF/0xF0: 16-bit generator index, and for 0xEF/0xF0 a
+                            // third flags byte. Reading it as a 32-bit word misaligned the stream,
+                            // which is why 0x430's two child generators never spawned.
+                            let id = ((r.byte()? as u32) << 8) | r.byte()? as u32;
                             let kind = if cls == 0xa5 {
                                 None
                             } else {
@@ -489,6 +500,30 @@ impl Particle {
                                 self.rotation = self.rotation_target;
                             }
                         }
+                        // particle.c::0xBA/0xBB: a random signed delta added to each target colour
+                        // channel, then a fresh fade over the 0xC0/0xD0 count. The Super Scope's
+                        // normal shot effect (0x430) uses 0xBA; stopping at it made the dust invisible.
+                        0xba | 0xbb => {
+                            let base = if op == 0xba { self.color_count } else { self.env_count };
+                            let (color, target, time) = if op == 0xba {
+                                (&mut self.color, &mut self.color_target, &mut self.color_time)
+                            } else {
+                                (&mut self.environment, &mut self.env_target, &mut self.env_time)
+                            };
+                            if *time > 0 {
+                                *color += (*target - *color) / *time as f32;
+                            }
+                            for axis in 0..4 {
+                                let delta = (r.byte()? as i8) as f32;
+                                let value = target[axis] * 255. + delta * 2. * rand(rng);
+                                target[axis] = value.clamp(0., 255.) / 255.;
+                            }
+                            if base == 0 {
+                                *color = *target;
+                            } else {
+                                *time = base;
+                            }
+                        }
                         // particle.c: random source texture pose, not rotation.
                         0xbc => {
                             let base = r.byte()?;
@@ -502,20 +537,23 @@ impl Particle {
                         0xbe => self.velocity *= r.vector()?,
                         0xc0 | 0xd0 => {
                             let count = r.count()?;
-                            let (color, target, time) = if cls == 0xc0 {
+                            let (color, target, time, base) = if cls == 0xc0 {
                                 (
                                     &mut self.color,
                                     &mut self.color_target,
                                     &mut self.color_time,
+                                    &mut self.color_count,
                                 )
                             } else {
                                 (
                                     &mut self.environment,
                                     &mut self.env_target,
                                     &mut self.env_time,
+                                    &mut self.env_count,
                                 )
                             };
                             *time = count;
+                            *base = count;
                             *target = *color;
                             for axis in 0..4 {
                                 if op & (1 << axis) != 0 {

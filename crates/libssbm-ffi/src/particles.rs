@@ -223,7 +223,7 @@ pub unsafe extern "C" fn ssbm_particles_draws(
         .system
         .particles
         .iter()
-        .filter(|p| p.kind & (1 << 10) != 0)
+        .filter(|p| p.kind & ((1 << 10) | (1 << 22)) != 0)
         .count() as u32;
     if out.is_null() {
         return count;
@@ -233,7 +233,7 @@ pub unsafe extern "C" fn ssbm_particles_draws(
             .system
             .particles
             .iter()
-            .filter(|p| p.kind & (1 << 10) != 0)
+            .filter(|p| p.kind & ((1 << 10) | (1 << 22)) != 0)
             .take(max as usize)
             .enumerate()
         {
