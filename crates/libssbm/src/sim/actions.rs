@@ -158,7 +158,7 @@ impl Sim {
     }
 
     fn disc_projectile(&mut self, host: &mut impl Host) {
-        if self.action.projectile_fired {
+        if self.action.projectile_fired || self.behavior.script_muted(self) {
             return;
         }
         let Some(m) = self.current_move else {
