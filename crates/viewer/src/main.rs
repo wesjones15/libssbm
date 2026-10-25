@@ -96,10 +96,18 @@ async fn run() -> libssbm_assets::Result<()> {
         .and_then(|i| args.get(i + 1))
         .map(|s| s.parse::<u32>())
         .transpose()?;
+    // Preview the Super Scope charge smoke building at the fighter's feet: 0x405 (common
+    // emitter 44), repeated with more puffs and a wider ring as the charge level rises.
+    let scope_smoke = args.iter().any(|s| s == "--scope-smoke");
     let particle_bank = if let Some(id) = emitter {
         Some(libssbm_assets::effects::Effects::load(
             std::path::Path::new(&path),
             id >= 2000,
+        )?)
+    } else if scope_smoke {
+        Some(libssbm_assets::effects::Effects::load(
+            std::path::Path::new(&path),
+            false,
         )?)
     } else {
         None
@@ -109,11 +117,44 @@ async fn run() -> libssbm_assets::Result<()> {
         .map(particles::Renderer::new)
         .transpose()?;
     let mut particle_system = libssbm::particle::System::default();
-    if let (Some(id), Some(bank)) = (emitter, particle_bank.as_ref()) {
+    if let Some(bank) = particle_bank.as_ref() {
         particle_system.definitions = bank.emitters.clone();
-        particle_system.spawn(id, ::glam::Mat4::IDENTITY, 1)?;
-        for _ in 0..pose_frame as u32 {
-            particle_system.tick();
+        if let Some(id) = emitter {
+            particle_system.spawn(id, ::glam::Mat4::IDENTITY, 1)?;
+            for _ in 0..pose_frame as u32 {
+                particle_system.tick();
+            }
+            eprintln!(
+                "emitter {id}: {} particles, errors {:?}",
+                particle_system.particles.len(),
+                particle_system.errors
+            );
+        } else {
+            // 60 Hz, matching the host's charge smoke schedule.
+            for tick in 0..pose_frame as u32 {
+                if tick > 12 && tick % 5 == 0 {
+                    let level = (tick / 8).min(9);
+                    let puffs = 4 + level / 2;
+                    // The fighter is ~11 sim units tall; the host's metre offsets are multiplied by 10.
+                    // 88 is the common soft white smoke wisp used for the big feet cloud.
+                    let radius = (0.4 + 0.08 * level as f32) * 10.0;
+                    let angle = tick as f32 * 0.075;
+                    for i in 0..puffs {
+                        let a = angle + i as f32 * std::f32::consts::TAU / puffs as f32;
+                        let at = ::glam::Vec3::new(
+                            a.cos() * radius,
+                            (0.18 + 0.02 * level as f32) * 10.0,
+                            a.sin() * radius,
+                        );
+                        particle_system.spawn(
+                            88,
+                            ::glam::Mat4::from_translation(at),
+                            (tick * 16 + i) as u64 + 1,
+                        )?;
+                    }
+                }
+                particle_system.tick();
+            }
         }
     }
     let mut actor = if let Some(id) = effect {

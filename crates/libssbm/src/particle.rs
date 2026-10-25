@@ -102,11 +102,8 @@ impl System {
             attachment,
             life: d.generator_life as u32,
             count: if d.kind & 0x100 != 0 {
-                if d.random < 0. {
-                    if 1. + d.random > f32::EPSILON { 1. } else { 0. }
-                } else {
-                    0.9999999
-                }
+                // A 0x100 generator emits at creation, even with a one-frame generator life.
+                1.
             } else if d.kind & 0x2 != 0 || kind.is_some() {
                 // HSD generator type 0x100 (set for every child created by 0xA5/0xEF/0xF0):
                 // emit a single particle when the generator is created.

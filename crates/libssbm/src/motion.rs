@@ -186,6 +186,16 @@ pub fn select(s: &Sim, input: Input) -> (&'static str, f32) {
 /// Generic grounded gait independent of the action clip. Mobile upper-body
 /// attacks keep this clock moving through startup, hold and recovery.
 pub fn locomotion(s: &Sim, input: Input) -> (&'static str, f32) {
+    if s.current_move == Some(Move::SuperScope) {
+        if s.scope.as_ref().is_some_and(|scope| scope.state.jump_squat.is_some()) {
+            return ("KneeBend", 1.);
+        }
+        if !s.grounded {
+            return if s.locomotion.clip.starts_with("Jump") && !s.locomotion.finished() {
+                (s.locomotion.clip, 1.)
+            } else { (fall_clip(s, false), 1.) };
+        }
+    }
     if !s.grounded {
         return ("Wait", 1.);
     }
