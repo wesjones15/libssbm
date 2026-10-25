@@ -1,11 +1,13 @@
-use libssbm::{
+﻿use libssbm::{
     ATTACK, CANCEL, DOWN, DOWN_B, EventKind, FlatHost, GRAB, Input, JUMP, NEUTRAL_B, Phase, SIDE_B,
     SPECIAL, SPRINT, Sim, UP, UP_B,
 };
 use libssbm_assets::presentation::Presentation;
 use macroquad::prelude::*;
 mod models;
+mod sms_play;
 mod particles;
+mod sms_fludd;
 fn config() -> Conf {
     Conf {
         window_title: "libssbm - Samus from Melee".into(),
@@ -33,6 +35,45 @@ async fn main() {
     if let Err(e) = run().await {
         eprintln!("Samus viewer: {e}");
     }
+}
+fn fighter_assets(name: &str) -> Option<&'static libssbm_assets::fighter::FighterAssets<'static>> {
+    use libssbm_assets::fighter::*;
+    Some(match name.to_ascii_lowercase().as_str() {
+        "samus" => &SAMUS,
+        "fox" => &FOX,
+        "luigi" => &LUIGI,
+        "pikachu" | "pika" => &PIKACHU,
+        "captain" | "falcon" | "captainfalcon" => &CAPTAIN,
+        "link" => &LINK,
+        "yoshi" => &YOSHI,
+        "donkey" | "dk" | "donkeykong" => &DONKEY,
+        _ => return None,
+    })
+}
+fn fighter_label(name: &str) -> &'static str {
+    match name.to_ascii_lowercase().as_str() {
+        "samus" => "SAMUS",
+        "fox" => "FOX",
+        "luigi" => "LUIGI",
+        "pikachu" | "pika" => "PIKACHU",
+        "captain" | "falcon" | "captainfalcon" => "CAPTAIN FALCON",
+        "link" => "LINK",
+        "yoshi" => "YOSHI",
+        _ => "DONKEY KONG",
+    }
+}
+fn fighter_feet(
+    dir: &str,
+    f: &libssbm_assets::fighter::FighterAssets<'_>,
+) -> libssbm_assets::Result<[usize; 2]> {
+    let bytes = std::fs::read(std::path::Path::new(dir).join("PlCo.dat"))?;
+    let d = libssbm_assets::dat::Dat::parse(&bytes)?;
+    let table = d.required_ptr(d.root("ftLoadCommonData")? + 0x10)?;
+    let parts = d.required_ptr(table + f.common_index * 4)?;
+    let map = d.required_ptr(parts + 4)?;
+    let m = d.bytes(map, 53)?;
+    // FtPart_LFootJ = 10, FtPart_RFootJ = 15.
+    Ok([m[10] as usize, m[15] as usize])
 }
 async fn run() -> libssbm_assets::Result<()> {
     let args: Vec<_> = std::env::args().skip(1).collect();
@@ -99,6 +140,95 @@ async fn run() -> libssbm_assets::Result<()> {
     // Preview the Super Scope charge smoke building at the fighter's feet: 0x405 (common
     // emitter 44), repeated with more puffs and a wider ring as the charge level rises.
     let scope_smoke = args.iter().any(|s| s == "--scope-smoke");
+    // Sunshine Mario on Melee Luigi: drive the shared joints from an SMS clip and leave
+    // Luigi's fingers, toes, face and helper joints at bind. `--sms-clip` picks the clip
+    // (default ma_wait); `--sms-idle` is the old alias.
+    let sms_clip = args
+        .iter()
+        .position(|s| s == "--sms-clip")
+        .and_then(|i| args.get(i + 1))
+        .cloned();
+    // Luigi's own 61-joint rig, animated from an SMS clip. The Melee assets must be
+    // present; binding his mesh to Mario's rig stretched his arms (five arm joints
+    // collapsed onto four), so that path is gone.
+    let sms_play = args.iter().any(|s| s == "--sms-play");
+    let sms_idle = sms_clip.is_some() || sms_play || args.iter().any(|s| s == "--sms-idle");
+    if sms_idle && !libssbm_assets::fighter::LUIGI.complete(std::path::Path::new(&path)) {
+        return Err(
+            "the Luigi clip demo needs the Melee mod's Luigi assets (PlLgNr.dat)".into(),
+        );
+    }
+    let sms_clip = sms_clip.unwrap_or_else(|| "ma_wait".into());
+    // Assembled FLUDD (body + Spray nozzle) on Luigi's chest; the neck extends so the
+    // nozzle clears his hat.
+    let fludd_preview = args.iter().any(|s| s == "--fludd");
+    let fludd_segments = args
+        .iter()
+        .position(|s| s == "--fludd-segments")
+        .and_then(|i| args.get(i + 1))
+        .and_then(|s| s.parse::<u32>().ok())
+        .unwrap_or(0);
+    let slice = (
+        args.iter()
+            .position(|s| s == "--fludd-slice-lo")
+            .and_then(|i| args.get(i + 1))
+            .and_then(|s| s.parse::<f32>().ok())
+            .unwrap_or(45.0),
+        args.iter()
+            .position(|s| s == "--fludd-slice-hi")
+            .and_then(|i| args.get(i + 1))
+            .and_then(|s| s.parse::<f32>().ok())
+            .unwrap_or(56.0),
+    );
+    // Repeat spacing: the accordion's rib period, independent of the band's extent.
+    // 0 means "use the band height".
+    let fludd_step = args
+        .iter()
+        .position(|s| s == "--fludd-step")
+        .and_then(|i| args.get(i + 1))
+        .and_then(|s| s.parse::<f32>().ok())
+        .unwrap_or(0.0);
+    // Backward pitch of the pack, in degrees (negative tips the collar away from the head).
+    let fludd_pitch = args
+        .iter()
+        .position(|s| s == "--fludd-pitch")
+        .and_then(|i| args.get(i + 1))
+        .and_then(|s| s.parse::<f32>().ok())
+        .unwrap_or(-8.0);
+    // Contextual yaw of the whole pack, degrees: swings the Spray nozzle clear of the hat.
+    let fludd_yaw = args
+        .iter()
+        .position(|s| s == "--fludd-yaw")
+        .and_then(|i| args.get(i + 1))
+        .and_then(|s| s.parse::<f32>().ok())
+        .unwrap_or(0.0);
+    // Contextual yaw of the Spray nozzle head only, in degrees (cosmetic; the
+    // other nozzles stay as authored).
+    let nozzle_yaw = args
+        .iter()
+        .position(|s| s == "--nozzle-yaw")
+        .and_then(|i| args.get(i + 1))
+        .and_then(|s| s.parse::<f32>().ok())
+        .unwrap_or(0.0);
+    // Contextual lean of the whole FLUDD neck (collar + drum + nozzle), degrees.
+    let mut neck_lean = args
+        .iter()
+        .position(|s| s == "--neck-lean")
+        .and_then(|i| args.get(i + 1))
+        .and_then(|s| s.parse::<f32>().ok())
+        .unwrap_or(0.0);
+    // A native fighter preview (no sim): loop its Wait on the floor. `--foot-anchor`
+    // drops the posed mesh so its lowest point sits on Y=0.
+    let fighter_name = args
+        .iter()
+        .position(|s| s == "--fighter")
+        .and_then(|i| args.get(i + 1))
+        .cloned();
+    let fighter = fighter_name.as_deref().and_then(fighter_assets);
+    if fighter_name.is_some() && fighter.is_none() {
+        return Err(format!("unknown fighter {:?}", fighter_name.unwrap()).into());
+    }
+    let mut foot_anchor = args.iter().any(|s| s == "--foot-anchor");
     let particle_bank = if let Some(id) = emitter {
         Some(libssbm_assets::effects::Effects::load(
             std::path::Path::new(&path),
@@ -161,9 +291,58 @@ async fn run() -> libssbm_assets::Result<()> {
         Presentation::effect(std::path::Path::new(&path), id)?
     } else if let Some(kind) = article {
         Presentation::article(std::path::Path::new(&path), kind, article_state)?
+    } else if let Some(f) = fighter {
+        Presentation::load_for(std::path::Path::new(&path), 0, f)?
+    } else if sms_idle {
+        Presentation::load_for(
+            std::path::Path::new(&path),
+            0,
+            &libssbm_assets::fighter::LUIGI,
+        )?
     } else {
         Presentation::load(std::path::Path::new(&path), 0)?
     };
+    // The SMS clip and the shared-joint retarget, for `--sms-idle`.
+    let sms_assets = std::env::var("SMS_ASSETS")
+        .map(std::path::PathBuf::from)
+        .unwrap_or_else(|_| std::path::PathBuf::from("../libsms/assets"));
+    // FtPart_LFootJ/RFootJ for the selected fighter, for the foot-joint anchor.
+    let foot_joints = match fighter {
+        Some(f) => Some(fighter_feet(&path, f)?),
+        None => None,
+    };
+    let sms = if sms_idle {
+        let rig = libssbm_assets::sms::Rig::from_file(&sms_assets.join("bmd/ma_mdl1.bmd"))?;
+        let clip = libssbm_assets::sms::Clip::from_file(
+            &sms_assets.join(format!("bck/{sms_clip}.bck")),
+        )?;
+        Some((rig, clip))
+    } else {
+        None
+    };
+    let sms_retarget = sms
+        .as_ref()
+        .map(|(rig, _)| libssbm_assets::sms::Retarget::new(&actor.model, rig));
+    let fludd = if fludd_preview && sms_idle {
+        sms_fludd::Fludd::load(&sms_assets)
+    } else {
+        None
+    };
+    let mut play = if sms_play { Some(sms_play::Play::new(&sms_assets)) } else { None };
+    if let Some(p) = &mut play
+        && args.iter().any(|s| s == "--play-demo")
+    {
+        // Warm-up: a short forward run with a jump, so a capture shows the sim posing Luigi.
+        for i in 0..50 {
+            let mut pad = libsms::Pad::default();
+            pad.stick = ::glam::Vec2::new(0.0, 1.0);
+            pad.a = (10..18).contains(&i);
+            p.step(1.0 / 120.0, &pad);
+        }
+    }
+    let mut fludd_base = None;
+    let mut sms_clock = pose_frame as f64 / 60.0;
+    let mut static_clock = pose_frame as f64 / 60.0;
     let mut sim = Sim::with_behavior(
         libssbm_assets::params::load_common(
             std::path::Path::new(&path),
@@ -268,7 +447,12 @@ async fn run() -> libssbm_assets::Result<()> {
         if is_key_pressed(KeyCode::Escape) {
             break;
         }
-        if is_key_pressed(KeyCode::Tab) {
+        if (fighter.is_some() || sms_idle)
+            && (is_key_pressed(KeyCode::LeftShift) || is_key_pressed(KeyCode::RightShift))
+        {
+            foot_anchor = !foot_anchor;
+        }
+        if !sms_idle && fighter.is_none() && is_key_pressed(KeyCode::Tab) {
             costume = (costume + 1) % 5;
             actor = Presentation::load(std::path::Path::new(&path), costume)?;
             meshes = make_meshes(&actor);
@@ -322,11 +506,92 @@ async fn run() -> libssbm_assets::Result<()> {
         if !dash_preview
             && !sideb_preview
             && !rebirth_preview
+            && !sms_idle
+            && fighter.is_none()
             && !(mobile_preview && capture.is_some())
         {
             sim.advance(&mut host, input, dt as f64);
         }
-        actor.update(&sim, dt);
+        if let Some(f) = fighter {
+            let idle = f
+                .clip_aliases
+                .iter()
+                .find(|(canonical, _)| *canonical == "Wait")
+                .map(|(_, actual)| *actual)
+                .unwrap_or("Wait");
+            let clip = pose_clip.as_deref().unwrap_or(idle);
+            let frames = actor
+                .animations
+                .clips
+                .get(clip)
+                .map_or(60.0, |c| c.frames.max(1.0));
+            let frame = (static_clock as f32 * 60.0) % frames;
+            static_clock += dt as f64;
+            let mut world = actor.animations.pose(&actor.model, clip, frame, true);
+            if foot_anchor {
+                if let Some(feet) = foot_joints {
+                    libssbm_assets::presentation::foot_anchor(&actor.model, &mut world, feet);
+                } else {
+                    libssbm_assets::presentation::ground(&actor.model, &mut world);
+                }
+            }
+            actor.world = world;
+            actor.clip = clip.into();
+            actor.frame = frame;
+        } else if let (Some((rig, clip)), Some(retarget)) = (&sms, &sms_retarget) {
+            if let Some(play) = &mut play {
+                let pad = play.pad();
+                play.step(dt, &pad);
+                if args.iter().any(|s| s == "--play-demo") {
+                    eprintln!("play pos {:?} yaw {:.3}", play.pos(), play.yaw());
+                }
+                let root = ::glam::Mat4::IDENTITY;
+                if let Some((clip, frame)) = play.clip() {
+                    actor.world = retarget.pose(&actor.model, rig, clip, frame);
+                    for m in &mut actor.world {
+                        *m = root * *m;
+                    }
+                    actor.frame = frame;
+                }
+            } else {
+            let frame = (sms_clock as f32 * 60.0) % clip.frames.max(1.0);
+            sms_clock += dt as f64;
+            actor.world = retarget.pose(&actor.model, rig, clip, frame);
+            // SMS clips carry no root motion; for an airborne clip, give the preview the arc
+            // the game's controller would supply so the flip is not performed on the floor.
+            let arc = if sms_clip == "ma_wait" {
+                0.
+            } else {
+                let t = (frame / clip.frames.max(1.0)).clamp(0., 1.);
+                7.5 * (std::f32::consts::PI * t).sin()
+            };
+            if arc > 0.0 {
+                for m in &mut actor.world {
+                    m.w_axis.y += arc;
+                }
+            } else if foot_anchor || sms_clip == "ma_wait" {
+                libssbm_assets::sms::ground(&actor.model, &mut actor.world);
+            }
+            actor.frame = frame;
+            }
+            if let Some(rt) = &sms_retarget {
+                // TWaterGun::init: FLUDD's base is Mario's chest matrix * Rz(lean); the
+                // chest frame is swapped to Luigi's so the pack sits on his back.
+                let align = rt.target_bind()[5].transpose() * rt.source_bind()[14];
+                let lean = actor.world[5].x_axis.y.abs();
+                let angle = (lean * 6144.0 - 6144.0) * (std::f32::consts::PI / 32768.0);
+                fludd_base = Some(
+                    actor.world[5]
+                        * ::glam::Mat4::from_mat3(align)
+                        * ::glam::Mat4::from_translation(::glam::Vec3::new(-0.2, -0.8, 0.))
+                        * ::glam::Mat4::from_rotation_z(angle + fludd_pitch.to_radians())
+                        * ::glam::Mat4::from_rotation_y(fludd_yaw.to_radians())
+                        * ::glam::Mat4::from_scale(::glam::Vec3::splat(0.07)),
+                );
+            }
+        } else {
+            actor.update(&sim, dt);
+        }
         if rebirth_preview && let (Some(entry), Some(platform)) = (sim.entry, platform.as_mut()) {
             let scale = entry.params.platform;
             let transform = ::glam::Mat4::from_scale(::glam::Vec3::new(
@@ -419,7 +684,14 @@ async fn run() -> libssbm_assets::Result<()> {
                 },
                 0.,
             );
-        let mut distance: f32 = if effect == Some(2000) {
+        if let Some(p) = &play {
+            center = gv(p.pos()) + vec3(0., 12., 0.);
+        }
+        let mut distance: f32 = if sms_idle {
+            36.
+        } else if fighter.is_some() {
+            32.
+        } else if effect == Some(2000) {
             65.
         } else if object {
             25.
@@ -472,8 +744,13 @@ async fn run() -> libssbm_assets::Result<()> {
             .and_then(|i| args.get(i + 1))
             .map(|s| s.parse::<f32>())
             .transpose()?;
-        let rotation =
-            ::glam::Mat4::from_rotation_y(model_yaw.unwrap_or(std::f32::consts::FRAC_PI_2 - yaw));
+        let rotation = ::glam::Mat4::from_rotation_y(model_yaw.unwrap_or(if sms_idle
+            || fighter.is_some()
+        {
+            0.
+        } else {
+            std::f32::consts::FRAC_PI_2 - yaw
+        }));
         // The selection view keeps the fighter's actual upward displacement.
         // It begins and ends on the floor while Screw Attack can rise freely.
         let preview_offset = ::glam::Vec3::ZERO;
@@ -571,6 +848,25 @@ async fn run() -> libssbm_assets::Result<()> {
                 draw_mesh(mesh);
             }
         }
+        // Live neck-lean tuning for the alt-skin exploration.
+        if is_key_down(KeyCode::LeftBracket) {
+            neck_lean -= 60.0 * dt;
+        }
+        if is_key_down(KeyCode::RightBracket) {
+            neck_lean += 60.0 * dt;
+        }
+        if let (Some(f), Some(base)) = (&fludd, fludd_base) {
+            f.draw(
+                base,
+                rotation,
+                sim.position,
+                fludd_segments,
+                slice,
+                fludd_step,
+                nozzle_yaw,
+                neck_lean,
+            );
+        }
         if let Some(renderer) = &particle_renderer {
             if capture.is_none() {
                 particle_clock += dt as f64;
@@ -592,44 +888,109 @@ async fn run() -> libssbm_assets::Result<()> {
             106.,
             Color::from_rgba(7, 11, 18, 230),
         );
-        draw_text("SAMUS / MELEE LAB", 28., 38., 30., ORANGE);
-        draw_text(
-            "WASD move | Space jump | LMB attack | RMB special | Q/E up/down | Shift sprint | C store charge",
-            28.,
-            66.,
-            18.,
-            LIGHTGRAY,
-        );
-        draw_text(
-            "Xbox: LS move/click sprint | A jump | RT neutral B | LT contextual A | RB side B | LB up B | B down B | X grab",
-            28.,
-            89.,
-            18.,
-            LIGHTGRAY,
-        );
+        let title = if sms_idle {
+            format!("SMS {sms_clip} / MELEE LAB")
+        } else if let Some(name) = &fighter_name {
+            format!("{} / MELEE LAB", fighter_label(name))
+        } else {
+            "SAMUS / MELEE LAB".to_string()
+        };
+        draw_text(&title, 28., 38., 30., ORANGE);
+        if sms_idle {
+            draw_text(
+                format!(
+                    "Arrows orbit | Shift foot anchor | Esc quit   -   {sms_clip}.bck on Luigi, shared joints only"
+                )
+                .as_str(),
+                28.,
+                66.,
+                18.,
+                LIGHTGRAY,
+            );
+        } else if fighter.is_some() {
+            draw_text(
+                format!(
+                    "Arrows orbit | Shift anchor | Esc quit   -   native {} | foot anchor {}",
+                    actor.clip,
+                    if foot_anchor { "ON" } else { "OFF" }
+                )
+                .as_str(),
+                28.,
+                66.,
+                18.,
+                LIGHTGRAY,
+            );
+        } else {
+            draw_text(
+                "WASD move | Space jump | LMB attack | RMB special | Q/E up/down | Shift sprint | C store charge",
+                28.,
+                66.,
+                18.,
+                LIGHTGRAY,
+            );
+            draw_text(
+                "Xbox: LS move/click sprint | A jump | RT neutral B | LT contextual A | RB side B | LB up B | B down B | X grab",
+                28.,
+                89.,
+                18.,
+                LIGHTGRAY,
+            );
+        }
         let y = screen_height() - 100.;
         draw_rectangle(18., y, 600., 82., Color::from_rgba(7, 11, 18, 230));
         draw_text(
-            format!(
-                "{:?}  {}  costume {}",
-                sim.phase,
-                actor.clip,
-                libssbm_assets::COSTUMES[costume]
-            ),
+            if fighter.is_some() {
+                let frames = actor
+                    .animations
+                    .clips
+                    .get(&actor.clip)
+                    .map_or(0., |c| c.frames);
+                format!(
+                    "{}  {:.0}/{:.0}  costume {}",
+                    actor.clip,
+                    actor.frame,
+                    frames,
+                    libssbm_assets::COSTUMES[costume]
+                )
+            } else if let Some((_, clip)) = &sms {
+                format!(
+                    "{}  {:.0}/{:.0}  costume {}",
+                    sms_clip,
+                    actor.frame,
+                    clip.frames,
+                    libssbm_assets::COSTUMES[costume]
+                )
+            } else {
+                format!(
+                    "{:?}  {}  costume {}",
+                    sim.phase,
+                    actor.clip,
+                    libssbm_assets::COSTUMES[costume]
+                )
+            },
             30.,
             y + 25.,
             22.,
             WHITE,
         );
         draw_text(
-            format!(
-                "Charge {}/{}  jumps {}/{}  {}",
-                sim.shot_charge,
-                sim.behavior.charge_steps(),
-                sim.jumps_used,
-                sim.params.jumps,
-                last_hit
-            ),
+            if fighter.is_some() {
+                format!(
+                    "finite native pose | foot anchor {}",
+                    if foot_anchor { "ON" } else { "OFF" }
+                )
+            } else if sms_idle {
+                "19 mapped joints; fingers, toes, face and helpers hold bind".to_string()
+            } else {
+                format!(
+                    "Charge {}/{}  jumps {}/{}  {}",
+                    sim.shot_charge,
+                    sim.behavior.charge_steps(),
+                    sim.jumps_used,
+                    sim.params.jumps,
+                    last_hit
+                )
+            },
             30.,
             y + 49.,
             18.,
@@ -647,7 +1008,14 @@ async fn run() -> libssbm_assets::Result<()> {
             && rendered == 5
         {
             get_screen_data().export_png(path);
-            println!("Rendered Samus screenshot with disc model/animation");
+            let who = if sms_idle {
+                format!("SMS {sms_clip} on Luigi")
+            } else if let Some(name) = &fighter_name {
+                fighter_label(name).to_string()
+            } else {
+                "Samus".to_string()
+            };
+            println!("Rendered {who} screenshot with disc model/animation");
             break;
         }
         next_frame().await;
@@ -750,3 +1118,26 @@ fn read_pad(input: &mut Input, forward: Vec3, right: Vec3) {
 }
 #[cfg(not(windows))]
 fn read_pad(_: &mut Input, _: Vec3, _: Vec3) {}
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
