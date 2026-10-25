@@ -13,6 +13,7 @@ pub mod model;
 pub mod params;
 pub mod portrait;
 pub mod presentation;
+pub mod sms;
 pub mod texture;
 
 pub type Result<T> = std::result::Result<T, Box<dyn std::error::Error + Send + Sync>>;

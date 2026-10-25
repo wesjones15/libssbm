@@ -695,6 +695,48 @@ fn spin_subtree(model: &Model, world: &mut [Mat4], root: usize, angle: f32) {
         }
     }
 }
+/// Drop or lift a posed model so its lowest skinned vertex sits on Y=0. Melee's model
+/// origin is not the sole: in Wait, Samus's foot mesh is ~2.4 model units above it.
+/// Apply at the draw layer or a static preview; gate it on the host's grounded state
+/// (do not ground an airborne pose).
+pub fn ground(model: &Model, world: &mut [Mat4]) {
+    let mut low = f32::INFINITY;
+    for i in 0..model.batches.len() {
+        for (p, _) in model.skin(i, world) {
+            low = low.min(p.y);
+        }
+    }
+    if low.is_finite() {
+        let shift = -low;
+        for m in world.iter_mut() {
+            m.w_axis.y += shift;
+        }
+    }
+}
+
+/// Anchor the lower **foot** rather than the lowest vertex, so a sword tip, tail or
+/// tie cannot decide the height. `feet` are the two `FtPart_*FootJ` joints; each sole
+/// is taken from the bind pose (the bind stands on the floor). Use this for fighters
+/// whose idle/portrait geometry hangs below the boots.
+pub fn foot_anchor(model: &Model, world: &mut [Mat4], feet: [usize; 2]) {
+    if feet.iter().any(|&f| f >= world.len() || f >= model.joints.len()) {
+        return;
+    }
+    let bind = model.bind_world();
+    let mut low = f32::INFINITY;
+    for &f in &feet {
+        // Bind foot joint height is its distance above the authored floor.
+        let sole = bind[f].w_axis.y;
+        low = low.min(world[f].w_axis.y - sole);
+    }
+    if low.is_finite() {
+        let shift = -low;
+        for m in world.iter_mut() {
+            m.w_axis.y += shift;
+        }
+    }
+}
+
 /// ftCo_Fall_Anim_Inner blends local joint transforms, then concatenates the
 /// hierarchy. Blending world matrices would shorten limbs during rotations.
 pub fn blend_pose(model: &Model, a: &[Mat4], b: &[Mat4], amount: f32) -> Vec<Mat4> {
