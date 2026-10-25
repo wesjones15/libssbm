@@ -201,9 +201,11 @@ impl Sim {
             self.face = [0.; 8];
         }
         self.action.script_frame = frame;
-        // A waiting stage (Thunder's cloud) replays a clip whose hitboxes, effects
-        // and sounds belong to a later stage; consume them without acting.
+        // A waiting stage (Thunder's cloud) replays a clip whose hitboxes and effects
+        // belong to a later stage; consume them without acting. Sound commands still
+        // play, so a held stage keeps its thunder rumble.
         let muted = self.behavior.script_muted(self);
+        let mute_sounds = self.behavior.script_mute_sounds(self);
         while let Some(event) = self
             .action
             .definitions
@@ -220,9 +222,20 @@ impl Sim {
                     event.command,
                     Command::Hitbox(_)
                         | Command::Raw {
-                            opcode: 10 | 17 | 18 | 54 | 55,
+                            opcode: 10,
                             ..
                         }
+                )
+            {
+                continue;
+            }
+            if mute_sounds
+                && matches!(
+                    event.command,
+                    Command::Raw {
+                        opcode: 17 | 18 | 54 | 55,
+                        ..
+                    }
                 )
             {
                 continue;

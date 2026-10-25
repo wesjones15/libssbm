@@ -121,6 +121,11 @@ pub trait Behavior: Send {
     fn script_muted(&self, _sim: &Sim) -> bool {
         false
     }
+    /// Whether a muted script also drops its sound commands. Thunder's wait keeps
+    /// its rumble; Egg Lay mutes Pikachu's borrowed Thunder cues entirely.
+    fn script_mute_sounds(&self, sim: &Sim) -> bool {
+        self.script_muted(sim)
+    }
     /// Facing lock that may depend on the move's current stage (Skull Bash
     /// follows the camera while charging, then commits to its heading).
     fn facing_locked_now(&self, _sim: &Sim, m: Move) -> bool {

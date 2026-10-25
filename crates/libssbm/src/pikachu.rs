@@ -648,6 +648,11 @@ impl Behavior for Pikachu {
         }
         sim.current_move == Some(Move::SpecialLw) && sim.stage == THUNDER_WAIT
     }
+    fn script_mute_sounds(&self, sim: &Sim) -> bool {
+        // Egg Lay borrows Pikachu's Thunder start; its sounds belong to Yoshi's cues.
+        // Thunder's waiting loop keeps its own rumble.
+        Self::egg_lay(sim) && sim.current_move == Some(Move::SpecialN)
+    }
     fn on_connect(&self, sim: &mut Sim) {
         // Borrowed Egg Lay: the tongue caught something; start the swallow stage now.
         if Self::egg_lay(sim)
