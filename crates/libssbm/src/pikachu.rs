@@ -771,7 +771,9 @@ impl Behavior for Pikachu {
         match m {
             Move::SpecialN => Some(40),
             Move::SpecialS => Some(40),
-            Move::SpecialHi => Some(50),
+            // Host adaptation: Quick Attack recovers fast enough that the two stored
+            // charges can be spent back-to-back (the source frame count is 50).
+            Move::SpecialHi => Some(12),
             Move::SpecialLw => Some(36),
             _ => None,
         }
