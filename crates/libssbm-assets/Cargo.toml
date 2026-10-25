@@ -7,7 +7,6 @@ publish.workspace = true
 [dependencies]
 libssbm.workspace = true
 glam.workspace = true
-ignore = "0.4.33"
 
 [[bin]]
 name = "ssbm-extract"
