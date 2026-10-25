@@ -2426,6 +2426,18 @@ pub unsafe extern "C" fn ssbm_sim_boost_jump(handle: *mut Handle, factor: f32) {
         h.net.log(Op::BoostJump(factor));
     }
 }
+/// Enables (1) or disables (0) the H3AD-5T v2 stomp: jump in the air with no jumps left to
+/// slam down. The host sets this each tick from the fighter's item count.
+///
+/// # Safety
+/// Unique live handle or null.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn ssbm_sim_set_stomp(handle: *mut Handle, enabled: u32) {
+    if let Some(h) = unsafe { handle.as_mut() }.filter(|h| !h.poisoned) {
+        h.sim.stomp_enabled = enabled != 0;
+        h.net.log(Op::SetStomp(enabled));
+    }
+}
 #[cfg(test)]
 mod tests {
     use super::*;

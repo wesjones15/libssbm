@@ -24,6 +24,9 @@ pub const DOWN_B: u32 = 2048;
 pub const DEFEND: u32 = 4096;
 /// The sound channel of the fighter's voice (script sounds use channels 0 to 6).
 pub const VOICE_CHANNEL: u32 = 8;
+/// H3AD-5T v2's stomp: the constant downward slam speed in sim units a tick. The
+/// normal fall is capped around `Params::fall_speed` (2); a stomp is clearly faster.
+pub const STOMP_SPEED: f32 = 5.0;
 
 #[derive(Clone, Copy, Debug, Default)]
 pub struct Input {
@@ -137,6 +140,8 @@ pub enum EventKind {
     Land = 4,
     ChargeStored = 5,
     Throw = 6,
+    /// H3AD-5T v2: the stomp landed; `strength` is the fall in sim units.
+    Stomped = 7,
 }
 #[derive(Clone, Copy, Debug)]
 pub struct Event {
@@ -293,6 +298,12 @@ pub struct Sim {
     /// World facts the host reports each tick (see `HOST_*` in `link.rs`): Link's
     /// boomerang being out, a carried bomb. A behavior reads them to choose a clip.
     pub host_flags: u32,
+    /// H3AD-5T v2 (host): the fighter is stomping; the Y it started from, for the
+    /// landing blast's fall distance. Cleared on landing, a teleport or an interrupt.
+    pub stomp: Option<f32>,
+    /// Whether the host enables the stomp (the fighter carries H3AD-5T v2). Set each
+    /// tick; the stomp is a host item adaptation, not a source move.
+    pub stomp_enabled: bool,
     /// Ticks left of a fluttering aerial jump (`Behavior::flutter`) and the gravity
     /// scale it applies.
     pub(crate) flutter: u32,
@@ -416,6 +427,8 @@ impl Sim {
             morph_roll_distance: 0.,
             lock_target: None,
             host_flags: 0,
+            stomp: None,
+            stomp_enabled: false,
             flutter: 0,
             flutter_gravity: 1.,
             owns_gravity: false,
@@ -613,6 +626,7 @@ impl Sim {
         self.current_move = None;
         self.jumps_used = 1;
         self.up_special_invulnerable = false;
+        self.stomp = None;
     }
     pub fn launch(&mut self, velocity: Vec3) {
         self.pad_gravity = None;
@@ -638,6 +652,19 @@ impl Sim {
         self.velocity.x *= factor;
         self.velocity.z *= factor;
     }
+    /// H3AD-5T v2 (host): drive straight down from the current height; the landing
+    /// emits a [`EventKind::Stomped`] with the fall distance. A host item adaptation,
+    /// not a source move: Melee has no stomp, so the falling pose carries the slam.
+    pub fn start_stomp(&mut self) {
+        self.stomp = Some(self.position.y);
+        self.pad_gravity = None;
+        self.owns_gravity = false;
+        self.current_move = None;
+        self.action.active.clear();
+        self.velocity = Vec3::new(0., -STOMP_SPEED, 0.);
+        self.grounded = false;
+        self.set_phase(Phase::Free);
+    }
     /// Host crowd-control interruption. Stored neutral charge survives.
     pub fn interrupt(&mut self) {
         self.morph_roll_hold = false;
@@ -650,6 +677,7 @@ impl Sim {
         self.afterimage = -1;
         self.colanim.clear();
         self.jab = JabChain::default();
+        self.stomp = None;
         self.set_phase(Phase::Free);
     }
     /// Host damage notification, deliberately independent of engine health types.
@@ -1113,6 +1141,9 @@ impl Sim {
                         self.set_phase(Phase::JumpSquat);
                     } else if self.jumps_used < self.params.jumps + self.options.extra_jumps {
                         self.jump(host, true, input);
+                    } else if self.stomp_enabled && self.stomp.is_none() {
+                        // H3AD-5T v2: jump in the air with no jumps left slams down.
+                        self.start_stomp();
                     }
                 } else if pressed & GRAB != 0 {
                     let m = if !self.grounded {
@@ -1213,7 +1244,10 @@ impl Sim {
             && (matches!(self.phase, Phase::Free | Phase::JumpSquat | Phase::Helpless)
                 || self.mobile_action())
             || !self.grounded;
-        if let Some(gravity) = self.pad_gravity {
+        if self.stomp.is_some() {
+            // H3AD-5T v2: a vertical slam; no drift, no gravity, no fall cap.
+            self.velocity = Vec3::new(0., -STOMP_SPEED, 0.);
+        } else if let Some(gravity) = self.pad_gravity {
             self.velocity += gravity;
         } else {
             let horizontal = self.velocity.with_y(0.);
@@ -1403,6 +1437,11 @@ impl Sim {
                     } else { self.motion.select(landing, rate); }
                 }
                 self.emit(host, EventKind::Land, 0, -self.velocity.y);
+                if let Some(from) = self.stomp.take() {
+                    // H3AD-5T v2: the stomp landed; report the fall for the host's blast.
+                    let drop = (from - self.position.y).max(0.);
+                    self.emit(host, EventKind::Stomped, 0, drop);
+                }
             }
             self.velocity.y = 0.;
             self.jumps_used = 0;

@@ -214,3 +214,33 @@ fn boost_jump_scales_horizontal_speed_airborne_only() {
     s.boost_jump(-1.);
     assert_eq!(s.velocity, Vec3::new(20., 5., 8.));
 }
+
+#[test]
+fn stomp_dives_down_and_reports_fall_on_landing() {
+    let (mut s, mut h, mut p) = scene();
+    s.stomp_enabled = true;
+    s.teleport(Vec3::new(0., 100., 0.));
+    s.jumps_used = 2;
+    p.buttons = JUMP;
+    frames(&mut s, &mut h, p, 1);
+    p.buttons = 0;
+    assert!(s.stomp.is_some(), "jump with no jumps left should start the stomp");
+    assert!(s.velocity.y < 0., "the stomp should dive straight down");
+    frames(&mut s, &mut h, p, 60);
+    let stomped = h.events.iter().find(|e| e.kind == EventKind::Stomped);
+    assert!(stomped.is_some(), "the landing should report the stomp");
+    assert!(stomped.unwrap().strength > 0., "the stomp reports its fall distance");
+    assert!(s.stomp.is_none(), "the stomp clears on landing");
+}
+
+#[test]
+fn stomp_is_disabled_without_the_item() {
+    let (mut s, mut h, mut p) = scene();
+    s.stomp_enabled = false;
+    s.teleport(Vec3::new(0., 100., 0.));
+    s.jumps_used = 2;
+    p.buttons = JUMP;
+    frames(&mut s, &mut h, p, 1);
+    p.buttons = 0;
+    assert!(s.stomp.is_none(), "no stomp when the host hasn't enabled it");
+}

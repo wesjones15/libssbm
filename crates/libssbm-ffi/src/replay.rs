@@ -41,6 +41,8 @@ pub(crate) enum Op {
     Scope { on: u32, refill: f32 },
     /// Wax Quail: scale the horizontal speed of the jump in progress.
     BoostJump(f32),
+    /// H3AD-5T v2: enable (1) / disable (0) the stomp.
+    SetStomp(u32),
 }
 
 #[derive(Default)]
@@ -54,6 +56,7 @@ pub(crate) struct NetLog {
     lock: Option<[u32; 4]>,
     flags: Option<u32>,
     scope: Option<[u32; 2]>,
+    stomp: Option<u32>,
     steps: u32,
 }
 
@@ -88,6 +91,7 @@ impl NetLog {
                     self.lock = None;
                     self.flags = None;
                     self.scope = None;
+                    self.stomp = None;
                 }
             }
             Op::Facing(v) => {
@@ -128,6 +132,12 @@ impl NetLog {
                     return;
                 }
                 self.scope = Some([on, refill.to_bits()]);
+            }
+            Op::SetStomp(on) => {
+                if self.stomp == Some(on) {
+                    return;
+                }
+                self.stomp = Some(on);
             }
             _ => {}
         }
@@ -228,6 +238,10 @@ fn encode(b: &mut Vec<u8>, op: Op) {
             b.push(21);
             f32w(b, f);
         }
+        Op::SetStomp(on) => {
+            b.push(22);
+            u32w(b, on);
+        }
     }
 }
 
@@ -286,6 +300,7 @@ impl Reader<'_> {
             18 => Op::Sync { position: self.v3()?, grounded: self.u32()? },
             19 => Op::Scope { on: self.u32()?, refill: self.f32()? },
             21 => Op::BoostJump(self.f32()?),
+            22 => Op::SetStomp(self.u32()?),
             _ => return None,
         })
     }
@@ -394,6 +409,9 @@ pub unsafe extern "C" fn ssbm_sim_replay(
                 }
                 Op::BoostJump(f) => {
                     ssbm_sim_boost_jump(handle, f);
+                }
+                Op::SetStomp(on) => {
+                    ssbm_sim_set_stomp(handle, on);
                 }
                 Op::Sync { position, grounded } => {
                     let h = &mut *handle;

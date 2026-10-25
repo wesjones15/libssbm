@@ -98,6 +98,7 @@ impl Sim {
         self.position = state.destination;
         self.grounded = true;
         self.jumps_used = 0;
+        self.stomp = None;
         let mut entry = crate::entry::State::new(state.entry);
         entry.waiting = true;
         self.entry = Some(entry);
