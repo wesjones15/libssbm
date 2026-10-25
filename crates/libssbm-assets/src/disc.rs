@@ -185,7 +185,9 @@ pub const ITEM_ASSETS: [&str; 1] = ["ItCo.dat"];
 /// Whether the items archive has been extracted into `dir`.
 pub fn items_present(dir: &Path) -> bool {
     ITEM_ASSETS.iter().all(|name| {
-        fs::read(dir.join(name)).ok().is_some_and(|bytes| crate::dat::Dat::parse(&bytes).is_ok())
+        fs::read(dir.join(name))
+            .ok()
+            .is_some_and(|bytes| crate::dat::Dat::parse(&bytes).is_ok())
     })
 }
 
@@ -215,17 +217,60 @@ fn guard_output(out: &Path) -> Result<()> {
             return Err("asset output ancestor is a symlink".into());
         }
         if ancestor.join(".git").exists() {
-            let status = std::process::Command::new("git")
-                .arg("-C")
-                .arg(ancestor)
-                .args(["check-ignore", "-q"])
-                .arg(absolute.join("__ssbm_asset_probe__"))
-                .status()?;
-            if !status.success() {
-                return Err("disc assets must be extracted into a git-ignored folder".into());
+            // Do not require Git, or spawn a process, in a player's GUI host.
+            // Walk rules from the repository outward: an ignored directory stops
+            // traversal, so a nested .gitignore cannot re-include its contents.
+            let mut dirs: Vec<_> = absolute
+                .ancestors()
+                .take_while(|path| *path != ancestor)
+                .collect();
+            dirs.push(ancestor);
+            dirs.reverse();
+            let mut rules: Vec<ignore::gitignore::Gitignore> = Vec::new();
+            for dir in dirs {
+                let matched = rules
+                    .iter()
+                    .rev()
+                    .map(|rule| rule.matched(dir, true))
+                    .find(|matched| !matched.is_none());
+                if matched.is_some_and(|matched| matched.is_ignore()) {
+                    return Ok(());
+                }
+                let ignore_file = dir.join(".gitignore");
+                if ignore_file.is_file() {
+                    let mut builder = ignore::gitignore::GitignoreBuilder::new(dir);
+                    builder.case_insensitive(cfg!(windows))?;
+                    if let Some(error) = builder.add(ignore_file) {
+                        return Err(error.into());
+                    }
+                    rules.push(builder.build()?);
+                }
             }
-            break;
+            return Err("disc assets must be extracted into a git-ignored folder".into());
         }
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod output_guard_tests {
+    use super::*;
+
+    #[test]
+    fn cache_guard_checks_nested_rules_and_keeps_unignored_paths_closed() -> Result<()> {
+        let root = Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join(format!("../../build/guard-test-{}", std::process::id()));
+        fs::create_dir_all(root.join(".git"))?;
+        fs::create_dir_all(root.join("kept/open"))?;
+        fs::create_dir_all(root.join("cache"))?;
+        fs::write(root.join(".gitignore"), "/cache/\n/kept/*\n!/kept/open/\n")?;
+        fs::write(root.join("cache/.gitignore"), "!*\n")?;
+        fs::write(root.join("kept/open/.gitignore"), "/generated/\n")?;
+        assert!(guard_output(&root.join("cache/out")).is_ok());
+        assert!(guard_output(&root.join("kept/open/generated/out")).is_ok());
+        assert!(guard_output(&root.join("kept/open/source")).is_err());
+        assert!(guard_output(&root.join("source")).is_err());
+        fs::remove_dir_all(root)?;
+        Ok(())
+    }
 }
