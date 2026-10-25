@@ -392,6 +392,19 @@ impl Presentation {
             return false;
         }
         let b = &self.model.batches[batch];
+        // Yoshi's Egg Lay clip drives his own tongue DObj out of the jaw (PlYsNr DObj 10 is
+        // skinned 100% to joint 42, the mouth). The host draws the lash instead, so hide that
+        // DObj while the clip plays or the short tongue shows beside the long one.
+        // morph_move SpecialS is Yoshi alone (Samus's morph ball is SpecialLw).
+        if b.dobj == 10
+            && self.morph_move == Some(Move::SpecialS)
+            && matches!(
+                self.clip.as_str(),
+                "SpecialN" | "SpecialN1" | "SpecialN2" | "SpecialAirN" | "SpecialAirN2"
+            )
+        {
+            return false;
+        }
         if self.ball {
             self.model.ball_visible[b.dobj]
         } else {
