@@ -2413,6 +2413,19 @@ pub unsafe extern "C" fn ssbm_sim_launch_pad(handle: *mut Handle, velocity: V3, 
         h.net.log(Op::LaunchPad { velocity, gravity });
     }
 }
+/// Scales the horizontal speed of the fighter's current jump by `factor` (RoR2's Wax Quail:
+/// a sprinting jump carries further). 1 does nothing; ignored on the ground or for a
+/// non-finite / non-positive factor. Mirrors libpikmin's `boost_captain_jump`.
+///
+/// # Safety
+/// Unique live handle or null.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn ssbm_sim_boost_jump(handle: *mut Handle, factor: f32) {
+    if let Some(h) = unsafe { handle.as_mut() }.filter(|h| !h.poisoned) {
+        h.sim.boost_jump(factor);
+        h.net.log(Op::BoostJump(factor));
+    }
+}
 #[cfg(test)]
 mod tests {
     use super::*;

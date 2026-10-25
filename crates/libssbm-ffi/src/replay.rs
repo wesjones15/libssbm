@@ -39,6 +39,8 @@ pub(crate) enum Op {
     Sync { position: V3, grounded: u32 },
     /// The Super Scope given to (1) or taken from (0) the fighter, with its refill rate.
     Scope { on: u32, refill: f32 },
+    /// Wax Quail: scale the horizontal speed of the jump in progress.
+    BoostJump(f32),
 }
 
 #[derive(Default)]
@@ -222,6 +224,10 @@ fn encode(b: &mut Vec<u8>, op: Op) {
             u32w(b, on);
             f32w(b, refill);
         }
+        Op::BoostJump(f) => {
+            b.push(21);
+            f32w(b, f);
+        }
     }
 }
 
@@ -279,6 +285,7 @@ impl Reader<'_> {
             20 => Op::BonkRoll,
             18 => Op::Sync { position: self.v3()?, grounded: self.u32()? },
             19 => Op::Scope { on: self.u32()?, refill: self.f32()? },
+            21 => Op::BoostJump(self.f32()?),
             _ => return None,
         })
     }
@@ -384,6 +391,9 @@ pub unsafe extern "C" fn ssbm_sim_replay(
                 }
                 Op::Scope { on, refill } => {
                     ssbm_sim_scope(handle, on, refill);
+                }
+                Op::BoostJump(f) => {
+                    ssbm_sim_boost_jump(handle, f);
                 }
                 Op::Sync { position, grounded } => {
                     let h = &mut *handle;

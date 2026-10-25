@@ -626,6 +626,18 @@ impl Sim {
         self.launch(velocity);
         self.pad_gravity = Some(gravity);
     }
+    /// Host item (Wax Quail): scales the horizontal speed of the jump in progress by
+    /// `factor` (1 does nothing, above 1 carries further), as RoR2's sprint-jump item
+    /// boosts a jump. The vertical speed and the fighter's own jump feel are untouched.
+    /// Does nothing on the ground or for a non-finite / non-positive factor. Mirrors
+    /// libpikmin's `boost_captain_jump`.
+    pub fn boost_jump(&mut self, factor: f32) {
+        if !factor.is_finite() || factor <= 0.0 || self.grounded {
+            return;
+        }
+        self.velocity.x *= factor;
+        self.velocity.z *= factor;
+    }
     /// Host crowd-control interruption. Stored neutral charge survives.
     pub fn interrupt(&mut self) {
         self.morph_roll_hold = false;

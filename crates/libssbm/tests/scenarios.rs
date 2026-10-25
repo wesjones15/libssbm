@@ -194,3 +194,23 @@ fn crowd_control_interrupts_startup_and_pad_flight_preserves_momentum() {
     assert!((s.velocity.x - 8.).abs() < 1e-4);
     assert!((s.velocity.y - 3.8).abs() < 1e-3);
 }
+
+#[test]
+fn boost_jump_scales_horizontal_speed_airborne_only() {
+    let (mut s, _h, _p) = scene();
+    // On the ground the host item does nothing.
+    s.velocity = Vec3::new(10., 0., 4.);
+    s.grounded = true;
+    s.boost_jump(2.);
+    assert_eq!(s.velocity, Vec3::new(10., 0., 4.));
+    // Airborne: horizontal speed scales, the vertical speed is untouched.
+    s.grounded = false;
+    s.velocity = Vec3::new(10., 5., 4.);
+    s.boost_jump(2.);
+    assert_eq!(s.velocity, Vec3::new(20., 5., 8.));
+    // Non-finite and non-positive factors are ignored.
+    s.boost_jump(f32::NAN);
+    s.boost_jump(0.);
+    s.boost_jump(-1.);
+    assert_eq!(s.velocity, Vec3::new(20., 5., 8.));
+}
