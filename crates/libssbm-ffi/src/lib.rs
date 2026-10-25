@@ -2438,6 +2438,19 @@ pub unsafe extern "C" fn ssbm_sim_set_stomp(handle: *mut Handle, enabled: u32) {
         h.net.log(Op::SetStomp(enabled));
     }
 }
+/// Sets RoR2's attack-speed multiplier (1 is the source's rate); the fighter's current move
+/// plays that much faster, hitboxes and all. The host sets this each tick from the body's
+/// attack-speed stat.
+///
+/// # Safety
+/// Unique live handle or null.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn ssbm_sim_set_attack_speed(handle: *mut Handle, speed: f32) {
+    if let Some(h) = unsafe { handle.as_mut() }.filter(|h| !h.poisoned) {
+        h.sim.attack_speed = if speed.is_finite() { speed.clamp(0.1, 10.0) } else { 1.0 };
+        h.net.log(Op::SetAttackSpeed(speed));
+    }
+}
 #[cfg(test)]
 mod tests {
     use super::*;

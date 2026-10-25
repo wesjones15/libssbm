@@ -43,6 +43,8 @@ pub(crate) enum Op {
     BoostJump(f32),
     /// H3AD-5T v2: enable (1) / disable (0) the stomp.
     SetStomp(u32),
+    /// RoR2 attack speed: the move-playback multiplier.
+    SetAttackSpeed(f32),
 }
 
 #[derive(Default)]
@@ -57,6 +59,7 @@ pub(crate) struct NetLog {
     flags: Option<u32>,
     scope: Option<[u32; 2]>,
     stomp: Option<u32>,
+    attack: Option<u32>,
     steps: u32,
 }
 
@@ -92,6 +95,7 @@ impl NetLog {
                     self.flags = None;
                     self.scope = None;
                     self.stomp = None;
+                    self.attack = None;
                 }
             }
             Op::Facing(v) => {
@@ -138,6 +142,12 @@ impl NetLog {
                     return;
                 }
                 self.stomp = Some(on);
+            }
+            Op::SetAttackSpeed(speed) => {
+                if self.attack == Some(speed.to_bits()) {
+                    return;
+                }
+                self.attack = Some(speed.to_bits());
             }
             _ => {}
         }
@@ -242,6 +252,10 @@ fn encode(b: &mut Vec<u8>, op: Op) {
             b.push(22);
             u32w(b, on);
         }
+        Op::SetAttackSpeed(speed) => {
+            b.push(23);
+            f32w(b, speed);
+        }
     }
 }
 
@@ -301,6 +315,7 @@ impl Reader<'_> {
             19 => Op::Scope { on: self.u32()?, refill: self.f32()? },
             21 => Op::BoostJump(self.f32()?),
             22 => Op::SetStomp(self.u32()?),
+            23 => Op::SetAttackSpeed(self.f32()?),
             _ => return None,
         })
     }
@@ -412,6 +427,9 @@ pub unsafe extern "C" fn ssbm_sim_replay(
                 }
                 Op::SetStomp(on) => {
                     ssbm_sim_set_stomp(handle, on);
+                }
+                Op::SetAttackSpeed(speed) => {
+                    ssbm_sim_set_attack_speed(handle, speed);
                 }
                 Op::Sync { position, grounded } => {
                     let h = &mut *handle;

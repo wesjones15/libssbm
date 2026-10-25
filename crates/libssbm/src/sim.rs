@@ -304,6 +304,10 @@ pub struct Sim {
     /// Whether the host enables the stomp (the fighter carries H3AD-5T v2). Set each
     /// tick; the stomp is a host item adaptation, not a source move.
     pub stomp_enabled: bool,
+    /// RoR2 attack speed (host): scales the playback of the fighter's current move, so
+    /// attacks come out and recover faster. 1 is the source's rate. Does not touch
+    /// movement, jumps, smash charge or a held charge shot.
+    pub attack_speed: f32,
     /// Ticks left of a fluttering aerial jump (`Behavior::flutter`) and the gravity
     /// scale it applies.
     pub(crate) flutter: u32,
@@ -429,6 +433,7 @@ impl Sim {
             host_flags: 0,
             stomp: None,
             stomp_enabled: false,
+            attack_speed: 1.,
             flutter: 0,
             flutter_gravity: 1.,
             owns_gravity: false,
@@ -664,6 +669,18 @@ impl Sim {
         self.velocity = Vec3::new(0., -STOMP_SPEED, 0.);
         self.grounded = false;
         self.set_phase(Phase::Free);
+    }
+    /// The playback multiplier for the current move from RoR2's attack speed. 1 for
+    /// anything that is not an active move (gait, jump, fall, landing), or for a smash
+    /// charge and a held charge shot, whose clocks attack speed must not move.
+    fn attack_rate(&self) -> f32 {
+        if self.current_move.is_some()
+            && !matches!(self.phase, Phase::SmashCharge | Phase::ChargeShot)
+        {
+            self.attack_speed.clamp(0.1, 10.0)
+        } else {
+            1.0
+        }
     }
     /// Host crowd-control interruption. Stored neutral charge survives.
     pub fn interrupt(&mut self) {
@@ -1365,7 +1382,7 @@ impl Sim {
                 .motion
                 .definitions
                 .get(clip)
-                .and_then(|d| d.forward_delta(frame, rate))
+                .and_then(|d| d.forward_delta(frame, rate * self.attack_rate()))
             {
                 let velocity = self.facing * distance * self.options.speed_scale;
                 self.velocity.x = velocity.x;
@@ -1478,7 +1495,7 @@ impl Sim {
             && clip != self.motion.clip
             && clip.replace("Air", "") == self.motion.clip.replace("Air", "");
         let scope_frame = self.motion.frame;
-        self.motion.select(clip, rate * self.behavior.animation_rate(self));
+        self.motion.select(clip, rate * self.behavior.animation_rate(self) * self.attack_rate());
         if scope_transition {
             self.motion.frame = scope_frame;
             self.action.script_clip = clip;

@@ -244,3 +244,21 @@ fn stomp_is_disabled_without_the_item() {
     p.buttons = 0;
     assert!(s.stomp.is_none(), "no stomp when the host hasn't enabled it");
 }
+
+#[test]
+fn attack_speed_scales_the_move_playback_rate() {
+    let (mut s, mut h, mut p) = scene();
+    s.attack_speed = 2.0;
+    p.buttons = ATTACK;
+    frames(&mut s, &mut h, p, 1);
+    p.buttons = 0;
+    assert_eq!(s.current_move, Some(Move::Jab));
+    assert!((s.motion.rate - 2.0).abs() < 1e-3, "the jab plays at 2x: {}", s.motion.rate);
+
+    let (mut t, mut th, mut tp) = scene();
+    tp.buttons = ATTACK;
+    frames(&mut t, &mut th, tp, 1);
+    tp.buttons = 0;
+    assert_eq!(t.current_move, Some(Move::Jab));
+    assert!((t.motion.rate - 1.0).abs() < 1e-3, "the jab plays at the source rate by default");
+}
