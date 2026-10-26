@@ -1,143 +1,36 @@
-//! ISO/CISO/FST reader, following the existing libsms extraction format contract.
+//! Melee disc extraction over the shared ISO/CISO/FST reader.
 use crate::{
     Result,
     fighter::{FighterAssets, SAMUS},
 };
-use std::{
-    collections::BTreeMap,
-    fs::{self, File},
-    io::{Read, Seek, SeekFrom},
-    path::Path,
-};
+use std::{collections::BTreeMap, fs, path::Path};
 
+/// Melee's disc, read through the shared GameCube reader (`libcommon::disc`), which validates
+/// the image and file system table. This adds the accepted game and revision, the name-keyed
+/// file map the extractors use, and a read budget.
 pub struct Disc {
-    file: File,
-    len: u64,
-    block_size: u64,
-    slots: Vec<Option<u64>>,
+    image: libcommon::disc::Disc,
+    /// File path to `(offset, size)`.
     pub files: BTreeMap<String, (u64, usize)>,
-}
-fn be(v: &[u8], at: usize) -> Result<usize> {
-    Ok(u32::from_be_bytes(v.get(at..at + 4).ok_or("truncated FST")?.try_into()?) as usize)
 }
 impl Disc {
     pub fn open(path: &Path) -> Result<Self> {
-        let mut file = File::open(path)?;
-        let len = file.metadata()?.len();
-        let mut h = [0; 8];
-        file.read_exact(&mut h)?;
-        let mut disc = Self {
-            file,
-            len,
-            block_size: 0,
-            slots: vec![],
-            files: BTreeMap::new(),
-        };
-        if &h[..4] == b"CISO" {
-            disc.block_size = u32::from_le_bytes(h[4..8].try_into()?) as u64;
-            if !(0x800..=64 * 1024 * 1024).contains(&disc.block_size) {
-                return Err("invalid CISO block size".into());
-            }
-            let mut map = vec![0; 0x8000 - 8];
-            disc.file.read_exact(&mut map)?;
-            let mut stored = 0;
-            for present in map {
-                if present > 1 {
-                    return Err("invalid CISO block map".into());
-                }
-                disc.slots.push(if present == 1 {
-                    let n = stored;
-                    stored += 1;
-                    Some(n)
-                } else {
-                    None
-                });
-            }
-            if 0x8000 + stored * disc.block_size > len {
-                return Err("truncated CISO blocks".into());
-            }
-        }
-        let h = disc.read(0, 0x440)?;
-        if &h[..6] != b"GALE01" || h[7] != 2 || be(&h, 0x1c)? != 0xc2339f3d {
+        let image = libcommon::disc::Disc::open(path)?;
+        if image.game_id != "GALE01" || image.version != 2 {
             return Err("expected user's Melee GALE01 revision 2 ISO/GCM/CISO".into());
         }
-        let size = be(&h, 0x428)?;
-        if !(12..=16 * 1024 * 1024).contains(&size) {
-            return Err("invalid FST size".into());
-        }
-        let fst = disc.read(be(&h, 0x424)? as u64, size)?;
-        let count = be(&fst, 8)?;
-        if count == 0 || count > size / 12 {
-            return Err("invalid FST count".into());
-        }
-        let mut dirs = vec![(count, String::new())];
-        for i in 1..count {
-            while dirs.len() > 1 && i >= dirs.last().unwrap().0 {
-                dirs.pop();
-            }
-            let at = i * 12;
-            let name_at = count * 12 + (be(&fst, at)? & 0xffffff);
-            let s = fst.get(name_at..).ok_or("FST string outside table")?;
-            let n = s
-                .iter()
-                .position(|&b| b == 0)
-                .ok_or("FST string unterminated")?;
-            let name = std::str::from_utf8(&s[..n])?;
-            if name.is_empty() || name.contains(['/', '\\', ':']) || name == ".." || name == "." {
-                return Err("unsafe FST name".into());
-            }
-            let full = format!("{}{name}", dirs.last().unwrap().1);
-            if fst[at] == 1 {
-                let end = be(&fst, at + 8)?;
-                if end <= i || end > dirs.last().unwrap().0 {
-                    return Err("invalid FST directory extent".into());
-                }
-                dirs.push((end, format!("{full}/")));
-            } else if fst[at] == 0 {
-                if disc
-                    .files
-                    .insert(full, (be(&fst, at + 4)? as u64, be(&fst, at + 8)?))
-                    .is_some()
-                {
-                    return Err("duplicate FST name".into());
-                }
-            } else {
-                return Err("invalid FST entry kind".into());
-            }
-        }
-        Ok(disc)
+        let files = image
+            .files()
+            .iter()
+            .map(|f| (f.path.clone(), (f.offset, f.size as usize)))
+            .collect();
+        Ok(Self { image, files })
     }
-    pub fn read(&mut self, mut offset: u64, count: usize) -> Result<Vec<u8>> {
+    pub fn read(&mut self, offset: u64, count: usize) -> Result<Vec<u8>> {
         if count > 64 * 1024 * 1024 {
             return Err("disc read exceeds 64 MiB budget".into());
         }
-        let mut out = vec![0; count];
-        let mut done = 0;
-        while done < count {
-            let (physical, n) = if let Some(block) = offset.checked_div(self.block_size) {
-                let slot = *self
-                    .slots
-                    .get(block as usize)
-                    .ok_or("CISO read outside map")?;
-                let within = offset % self.block_size;
-                (
-                    slot.map(|s| 0x8000 + s * self.block_size + within),
-                    ((self.block_size - within) as usize).min(count - done),
-                )
-            } else {
-                (Some(offset), count - done)
-            };
-            if let Some(at) = physical {
-                if at.checked_add(n as u64).is_none_or(|end| end > self.len) {
-                    return Err("disc read outside file".into());
-                }
-                self.file.seek(SeekFrom::Start(at))?;
-                self.file.read_exact(&mut out[done..done + n])?;
-            }
-            done += n;
-            offset = offset.checked_add(n as u64).ok_or("disc offset overflow")?;
-        }
-        Ok(out)
+        Ok(self.image.read_range(offset, count)?)
     }
     pub fn file(&mut self, name: &str) -> Result<Vec<u8>> {
         let (offset, count) = self
