@@ -6,6 +6,7 @@ use crate::{
     model::{Model, local},
 };
 use glam::Mat4;
+use libcommon::anim::hermite_s;
 use std::{collections::BTreeMap, path::Path};
 #[derive(Clone, Debug)]
 pub struct Key {
@@ -263,14 +264,7 @@ impl Track {
         Some(match a.op {
             1 | 6 => a.value,
             2 => a.value + (b.value - a.value) * t,
-            _ => {
-                let t2 = t * t;
-                let t3 = t2 * t;
-                (2. * t3 - 3. * t2 + 1.) * a.value
-                    + (t3 - 2. * t2 + t) * dt * a.slope
-                    + (-2. * t3 + 3. * t2) * b.value
-                    + (t3 - t2) * dt * b.slope
-            }
+            _ => hermite_s(t, dt, a.value, a.slope, b.value, b.slope),
         })
     }
 }
@@ -783,4 +777,37 @@ mod tests {
         assert_eq!(t.sample(5.), Some(3.));
         assert!(keys(&[0x84, 255], 0, 0, 0.).is_err());
     }
+}
+
+#[cfg(test)]
+mod hermite_baseline {
+    use super::*;
+
+    /// Sampled bits over random keys of every op and times outside the range, pinned
+    /// before the curve moved to libcommon.
+    #[test]
+    fn track_samples_match_baseline() {
+        let mut s = 0x0F1E_2D3Cu32;
+        let mut next = || {
+            s = s.wrapping_mul(1664525).wrapping_add(1013904223);
+            (s >> 8) as f32 / (1u32 << 24) as f32
+        };
+        let mut hash = 0xcbf29ce484222325u64;
+        for op in [1u8, 2, 3, 4, 6] {
+            let keys = [0.0f32, 4.0, 9.0, 15.0, 22.0, 30.0]
+                .iter()
+                .map(|&time| Key { time, value: next() * 8. - 4., slope: next() * 2. - 1., op })
+                .collect();
+            let track = Track { joint: 0, channel: 0, keys };
+            for step in 0..100 {
+                let v = track.sample(-2.0 + step as f32 * 0.37).unwrap();
+                hash = (hash ^ v.to_bits() as u64).wrapping_mul(0x100000001b3);
+            }
+        }
+        println!("{hash:#x}");
+        assert_eq!(hash, BASELINE);
+    }
+
+    // Recorded from the curve before it moved to libcommon::anim.
+    const BASELINE: u64 = 0x6b31c7e2269d4d;
 }

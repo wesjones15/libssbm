@@ -10,6 +10,7 @@ publish = false
 
 [workspace.dependencies]
 glam = "0.30"
+libcommon = { path = "../libcommon" }
 libssbm = { path = "crates/libssbm" }
 libssbm-assets = { path = "crates/libssbm-assets" }
 

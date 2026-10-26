@@ -9,6 +9,7 @@
 //! Movement in Sunshine comes from the game code, so a host still owns root motion.
 use crate::{model::Model, Result};
 use glam::{EulerRot, Mat3, Mat4, Quat, Vec3};
+use libcommon::anim::hermite;
 use std::path::Path;
 
 fn be_u16(d: &[u8], o: usize) -> Option<usize> {
@@ -180,12 +181,7 @@ impl Track {
         if dt <= 0.0 {
             return a.1;
         }
-        let s = (t - a.0) / dt;
-        let (s2, s3) = (s * s, s * s * s);
-        (2.0 * s3 - 3.0 * s2 + 1.0) * a.1
-            + (s3 - 2.0 * s2 + s) * dt * a.3
-            + (-2.0 * s3 + 3.0 * s2) * b.1
-            + (s3 - s2) * dt * b.2
+        hermite(t, a.0, a.1, a.3, b.0, b.1, b.2)
     }
 }
 
@@ -445,3 +441,34 @@ pub fn ground(model: &Model, world: &mut [Mat4]) {
 }
 
 
+
+#[cfg(test)]
+mod hermite_baseline {
+    use super::*;
+
+    /// Sampled bits over random keys and times outside the range, pinned before the curve
+    /// moved to libcommon.
+    #[test]
+    fn track_samples_match_baseline() {
+        let mut s = 0x5A5A_1234u32;
+        let mut next = || {
+            s = s.wrapping_mul(1664525).wrapping_add(1013904223);
+            (s >> 8) as f32 / (1u32 << 24) as f32
+        };
+        let keys = [0.0f32, 4.0, 9.0, 15.0, 22.0, 30.0]
+            .iter()
+            .map(|&t| (t, next() * 8. - 4., next() * 2. - 1., next() * 2. - 1.))
+            .collect();
+        let track = Track { keys };
+        let mut hash = 0xcbf29ce484222325u64;
+        for step in 0..100 {
+            let v = track.sample(-2.0 + step as f32 * 0.37);
+            hash = (hash ^ v.to_bits() as u64).wrapping_mul(0x100000001b3);
+        }
+        println!("{hash:#x}");
+        assert_eq!(hash, BASELINE);
+    }
+
+    // Recorded from the curve before it moved to libcommon::anim.
+    const BASELINE: u64 = 0xc9ae9d3adf61b2a9;
+}
