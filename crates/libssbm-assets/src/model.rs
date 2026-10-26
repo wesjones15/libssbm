@@ -129,11 +129,19 @@ impl Model {
     ) -> Result<Self> {
         fighter.required()?;
         let file = fighter.costumes.get(costume).ok_or("invalid costume")?;
+        Self::load_costume(dir, file, fighter.data, costume, fighter.morph_visibility)
+    }
+
+    /// Load a costume and its scaling/visibility without registering a fighter simulation.
+    pub fn load_costume(
+        dir: &Path, file: &str, data: crate::fighter::Archive<'_>, costume: usize,
+        morph_visibility: Option<usize>,
+    ) -> Result<Self> {
         let bytes = std::fs::read(dir.join(file))?;
         let mut model = Self::parse(&Dat::parse(&bytes)?)?;
-        let bytes = std::fs::read(dir.join(fighter.data.file))?;
+        let bytes = std::fs::read(dir.join(data.file))?;
         let d = Dat::parse(&bytes)?;
-        let root = d.root(fighter.data.root)?;
+        let root = d.root(data.root)?;
         let desc = d.required_ptr(root + 8)?;
         // ftCo_DatAttrs.model_scaling (co + 0x8C) normalizes each fighter's raw
         // model to the shared in-game scale (Luigi/Link authored small, Samus and
@@ -145,7 +153,7 @@ impl Model {
         }
         model.scale(model_scaling);
         model.normal_visible = visibility(&d, desc, costume, model.normal_visible.len(), 0)?;
-        model.ball_visible = if let Some(choice) = fighter.morph_visibility {
+        model.ball_visible = if let Some(choice) = morph_visibility {
             visibility(&d, desc, costume, model.ball_visible.len(), choice)?
         } else {
             model.normal_visible.clone()
@@ -164,6 +172,15 @@ impl Model {
             return Err("fighter model has no triangles".into());
         }
         Ok(model)
+    }
+    /// Apply character-specific default model-part choices (ftParts_80074A4C).
+    /// `None` hides every alternative in a group, as the game's choice -1 does.
+    pub fn set_part_choices(&mut self, data: &Dat, root: &str, costume: usize,
+        choices: &[(usize, Option<usize>)]) -> Result<()> {
+        let desc = data.required_ptr(data.root(root)? + 8)?;
+        self.normal_visible = visibility_choices(data,desc,costume,self.normal_visible.len(),0,choices)?;
+        self.ball_visible = self.normal_visible.clone();
+        Ok(())
     }
     pub fn from_joint(d: &Dat, root: usize) -> Result<Self> {
         let mut joints = Vec::new();
@@ -408,6 +425,13 @@ fn visibility(
     count: usize,
     choice: usize,
 ) -> Result<Vec<bool>> {
+    visibility_choices(d,desc,costume,count,choice,&[])
+}
+
+fn visibility_choices(
+    d: &Dat, desc: usize, costume: usize, count: usize, choice: usize,
+    choices: &[(usize, Option<usize>)],
+) -> Result<Vec<bool>> {
     let mut visible = vec![true; count];
     let groups = d.u32(desc)? as usize;
     if groups > 11 {
@@ -422,6 +446,8 @@ fn visibility(
             continue;
         };
         for group in 0..groups {
+            let selected = choices.iter().find(|(g,_)| *g == group)
+                .map_or(Some(choice), |(_, c)| *c);
             let n = d.u32(lookup + group * 8)? as usize;
             if n > 64 {
                 return Err("invalid visibility alternatives".into());
@@ -437,7 +463,7 @@ fn visibility(
                     for &id in d.bytes(ids, n)? {
                         *visible
                             .get_mut(id as usize)
-                            .ok_or("visibility DObj outside model")? = mode == 0 && alt == choice;
+                            .ok_or("visibility DObj outside model")? = mode == 0 && Some(alt) == selected;
                     }
                 }
             }
