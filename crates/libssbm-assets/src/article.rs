@@ -57,7 +57,7 @@ impl Article {
         let bytes = std::fs::read(dir.join(fighter.data.file))?;
         let d = Dat::parse(&bytes)?;
         let table = d.required_ptr(d.root(fighter.data.root)? + 0x48)?;
-        Self::from_table(&d, table, kind, state, layout.special_words)
+        Self::from_table(&d, table, disc_slot(fighter, kind), state, layout.special_words)
     }
     /// An item of the common item archive (ItCo.dat; the Super Scope and its beam): the same article layout
     /// as a fighter's, in `itPublicData`'s table indexed by `ItemKind` (it/forward.h).
@@ -130,4 +130,15 @@ impl Article {
             commands,
         })
     }
+}
+
+/// The index of a host article kind in the disc's `ftData.x48_items`. Every fighter lists its articles in the
+/// order of `fighter.articles`, except Link, whose table runs Bomb, Boomerang, Hookshot, Arrow, Bow
+/// (`DAT_MATCH_FTITEM`, ft/types.h) while the host names his Arrow 0, Boomerang 1 and Bomb 2.
+fn disc_slot(fighter: &crate::fighter::FighterAssets<'_>, kind: u32) -> u32 {
+    const LINK: [u32; 3] = [3, 1, 0];
+    if fighter.data.file == crate::fighter::LINK.data.file {
+        return LINK.get(kind as usize).copied().unwrap_or(kind);
+    }
+    kind
 }
