@@ -189,6 +189,8 @@ Not reachable: angled tilts (`AttackS3Hi`, `AttackS3Lw` and their `...S` forms),
 article 3, with all six animations and its source RThumbNb attachment. Viewer
 proof: `build/link-bow.png`; API and source: [link-bow.md](link-bow.md).
 The ror2-samus adapter still needs to consume it; not yet played.
+The distorted bow limbs are corrected in the shared envelope skinning reader;
+`build/link-bow-hold-fixed.png` shows the airborne charge-hold close-up.
 
 RT Hero's Bow, B A attack, RB Boomerang, LB Spin Attack, LT Bomb (cooldowns 0.3 s, 0, 1 s, 3 s, 1 s).
 

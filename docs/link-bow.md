@@ -36,6 +36,23 @@ The labeled local capture shows draw frames 0/10/18, hold, release and air hold,
 using the actual bow geometry, animated skeleton, descriptor anchor, and hand
 mapping. Extracted content and the PNG remain ignored local artifacts.
 
+The shared model reader preserves `HSD_Joint.mtx` as the source envelope matrix
+(`jobj.c::JObjLoad`, `pobj.c::SetupEnvelopeModelMtx`). The bow's envelope bind
+differs from its descriptor SRT pose; reconstructing this matrix from SRT
+stretched the limbs into a long triangle. Blended vertices now use the authored
+matrix, while rigid palettes retain their separate source path. Model scaling
+also preserves these matrices. The regression checks source-weighted vertex
+positions in all six states, beyond checking finite bounds.
+
+Close-up of the reference state (normal airborne charge hold):
+
+```powershell
+cargo run --release -p ssbm-viewer --example link_bow -- assets build/link-bow-hold-fixed.png hold
+```
+
+`link_bow_probe` reports the source-vs-reconstructed matrix differences without
+rendering other candidate assets.
+
 ## ror2-samus handoff
 
 These are additive exports; ABI 5 and existing shared struct layouts are unchanged.

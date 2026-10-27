@@ -16,6 +16,9 @@ pub struct Joint {
     pub scale: Vec3,
     pub bind: Mat4,
     pub inverse: Mat4,
+    /// HSD_Joint.mtx, loaded as JObj.envelopemtx by JObjLoad. This can differ
+    /// from the inverse of the descriptor's SRT pose (notably Link's bow).
+    pub envelope: Option<Mat4>,
 }
 #[derive(Clone, Debug)]
 pub struct Vertex {
@@ -26,6 +29,8 @@ pub struct Vertex {
     /// material; the ghost and projectile models rely on it).
     pub color: [f32; 4],
     pub weights: Vec<(usize, f32)>,
+    /// Blended/envelope coordinates, rather than converted rigid bind space.
+    pub envelope: bool,
 }
 /// GX colour attribute formats (GXEnum.h GXColorFormat), not texture formats.
 /// RGB565, RGB888, RGB8, RGBA4, RGBA6, RGBA8.
@@ -200,6 +205,15 @@ impl Model {
             let r = vector(d, at + 0x14)?;
             let s = vector(d, at + 0x20)?;
             let bind = parent.map(|p| j[p].bind).unwrap_or(Mat4::IDENTITY) * local(t, r, s);
+            let envelope = d.ptr(at + 0x38)?.map(|matrix| {
+                let mut values = [0.; 16];
+                // Nintendo Mtx is row-major 3x4; glam is column-major 4x4.
+                for row in 0..3 {
+                    for col in 0..4 { values[col * 4 + row] = d.f32(matrix + (row * 4 + col) * 4)?; }
+                }
+                values[15] = 1.;
+                Ok::<_, Box<dyn std::error::Error + Send + Sync>>(Mat4::from_cols_array(&values))
+            }).transpose()?;
             if !bind.is_finite() || bind.determinant().abs() < 1e-10 {
                 return Err("singular joint transform".into());
             }
@@ -213,6 +227,7 @@ impl Model {
                 scale: s,
                 bind,
                 inverse: bind.inverse(),
+                envelope,
             });
             // HSD JOBJ_INSTANCE's child is a reference to another joint, not
             // an owned subtree. Traversing it here invents a cyclic hierarchy.
@@ -337,6 +352,10 @@ impl Model {
         }
         for joint in &mut self.joints {
             joint.translation *= factor;
+            if let Some(matrix) = &mut joint.envelope {
+                let scale = Mat4::from_scale(Vec3::splat(factor));
+                *matrix = scale * *matrix * scale.inverse();
+            }
         }
         // `from_joint` walks parents before children, so an index-ordered pass
         // rebuilds each bind from an already-rescaled parent.
@@ -356,6 +375,26 @@ impl Model {
         }
     }
     pub fn skin(&self, batch: usize, world: &[Mat4]) -> Vec<(Vec3, Vec3)> {
+        // displayfunc.c::_HSD_mkEnvelopeModelNodeMtx: envelope geometry may
+        // belong to a model node below the skeleton. A skeleton-root DObj
+        // (including Link's bow limbs) has no right-hand correction.
+        let owner = self.batches[batch].owner;
+        let mut skeleton = Some(owner);
+        while let Some(j) = skeleton {
+            if self.joints[j].flags & 3 != 0 { break; }
+            skeleton = self.joints[j].parent;
+        }
+        let right = if self.joints[owner].flags & 2 != 0 {
+            Mat4::IDENTITY
+        } else if let Some(j) = skeleton {
+            if j == owner {
+                self.joints[j].envelope.unwrap_or(self.joints[j].inverse).inverse()
+            } else if self.joints[j].flags & 2 != 0 {
+                world[j].inverse() * world[owner]
+            } else {
+                (world[j] * self.joints[j].envelope.unwrap_or(self.joints[j].inverse)).inverse() * world[owner]
+            }
+        } else { Mat4::IDENTITY };
         self.batches[batch]
             .vertices
             .iter()
@@ -363,7 +402,11 @@ impl Model {
                 let mut p = Vec3::ZERO;
                 let mut n = Vec3::ZERO;
                 for &(j, w) in &v.weights {
-                    let m = world[j] * self.joints[j].inverse;
+                    // pobj.c::SetupEnvelopeModelMtx uses the authored envelope
+                    // matrix for blended vertices, not a reconstructed inverse.
+                    let m = if v.envelope {
+                        world[j] * self.joints[j].envelope.unwrap_or(self.joints[j].inverse) * right
+                    } else { world[j] * self.joints[j].inverse };
                     p += m.transform_point3(v.position) * w;
                     n += m.inverse().transpose().transform_vector3(v.normal) * w;
                 }
@@ -833,9 +876,11 @@ fn polygon(
                 .get(matrix)
                 .ok_or("GX matrix outside palette")?
                 .clone();
-            if flags & 0x3000 == 0
-                || (weights.len() == 1 && d.u32(joints[owner].address + 4)? & 2 != 0)
-            {
+            // SetupEnvelopeModelMtx skips envelopemtx for a fully rigid palette
+            // under a skeleton root, but uses it for blended palettes there.
+            let envelope = flags & 0x3000 == 0x2000
+                && !(weights.len() == 1 && joints[owner].flags & 2 != 0);
+            if !envelope {
                 let m = joints[weights[0].0].bind;
                 pos = m.transform_point3(pos);
                 normal = m
@@ -850,6 +895,7 @@ fn polygon(
                 uv,
                 color,
                 weights,
+                envelope,
             });
         }
         let mut tri = |a: usize, b: usize, c: usize| {

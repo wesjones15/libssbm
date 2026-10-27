@@ -11,6 +11,12 @@ Viewer capture and headless/native checks exist; ror2-samus consumption and
 in-game playtesting remain pending. Source citations and integration contract:
 [Link bow handoff](link-bow.md).
 
+Bow skinning also uses the disc's authored `HSD_Joint.mtx` envelope matrices,
+as `pobj.c::SetupEnvelopeModelMtx` does. Reconstructed SRT inverses distorted
+the blended limbs. The shared reader now distinguishes blended envelope
+coordinates from rigid palettes and preserves authored envelopes when scaling.
+Regression tests compare source-weighted vertex positions across all six states.
+
 ## Current checkpoint: 0.2.20, 2026-10-19
 
 The shared melee plumbing is now fighter-parameterized, so a second fighter is a

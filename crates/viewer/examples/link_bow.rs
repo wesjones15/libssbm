@@ -33,10 +33,13 @@ async fn main() {
     let mut fighter = Presentation::load_for(dir, 0, &LINK).unwrap();
     let bones = held::common_bones(dir, &LINK).unwrap();
     let scale = held::model_scale(dir, &LINK).unwrap();
-    let samples = [("SpecialN", 0.), ("SpecialN", 10.), ("SpecialN", 18.),
-        ("SpecialNLoop", 8.), ("SpecialNEnd", 8.), ("SpecialAirNLoop", 8.)];
+    let closeup = args.get(2).is_some_and(|a| a == "hold");
+    let samples: Vec<_> = if closeup { vec![("SpecialAirNLoop", 8.)] } else {
+        vec![("SpecialN", 0.), ("SpecialN", 10.), ("SpecialN", 18.),
+        ("SpecialNLoop", 8.), ("SpecialNEnd", 8.), ("SpecialAirNLoop", 8.)]
+    };
     let mut views = Vec::new();
-    for (clip, frame) in samples {
+    for &(clip, frame) in &samples {
         let state = held::link_bow_state(clip, frame).unwrap();
         let mut bow = Presentation::article_for(dir, held::LINK_BOW, state, &LINK).unwrap();
         assert!(fighter.animations.clips.contains_key(clip), "missing fighter clip {clip}");
@@ -52,8 +55,8 @@ async fn main() {
     loop {
         clear_background(Color::from_rgba(35, 40, 55, 255));
         for (i, (bow, pose)) in views.iter().enumerate() {
-            set_camera(&Camera3D { position: vec3(37., 16., 30.), target: vec3(0., 9., 1.), up: Vec3::Y,
-                viewport: Some(((i%3) as i32*400, (1-i/3) as i32*380+60, 400, 380)), ..Default::default() });
+            set_camera(&Camera3D { position: if closeup { vec3(23., 12., 16.) } else { vec3(37., 16., 30.) }, target: vec3(0., 9., 1.), up: Vec3::Y,
+                viewport: Some(if closeup { (0,60,1200,760) } else { ((i%3) as i32*400, (1-i/3) as i32*380+60, 400, 380) }), ..Default::default() });
             fighter.world = pose.clone();
             fighter.clip = samples[i].0.into(); fighter.frame = samples[i].1;
             draw(&fighter, ::glam::Mat4::IDENTITY, &alpha, &additive);

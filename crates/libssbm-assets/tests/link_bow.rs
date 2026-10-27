@@ -29,6 +29,26 @@ fn link_bow_all_six_states_animate_at_the_authored_hand_anchor() -> Result<()> {
             let pose = fighter.animations.pose(&fighter.model, clip, frame, false);
             let hand = pose[bones[held::LINK_BOW_PART] as usize];
             bow.object_pose(frame);
+            // Independently follow pobj.c::SetupEnvelopeModelMtx for a blended
+            // vertex under the bow's skeleton root. The descriptor's SRT pose
+            // is not its skin bind pose; reconstructing an inverse stretches
+            // the bow into a long triangle while still yielding finite bounds.
+            let batch = &bow.model.batches[0];
+            let vertex_index = batch.vertices.iter().position(|v| v.weights.len() > 1).unwrap();
+            let vertex = &batch.vertices[vertex_index];
+            let mut expected = glam::Vec3::ZERO;
+            for &(joint, weight) in &vertex.weights {
+                let matrix = d.required_ptr(bow.model.joints[joint].address + 0x38)?;
+                let mut values = [0.; 16];
+                for row in 0..3 { for col in 0..4 {
+                    values[col*4+row] = d.f32(matrix + (row*4+col)*4)?;
+                } }
+                values[15] = 1.;
+                expected += (bow.world[joint] * glam::Mat4::from_cols_array(&values))
+                    .transform_point3(vertex.position) * weight;
+            }
+            let actual = bow.model.skin(0, &bow.world)[vertex_index].0;
+            assert!((actual-expected).length() < 1e-4, "state {state}, frame {frame}: authored envelope was ignored");
             raw_samples.push(bow.world.clone());
             bow.attach_to(frame, hand, scale)?;
             let anchor = bow.world[bow.attach_joint.unwrap()];
@@ -50,6 +70,20 @@ fn link_bow_all_six_states_animate_at_the_authored_hand_anchor() -> Result<()> {
         assert!(raw_samples.windows(2).any(|pair| pair[0].iter().zip(&pair[1]).any(|(a,b)| (*a-*b).to_cols_array().iter().any(|v| v.abs() > 1e-4))), "state {state}: frozen bow animation");
     }
     assert!(Presentation::article_for(&dir, held::LINK_BOW, 6, &LINK).is_err());
+    // Uniform model scaling must preserve source skinning, rather than
+    // replacing authored envelope matrices with reconstructed SRT inverses.
+    let mut a = libssbm_assets::article::Article::load_for(&dir, held::LINK_BOW, 1, &LINK)?;
+    let original_world = a.animations.pose_object(&a.model, 8.);
+    let original = a.model.skin(0, &original_world);
+    a.model.scale(1.22);
+    // Model::scale scales the skeleton's translations; use the correspondingly
+    // scaled original pose to isolate the skinning and inverse-matrix contract.
+    let s = glam::Mat4::from_scale(glam::Vec3::splat(1.22));
+    let world: Vec<_> = original_world.iter().map(|m| s * *m * s.inverse()).collect();
+    let scaled = a.model.skin(0, &world);
+    for ((p,_),(q,_)) in original.iter().zip(&scaled) {
+        assert!((*p*1.22-*q).length() < 1e-3, "scaling lost authored envelope bind");
+    }
     // Public projectile identities remain independent from the new held item.
     for kind in 0..3 { assert!(Presentation::article_for(&dir, kind, 0, &LINK)?.model.batches.len() > 0); }
     Ok(())
