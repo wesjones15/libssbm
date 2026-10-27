@@ -188,7 +188,8 @@ Not reachable: angled tilts (`AttackS3Hi`, `AttackS3Lw` and their `...S` forms),
 **Held bow, 2026-10-27:** libssbm now exposes the actual slot-4 bow model as
 article 3, with all six animations and its source RThumbNb attachment. Viewer
 proof: `build/link-bow.png`; API and source: [link-bow.md](link-bow.md).
-The ror2-samus adapter still needs to consume it; not yet played.
+The ror2-samus adapter now consumes it in play and generated skill portraits,
+using the shared held-item presenter; C# boundary checks pass. Not yet played.
 The distorted bow limbs are corrected in the shared envelope skinning reader;
 `build/link-bow-hold-fixed.png` shows the airborne charge-hold close-up.
 

@@ -1,7 +1,9 @@
 # Link's held bow (2026-10-27)
 
-Implemented in libssbm; ror2-samus still needs to call the new presentation API.
-No in-game playtest or C# deployment was performed for this increment.
+Implemented in libssbm and consumed by ror2-samus's Link runtime and generated
+skill portraits through the shared `MeleeHeldArticle` presenter in ror2-common.
+Native C# boundary checks cover all six states, charge/release and visibility.
+The mod DLL pair is staged for manual installation; no in-game playtest was performed.
 The full `cargo test --release` suite passed. The native release DLL is staged
 locally at `build/link-bow-native/ssbm.dll` with a SHA-256 sidecar.
 

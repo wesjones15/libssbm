@@ -7,8 +7,10 @@ All six ground/air draw/hold/release animations load. Shared held-item posing
 constrains its descriptor joint 1 to RThumbNb (common part 49, Link joint 64),
 using the fighter model scale. Additive native APIs select its current state
 and update its attached mesh, hiding after release frame 24 or interruption.
-Viewer capture and headless/native checks exist; ror2-samus consumption and
-in-game playtesting remain pending. Source citations and integration contract:
+Viewer capture and headless/native checks exist. ror2-samus now consumes it in
+LinkDriver and generated skill portraits through a shared held-item presenter;
+C# boundary checks cover the six states. In-game playtesting remains pending.
+Source citations and integration contract:
 [Link bow handoff](link-bow.md).
 
 Bow skinning also uses the disc's authored `HSD_Joint.mtx` envelope matrices,
