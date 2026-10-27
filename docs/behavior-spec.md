@@ -1,5 +1,16 @@
 # Samus / Melee behavior specification
 
+## Link held bow: 2026-10-27
+
+The bow item is available as public article 3, mapped to `PlLk.dat` item slot 4.
+All six ground/air draw/hold/release animations load. Shared held-item posing
+constrains its descriptor joint 1 to RThumbNb (common part 49, Link joint 64),
+using the fighter model scale. Additive native APIs select its current state
+and update its attached mesh, hiding after release frame 24 or interruption.
+Viewer capture and headless/native checks exist; ror2-samus consumption and
+in-game playtesting remain pending. Source citations and integration contract:
+[Link bow handoff](link-bow.md).
+
 ## Current checkpoint: 0.2.20, 2026-10-19
 
 The shared melee plumbing is now fighter-parameterized, so a second fighter is a

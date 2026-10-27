@@ -163,6 +163,7 @@ pub struct Handle {
     net: NetLog,
 }
 struct Rig {
+    model_scale: f32,
     grapple: Option<libssbm_assets::grapple::Tuning>,
     charge_flash: Vec<[f32; 4]>,
     model: libssbm_assets::model::Model,
@@ -193,19 +194,14 @@ impl Rig {
         let root = dat.root(fighter.data.root)?;
         let desc = dat.required_ptr(root + 8)?;
         let cycle = dat.ptr(root + 0x54)?;
-        let bytes = std::fs::read(dir.join(libssbm_assets::fighter::COMMON_DATA.file))?;
-        let common = libssbm_assets::dat::Dat::parse(&bytes)?;
-        let table = common.required_ptr(common.root(libssbm_assets::fighter::COMMON_DATA.root)? + 0x10)?;
-        // FighterPartsTable, loaded by Fighter_LoadCommonData; the profile's kind.
-        let parts = common.required_ptr(table + fighter.common_index * 4)?;
-        let mapping = common.required_ptr(parts + 4)?;
         Ok(Self {
+            model_scale: libssbm_assets::held::model_scale(dir, fighter)?,
             // Only fighters with a source grapple beam (Samus) carry this tuning.
             grapple: libssbm_assets::grapple::tuning(dir).ok(),
             charge_flash: libssbm_assets::params::color_cycle(dir, 53)?,
             model: libssbm_assets::model::Model::load_for(dir, 0, fighter)?,
             animations: libssbm_assets::animation::Animations::load_for(dir, fighter)?,
-            common_bones: common.bytes(mapping, 53)?.to_vec(),
+            common_bones: libssbm_assets::held::common_bones(dir, fighter)?,
             effect_bone: dat.bytes(desc + 0x12, 1)?[0] as usize,
             alternate_bone: dat.bytes(desc + 0x10, 1)?[0] as usize,
             cycle_bones: if let Some(at) = cycle {
@@ -261,6 +257,7 @@ pub struct HitboxSample {
     pub flags: u32,
 }
 pub struct View {
+    article_kind_state: Option<(u32, u32, u32)>,
     actor: Presentation,
     poisoned: bool,
     info: ModelInfo,
@@ -1552,6 +1549,7 @@ impl View {
     }
     fn new(actor: Presentation) -> Self {
         let mut v = Self {
+            article_kind_state: None,
             actor,
             poisoned: false,
             info: ModelInfo::default(),
@@ -1657,7 +1655,8 @@ pub unsafe extern "C" fn ssbm_view_new_choice(
     })
 }
 /// # Safety
-/// UTF-8 cache path and Samus article kind 0..3/state. Free with ssbm_view_free.
+/// UTF-8 cache path and fighter-specific article kind/state. Link: Arrow 0,
+/// Boomerang 1, Bomb 2, held Bow 3 (states 0..5). Free with ssbm_view_free.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn ssbm_article_new(
     dir: *const c_char,
@@ -1671,13 +1670,66 @@ pub unsafe extern "C" fn ssbm_article_new(
             Presentation::article_for(unsafe { path(dir) }?, article_kind, state, fighter)
         })();
         match result {
-            Ok(a) => Box::into_raw(Box::new(View::new(a))),
+            Ok(a) => {
+                let mut view = View::new(a);
+                view.article_kind_state = Some((fighter_kind, article_kind, state));
+                Box::into_raw(Box::new(view))
+            },
             Err(e) => {
                 error(e);
                 std::ptr::null_mut()
             }
         }
     })
+}
+/// Held bow motion descriptor: 0/1/2 ground draw/hold/release, 3/4/5 air.
+/// Returns -1 when absent (other fighter, idle, interrupted or release >= 24).
+/// # Safety
+/// Live fighter handle or null; no concurrent mutation.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn ssbm_sim_link_bow_state(handle: *const Handle) -> i32 {
+    let Some(h) = (unsafe { handle.as_ref() }) else { return -1 };
+    if h.poisoned || h.kind != libssbm_assets::fighter::FighterKind::Link {
+        return -1;
+    }
+    libssbm_assets::held::link_bow_state(h.sim.motion.clip, h.sim.motion.frame)
+        .map_or(-1, |s| s as i32)
+}
+
+/// Pose a fighter article at `frame`, constraining its authored anchor to a
+/// common FtPart. Output vertices are in fighter-local Melee coordinates;
+/// render with the same model transform as the fighter, with no extra hand offset.
+/// Uses the same mobile/aim pose as fighter hitboxes and bone queries.
+/// # Safety
+/// Unique live article view and live fighter handle, main thread only.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn ssbm_article_attach(
+    view: *mut View, handle: *const Handle, part: u32, frame: f32,
+) -> u32 {
+    let (Some(v), Some(h)) = (unsafe { view.as_mut() }, unsafe { handle.as_ref() }) else { return 0 };
+    if v.poisoned || h.poisoned || !frame.is_finite() || frame < 0. { return 0; }
+    guarded(0, || {
+        let Some(&joint) = h.rig.common_bones.get(part as usize) else { return 0 };
+        let pose = h.rig.pose_for_sim(&h.sim, h.sim.motion.clip, h.sim.motion.frame);
+        let Some(&hand) = pose.get(joint as usize) else { return 0 };
+        match v.actor.attach_to(frame, hand, h.rig.model_scale) {
+            Ok(()) => { v.refresh(); 1 }
+            Err(e) => { error(e); 0 }
+        }
+    })
+}
+
+/// Update the bow view selected by ssbm_sim_link_bow_state. Returns 0 when the
+/// bow should be hidden. Create each state with ssbm_article_new(dir, 5, 3, state).
+/// # Safety
+/// Unique live bow article view for the selected state; live fighter handle.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn ssbm_link_bow_update(view: *mut View, handle: *const Handle) -> u32 {
+    let state = unsafe { ssbm_sim_link_bow_state(handle) };
+    let Some(v) = (unsafe { view.as_ref() }) else { return 0 };
+    if state < 0 || v.article_kind_state != Some((5, libssbm_assets::held::LINK_BOW, state as u32)) { return 0; }
+    let frame = unsafe { (*handle).sim.motion.frame };
+    unsafe { ssbm_article_attach(view, handle, libssbm_assets::held::LINK_BOW_PART as u32, frame) }
 }
 /// # Safety
 /// NUL-terminated asset path, common model index or Samus model ID 2000..2002.
@@ -2946,6 +2998,68 @@ mod tests {
                 .map_err(|e| format!("Link article {kind}/{state}: {e}"))?;
             eprintln!("Link article {kind}: {} special words, {} commands", article.special.len(), article.commands.len());
         }
+        Ok(())
+    }
+    #[test]
+    fn link_bow_native_views_follow_states_hand_and_cleanup() -> libssbm_assets::Result<()> {
+        use libssbm_assets::held;
+        assert_eq!(unsafe { ssbm_sim_link_bow_state(std::ptr::null()) }, -1);
+        assert_eq!(unsafe { ssbm_link_bow_update(std::ptr::null_mut(), std::ptr::null()) }, 0);
+        let dir = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../assets");
+        if !libssbm_assets::fighter::LINK.complete(&dir) {
+            eprintln!("SKIP: Link disc cache absent"); return Ok(());
+        }
+        let c = CString::new(dir.to_str().unwrap())?;
+        let handle = unsafe { ssbm_sim_new_fighter(c.as_ptr(), V3::default(), 5) };
+        assert!(!handle.is_null());
+        assert_eq!(unsafe { ssbm_sim_link_bow_state(handle) }, -1);
+        let views: Vec<_> = (0..6).map(|s| unsafe { ssbm_article_new(c.as_ptr(), 5, held::LINK_BOW, s) }).collect();
+        assert!(views.iter().all(|v| !v.is_null()));
+        assert!(unsafe { ssbm_article_new(c.as_ptr(), 5, held::LINK_BOW, 6) }.is_null());
+        for (state, clip) in ["SpecialN", "SpecialNLoop", "SpecialNEnd", "SpecialAirN", "SpecialAirNLoop", "SpecialAirNEnd"].iter().enumerate() {
+            // Exercise all descriptor transitions and actual exported mesh buffers.
+            let h = unsafe { &mut *handle };
+            h.sim.motion.clip = clip;
+            h.sim.motion.frame = 8.;
+            assert_eq!(unsafe { ssbm_sim_link_bow_state(handle) }, state as i32);
+            assert_eq!(unsafe { ssbm_link_bow_update(views[state], handle) }, 1);
+            assert_eq!(unsafe { ssbm_link_bow_update(views[(state+1)%6], handle) }, 0);
+            let v = unsafe { &*views[state] };
+            assert!(v.info.vertex_count > 0);
+            assert!(v.positions.iter().all(|p| p.x.is_finite() && p.y.is_finite() && p.z.is_finite()));
+            let h = unsafe { &*handle };
+            let pose = h.rig.pose_for_sim(&h.sim, clip, 8.);
+            let hand = pose[h.rig.common_bones[held::LINK_BOW_PART] as usize];
+            assert!((v.actor.world[v.actor.attach_joint.unwrap()].w_axis - hand.w_axis).length() < 1e-3);
+        }
+        for (clip, frame) in [("SpecialNEnd", 24.), ("SpecialAirNEnd", 24.), ("DamageFlyHi", 0.), ("Wait", 0.)] {
+            let h = unsafe { &mut *handle };
+            h.sim.motion.clip = clip; h.sim.motion.frame = frame;
+            assert_eq!(unsafe { ssbm_sim_link_bow_state(handle) }, -1);
+            assert_eq!(unsafe { ssbm_link_bow_update(views[0], handle) }, 0);
+        }
+        assert_eq!(unsafe { ssbm_article_attach(views[0], handle, 999, 0.) }, 0);
+        assert_eq!(unsafe { ssbm_article_attach(views[0], handle, 49, f32::NAN) }, 0);
+        // Real charge/release clocks, rather than only manually selected clips.
+        let h = unsafe { &mut *handle };
+        h.sim.entry = None;
+        h.sim.grounded = true;
+        let mut host = libssbm::FlatHost::default();
+        for _ in 0..4 { h.sim.advance(&mut host, Input::idle(), 1./60.); }
+        let mut saw = [false; 3];
+        for tick in 0..220 {
+            let input = Input { buttons: if tick < 130 { libssbm::NEUTRAL_B } else { 0 }, ..Input::idle() };
+            unsafe { (*handle).sim.advance(&mut host, input, 1./60.); }
+            let state = unsafe { ssbm_sim_link_bow_state(handle) };
+            if state >= 0 {
+                saw[state as usize % 3] = true;
+                assert_eq!(unsafe { ssbm_link_bow_update(views[state as usize], handle) }, 1);
+            }
+        }
+        assert_eq!(saw, [true; 3]);
+        assert_eq!(unsafe { ssbm_sim_link_bow_state(handle) }, -1);
+        for view in views { unsafe { ssbm_view_free(view); } }
+        unsafe { ssbm_sim_free(handle); }
         Ok(())
     }
     #[test]

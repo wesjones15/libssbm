@@ -316,8 +316,7 @@ pub const CAPTAIN: FighterAssets<'static> = FighterAssets {
     clip_aliases: &[("Wait", "Wait1")],
     rigid_joints: &[],
 };
-/// Link's asset profile. His three spawned articles are the Hero's Bow arrow,
-/// the Boomerang and the Bomb (the bow itself is a held item, not an article).
+/// Link's asset profile. Public article kinds: Arrow, Boomerang, Bomb, held Bow.
 /// ftlink.c::ftLk_Init_CostumeStrings order: Nr, Re, Bu, Bk, Wh.
 pub const LINK: FighterAssets<'static> = FighterAssets {
     data: Archive {
@@ -342,13 +341,16 @@ pub const LINK: FighterAssets<'static> = FighterAssets {
         "audio/us/nr_name.ssm",
     ],
     sequences: "audio/us/smash2.sem",
-    // Item table (ftDataLink.x48_items): Link Arrow, Link Boomerang, Link Bomb.
+    // Public kinds; article::disc_slot maps to Bomb/Boomerang/Hookshot/Arrow/Bow.
     // State and special-word counts follow itCharItems.h (itLinkArrowAttributes
     // 12 words; itLinkBoomerangAttributes 25 words; itLinkBombAttributes 16).
     articles: &[
         ArticleLayout { states: 1, special_words: 12 },
         ArticleLayout { states: 2, special_words: 25 },
         ArticleLayout { states: 1, special_words: 16 },
+        // itlinkbow.c::it_803F6E98: six animated descriptors; terminal state 6
+        // has motion -1 and destroys the item, so it has no descriptor to load.
+        ArticleLayout { states: 6, special_words: 0 },
     ],
     common_index: 6, // Ft_Kind_Link (ft/forward.h)
     morph_visibility: None,

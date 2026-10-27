@@ -29,6 +29,8 @@ impl Item {
     }
 }
 pub struct Article {
+    /// ItemModelDesc.x8_bone_attach_id (it/types.h), constrained to the holder.
+    pub attach_joint: usize,
     pub model: Model,
     pub animations: Animations,
     pub common: Vec<f32>,
@@ -122,6 +124,7 @@ impl Article {
             vec![]
         };
         Ok(Self {
+            attach_joint: d.u32(desc + 8)? as usize,
             model,
             animations,
             common,
@@ -134,9 +137,9 @@ impl Article {
 
 /// The index of a host article kind in the disc's `ftData.x48_items`. Every fighter lists its articles in the
 /// order of `fighter.articles`, except Link, whose table runs Bomb, Boomerang, Hookshot, Arrow, Bow
-/// (`DAT_MATCH_FTITEM`, ft/types.h) while the host names his Arrow 0, Boomerang 1 and Bomb 2.
+/// (`DAT_MATCH_FTITEM`, ft/types.h) while the host names his Arrow 0, Boomerang 1, Bomb 2, Bow 3.
 fn disc_slot(fighter: &crate::fighter::FighterAssets<'_>, kind: u32) -> u32 {
-    const LINK: [u32; 3] = [3, 1, 0];
+    const LINK: [u32; 4] = [3, 1, 0, 4];
     if fighter.data.file == crate::fighter::LINK.data.file {
         return LINK.get(kind as usize).copied().unwrap_or(kind);
     }

@@ -3,6 +3,8 @@ use glam::Mat4;
 use libssbm::{Move, Sim};
 use std::path::Path;
 pub struct Presentation {
+    /// Item descriptor joint constrained to its holder; absent for other views.
+    pub attach_joint: Option<usize>,
     pub model: Model,
     pub animations: Animations,
     pub clip: String,
@@ -41,6 +43,7 @@ impl Presentation {
         )?;
         let world = model.bind_world();
         Ok(Self {
+            attach_joint: None,
             model,
             world,
             animations: Animations {
@@ -86,6 +89,7 @@ impl Presentation {
         let duration = animations.clips.get("Object").map(|c| c.frames).unwrap_or(0.);
         let world = model.bind_world();
         Ok(Self {
+            attach_joint: None,
             model,
             animations,
             clip: "Object".into(),
@@ -142,6 +146,7 @@ impl Presentation {
             .clone();
         let world = model.model.bind_world();
         Ok(Self {
+            attach_joint: None,
             model: model.model,
             animations: model.animations,
             clip: "Object".into(),
@@ -180,12 +185,13 @@ impl Presentation {
             .get("Object")
             .map(|c| c.frames)
             .unwrap_or(0.);
-        let object_scale = if kind == 1 && state > 0 {
+        let object_scale = if fighter.common_index == 13 && kind == 1 && state > 0 {
             a.special[6] + (a.special[7] - a.special[6]) * (state - 1) as f32 / 7.
         } else {
             1.
         };
         Ok(Self {
+            attach_joint: Some(a.attach_joint),
             model: a.model,
             animations: a.animations,
             clip: "Object".into(),
@@ -213,6 +219,7 @@ impl Presentation {
         let world = a.model.bind_world();
         let duration = a.animations.clips.get("Object").map(|c| c.frames).unwrap_or(0.);
         Ok(Self {
+            attach_joint: None,
             model: a.model,
             animations: a.animations,
             clip: "Object".into(),
@@ -244,6 +251,22 @@ impl Presentation {
             }
         }
     }
+    /// Pose an item and constrain its descriptor anchor to a holder matrix.
+    /// The matrix uses this view's units/axes; the adapter converts afterward.
+    pub fn attach_to(&mut self, frame: f32, hand: Mat4, model_scale: f32) -> crate::Result<()> {
+        if !frame.is_finite() || frame < 0. || !hand.is_finite() || !model_scale.is_finite() || model_scale <= 0. {
+            return Err("invalid article attachment pose".into());
+        }
+        self.object_pose(frame);
+        let anchor = *self.world.get(self.attach_joint.ok_or("view is not an article")?)
+            .ok_or("article attachment joint outside model")?;
+        if !anchor.is_finite() || anchor.determinant().abs() < 1e-10 {
+            return Err("singular article attachment joint".into());
+        }
+        let transform = crate::held::attachment_transform(anchor, hand, model_scale);
+        for joint in &mut self.world { *joint = transform * *joint; }
+        Ok(())
+    }
     pub fn face_camera(&mut self, camera: glam::Vec3) {
         self.model.face_camera(&mut self.world, camera);
     }
@@ -265,6 +288,7 @@ impl Presentation {
         }
         let world = model.bind_world();
         Ok(Self {
+            attach_joint: None,
             model,
             animations: Animations::load_for(dir, fighter)?,
             clip: String::new(),

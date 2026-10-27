@@ -66,6 +66,7 @@ pub fn part(dir: &Path, part: u32) -> Result<Presentation> {
     }
     let world = model.bind_world();
     Ok(Presentation {
+        attach_joint: None,
         model,
         animations,
         clip: "Object".into(),
