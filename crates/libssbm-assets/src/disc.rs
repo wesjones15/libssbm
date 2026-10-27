@@ -110,6 +110,25 @@ fn guard_output(out: &Path) -> Result<()> {
             return Err("asset output ancestor is a symlink".into());
         }
     }
+    // Do not extract disc data into source folders, including submodule/worktree
+    // checkouts whose .git is a file. Read cache rules in-process: no Git executable
+    // is available on a player's machine. Only rooted directory rules are caches.
+    let mut normalized = std::path::PathBuf::new();
+    for part in absolute.components() {
+        match part {
+            std::path::Component::CurDir => {},
+            std::path::Component::ParentDir => { normalized.pop(); },
+            _ => normalized.push(part.as_os_str()),
+        }
+    }
+    if let Some(repo) = normalized.ancestors().find(|p| p.join(".git").exists()) {
+        let relative = normalized.strip_prefix(repo)?.to_string_lossy().replace('\\', "/");
+        let rules = fs::read_to_string(repo.join(".gitignore")).unwrap_or_default();
+        let cached = rules.lines().filter_map(|rule| rule.trim().strip_prefix('/')?.strip_suffix('/'))
+            .filter(|rule| !rule.contains(['*', '?', '!']))
+            .any(|rule| relative == rule || relative.starts_with(&format!("{rule}/")));
+        if !cached { return Err("asset output must be an ignored cache directory, not a source folder".into()); }
+    }
     Ok(())
 }
 
