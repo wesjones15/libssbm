@@ -103,6 +103,40 @@ pub fn extract_items(disc_path: &Path, out: &Path) -> Result<()> {
     Ok(())
 }
 
+/// The Ice Climbers' models (Popo `ftpopo.c`: Nr, Gr, Or, Re; Nana `ftnana.c`: Nr, Ye, Aq, Wh), Pikachu's default
+/// costume and the common parts table, for hosts that draw them without playing the fighters (no animations,
+/// sounds or articles). Optional: a roster fighter's asset set is complete without them.
+pub const ICE_CLIMBER_ASSETS: [&str; 13] = [
+    "PlCo.dat", "PlPk.dat", "PlPkNr.dat", "PlPp.dat", "PlPpNr.dat", "PlPpGr.dat", "PlPpOr.dat", "PlPpRe.dat",
+    "PlNn.dat", "PlNnNr.dat", "PlNnYe.dat", "PlNnAq.dat", "PlNnWh.dat",
+];
+
+/// Whether the Ice Climbers' models have been extracted into `dir`.
+pub fn ice_climbers_present(dir: &Path) -> bool {
+    ICE_CLIMBER_ASSETS.iter().all(|name| {
+        fs::read(dir.join(name)).ok().is_some_and(|bytes| crate::dat::Dat::parse(&bytes).is_ok())
+    })
+}
+
+/// Extracts [`ICE_CLIMBER_ASSETS`] from the player's disc into the git-ignored `out`, leaving everything else as it is.
+pub fn extract_ice_climbers(disc_path: &Path, out: &Path) -> Result<()> {
+    guard_output(out)?;
+    let mut disc = Disc::open(disc_path)?;
+    let mut blobs = Vec::new();
+    for name in ICE_CLIMBER_ASSETS {
+        let bytes = disc.file(name)?;
+        crate::dat::Dat::parse(&bytes)?;
+        blobs.push((name, bytes));
+    }
+    fs::create_dir_all(out)?;
+    for (name, bytes) in blobs {
+        let target = out.join(name);
+        guard_output(&target)?;
+        fs::write(target, bytes)?;
+    }
+    Ok(())
+}
+
 fn guard_output(out: &Path) -> Result<()> {
     let absolute = std::path::absolute(out)?;
     for ancestor in absolute.ancestors() {
