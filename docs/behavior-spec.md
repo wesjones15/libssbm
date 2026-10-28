@@ -686,9 +686,11 @@ The host draws Yoshi's tongue from Pikachu's forward snout joint 16, catches up 
 six enemies with the shared Yoshi capture/egg code (a HealthComponent lookup, so
 slimes and bodies without a HurtBox are edible too), and lays Yoshi's egg model
 behind Pikachu's aim (5 s / 7 s / 10 s breakout). Egg Lay sounds come from Yoshi's extracted
-bank (`0xDD` swallow, `0x4460C` lay, `0x44618` break) through the modular
+bank (`0x445D3` tongue, `0xDD` swallow, `0x4460C` lay, `0x44618` break) through the modular
 `ssbm_sim_play_sound_from`; Egg Lay has no Yoshi voice, and no other Yoshi voice is
-played. Its 3 s cooldown is spent only when the tongue catches something. Effect
+played. The tongue cue is Yoshi's grab sound (`PlYs.dat` Catch frame 17 / CatchDash
+frame 10): the staged `SpecialN` script has no sound of its own, so the shared lash
+plays it for every Egg Lay user. Its 3 s cooldown is spent only when the tongue catches something. Effect
 models resolve through `MeleeFighterView.EffectAny`, so the borrowed egg/shell
 cues can come from any extracted fighter bank.
 
@@ -824,7 +826,11 @@ victims reel in together; a single host lay queue then plays `SpecialN2` once pe
 victim (swallow cue, egg model and lay cue each) rather than laying them at once, and
 fans the eggs behind Yoshi. Each egg holds for 5 s, 7 s for a large enemy and 10 s for
 a boss; a breakout puts the victim back on clear terrain instead of under the floor.
-These are host adaptations; the sim's `SpecialN` timing is unchanged. Viewer captures
+The lash also plays the source grab's tongue cue (`0x445D3`, `PlYs.dat` Catch frame
+17), which the staged `SpecialN` script lacks; it goes through the owner's `IEggLayer`,
+so Pikachu's borrowed Egg Lay and the shared service's users play it too (the latter
+from a sound-only Yoshi sim, because they own no fighter sim). These are host
+adaptations; the sim's `SpecialN` timing is unchanged. Viewer captures
 of 45/0/-45 degree aim across four `SpecialN1` frames
 (`crates/viewer/examples/yoshi_tongue.rs`) plus the shared camera/sweep,
 damage-permission and real-disc pose tests pass; RoR2 play is unverified.
