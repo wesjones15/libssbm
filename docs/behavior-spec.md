@@ -550,7 +550,11 @@ safe point. The native rebirth module uses PlCo x500 KO delay (60 frames), x5D0
 minimum return (60), rebirth_wait (240), x5D8 post-release protection (120), and
 x4F4 KO scale. Source references: ft_0D31::spawnDeadEffect/DeadDown, ft_0D4D's
 Rebirth/RebirthWait callbacks, ftColl_8007B7A4. Downward effect 0x42B loads common
-model 25; sound 0x61 plays once. The source P1 konst/tev0 palette comes from PlCo
+model 25; sound 0x61 plays once. Its cue origin is the point the fighter returns to,
+not the point it left the stage: a host stage has no blast line to mark, and the
+source origin hung the stage-high beam above the returning fighter's head instead of
+playing it on the character as the death presentation does. The source P1 konst/tev0
+palette comes from PlCo
 x48/x4C; its colour interpolation is baked without changing texture alpha.
 The fighter is hidden during KO, then returns on its source trophy platform.
 After minimum arrival, movement releases the figurine early; otherwise the
@@ -568,6 +572,9 @@ checks cover 30/60/144 Hz, visibility, sounds/cues, early/timeout release, flash
 protection expiry, repeated falls and external placement cleanup. Common checks
 cover threshold ownership and buff balancing. Viewer captures show the source KO
 model, waiting figurine and released fighter; Unity playtest remains pending.
+Host effects are always drawn at their world position: earlier falloff builds pinned
+them in front of the camera, which read as a screen-sized effect that started above
+the fighter's head.
 
 ## Five-skill host controls and defense
 

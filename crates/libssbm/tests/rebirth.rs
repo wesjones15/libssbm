@@ -45,7 +45,9 @@ fn common_rebirth_sequence_is_fixed_rate_and_has_one_ko_and_transform() {
             for cue in &sim.action.effects {
                 if cue.id == 0x42b {
                     ko += 1;
-                    assert_eq!(cue.origin, Vec3::new(10., -200., 0.));
+                    // The RoR2 adaptation plays the KO flash where the fighter returns, not at the
+                    // point it left the stage.
+                    assert_eq!(cue.origin, destination);
                 }
                 if cue.id == 0x43e {
                     entry += 1;

@@ -136,7 +136,11 @@ impl Sim {
                         param: state.params.ko_scale,
                         clip: "Wait",
                         frame: 0.,
-                        origin: self.position,
+                        // RoR2 adaptation: Melee marks the blast line the fighter crossed, which a
+                        // host stage has no analogue for. Play the flash at the point the fighter
+                        // returns to instead, at its feet: the source KO belongs on the character
+                        // (as the death presentation plays it), not hanging where the fall began.
+                        origin: state.destination,
                         facing: self.facing,
                     });
                 }
