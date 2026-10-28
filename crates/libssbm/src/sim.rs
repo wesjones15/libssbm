@@ -480,6 +480,20 @@ impl Sim {
                 .current_move
                 .is_some_and(|m| self.behavior.mobile_moves() & (1u64 << m as u32) != 0)
     }
+    /// One policy for both movement speed and lower-body Run animation.
+    pub fn sprint_locomotion(&self, input: Input) -> bool {
+        input.buttons & SPRINT != 0 && (!self.mobile_action()
+            || self.current_move.is_some_and(|m| self.behavior.mobile_sprint(m)))
+    }
+    /// Shared camera-elevation bend for +Z-forward neutral-special rigs (Link's
+    /// bow and Yoshi's tongue), plus the Super Scope. The source clips and
+    /// lower-body gait remain intact; projectiles retain the full camera aim.
+    pub fn upper_body_pitch(&self) -> Option<f32> {
+        self.scope_upper_pitch().or_else(|| self.neutral_special_upper_pitch())
+    }
+    pub fn neutral_special_upper_pitch(&self) -> Option<f32> {
+        (self.current_move == Some(Move::SpecialN)).then(|| aim_pitch(self.move_aim))
+    }
     /// Side-B (and its Super Missile) is always drawn as an upper-body layer over the
     /// gait/idle legs, grounded or airborne, moving or still. The disc clips fire toward
     /// the fighter's local +X and bake that turn into the pelvis and feet (about -68 degrees
@@ -1275,7 +1289,7 @@ impl Sim {
                 1.
             };
             let (speed, friction) = if self.grounded {
-                if input.buttons & SPRINT != 0 && !self.mobile_action() {
+                if self.sprint_locomotion(input) {
                     (self.params.run_speed, self.params.friction)
                 } else {
                     (self.params.walk_speed, self.params.friction)
@@ -1292,7 +1306,7 @@ impl Sim {
             let step = if movable && target.length_squared() > 0.001 {
                 // The source scales the stick component, then adds base accel.
                 let (mul, base) = if self.grounded {
-                    if input.buttons & SPRINT != 0 && !self.mobile_action() {
+                    if self.sprint_locomotion(input) {
                         (self.params.dash_accel, self.params.dash_base)
                     } else {
                         (self.params.walk_accel, self.params.walk_base)

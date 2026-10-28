@@ -575,13 +575,19 @@ pub fn mobile_pose_over(
         upper_root,
         overlay,
     );
+    if let Some(root) = upper_root
+        && sim.current_move.is_some_and(|m| sim.behavior.preserve_upper_orientation(m))
+    {
+        // Link's bow clip authors much of its facing in HipN. Copying only
+        // torso locals onto Run's pelvis otherwise points the bow at the floor.
+        let action = animations.pose_over(model, sim.motion.clip, action_frame,
+            sim.motion.looping(), overlay);
+        preserve_upper_orientation(model, &mut pose, &action, root);
+    }
     if let (Some(root), Some((_, yaw))) = (upper_root, sim.side_special_upper_aim()) {
         aim_upper_body(model, &mut pose, root, yaw);
     }
-    if let (Some(root), Some(pitch)) = (upper_root, sim.scope_upper_pitch()) {
-        pitch_upper_body(model, &mut pose, root, pitch);
-    }
-    if let (Some(root), Some(pitch)) = (upper_root, sim.tongue_upper_pitch()) {
+    if let (Some(root), Some(pitch)) = (upper_root, sim.upper_body_pitch()) {
         pitch_upper_body(model, &mut pose, root, pitch);
     }
     pose
@@ -596,6 +602,15 @@ pub fn aim_upper_body(model: &Model, pose: &mut [Mat4], root: usize, yaw: f32) {
 pub fn pitch_upper_body(model: &Model, pose: &mut [Mat4], root: usize, pitch: f32) {
     if !pitch.is_finite() { return; }
     rotate_upper_body(model, pose, root, Mat4::from_rotation_x(-pitch));
+}
+/// Retain the action's world orientation, anchored at the gait torso pivot.
+/// Rotate the subtree rigidly: it preserves limb geometry and leaves hips/legs
+/// untouched, including when an authored pelvis carries the action's aiming turn.
+pub fn preserve_upper_orientation(model: &Model, pose: &mut [Mat4], action: &[Mat4], root: usize) {
+    if root >= pose.len() || root >= action.len() { return; }
+    let (_, from, _) = pose[root].to_scale_rotation_translation();
+    let (_, to, _) = action[root].to_scale_rotation_translation();
+    rotate_upper_body(model, pose, root, Mat4::from_quat(to * from.conjugate()));
 }
 fn rotate_upper_body(model: &Model, pose: &mut [Mat4], root: usize, rotation: Mat4) {
     if root >= model.joints.len()

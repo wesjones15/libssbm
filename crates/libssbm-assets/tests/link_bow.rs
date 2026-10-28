@@ -3,6 +3,57 @@
 use libssbm_assets::{fighter::LINK, held, presentation::Presentation, Result};
 
 #[test]
+fn running_bow_keeps_gait_legs_and_pitches_the_attached_hand() -> Result<()> {
+    use glam::Vec3;
+    use libssbm::{FlatHost, Input, Sim, NEUTRAL_B, SPRINT};
+    use libssbm_assets::presentation::mobile_pose;
+    let dir = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../assets");
+    if !LINK.complete(&dir) { eprintln!("SKIP: Link disc cache absent"); return Ok(()); }
+    let fighter = Presentation::load_for(&dir, 0, &LINK)?;
+    let mut sim = Sim::with_behavior(libssbm_assets::params::load_common(&dir, &LINK)?,
+        Box::new(libssbm::link::Link::new(libssbm_assets::params::load_link_specials(&dir)?)), Vec3::ZERO);
+    sim.motion.definitions = fighter.animations.motion_definitions();
+    sim.action.definitions = libssbm_assets::action::load_for(&dir, &fighter.animations, &LINK)?;
+    for (name, action) in &sim.action.definitions {
+        if let Some(motion) = sim.motion.definitions.get_mut(name) { motion.looping |= action.looping; }
+    }
+    let mut host = FlatHost::default();
+    sim.grounded = true; sim.facing = Vec3::Z;
+    let pad = Input { buttons: NEUTRAL_B|SPRINT, movement: Vec3::Z, aim: Vec3::Z, ..Input::idle() };
+    for _ in 0..100 { sim.advance(&mut host, pad, 1./60.); }
+    assert_eq!(sim.motion.clip, "SpecialNLoop");
+    assert_eq!(sim.locomotion.clip, "Run");
+    let bones = held::common_bones(&dir, &LINK)?;
+    let upper = LINK.upper_body_root;
+    let hand = bones[held::LINK_BOW_PART] as usize;
+    let mut bow = Presentation::article_for(&dir, held::LINK_BOW, 1, &LINK)?;
+    for degrees in [-45f32, 0., 45.] {
+        let pitch = degrees.to_radians();
+        sim.advance(&mut host, Input { aim: Vec3::new(0., pitch.sin(), pitch.cos()), ..pad }, 1./60.);
+        let frame = sim.motion.frame;
+        let gait_frame = sim.locomotion.render_frame(sim.alpha());
+        let mut level = libssbm_assets::presentation::mobile_pose_layers(&fighter.model, &fighter.animations,
+            sim.motion.clip, frame, sim.motion.looping(), sim.locomotion.clip, gait_frame,
+            sim.locomotion.looping(), sim.gait_layer_weight(), upper);
+        let raw = fighter.animations.pose(&fighter.model,sim.motion.clip,frame,sim.motion.looping());
+        libssbm_assets::presentation::preserve_upper_orientation(&fighter.model,&mut level,&raw,upper.unwrap());
+        let gait = fighter.animations.pose(&fighter.model, "Run", gait_frame, sim.locomotion.looping());
+        let pose = mobile_pose(&fighter.model, &fighter.animations, &sim, frame, upper);
+        for part in [4, 10, 15] { // HipN, LFootJ, RFootJ: camera pitch must leave gait alone.
+            let joint = bones[part] as usize;
+            assert!((pose[joint]-gait[joint]).to_cols_array().iter().all(|v| v.abs()<1e-3));
+            assert!((pose[joint]-level[joint]).to_cols_array().iter().all(|v| v.abs()<1e-3));
+        }
+        let delta = pose[hand].w_axis.y-level[hand].w_axis.y;
+        if degrees>0. { assert!(delta>0.5,"up aim did not lift bow hand"); }
+        if degrees<0. { assert!(delta< -0.5,"down aim did not lower bow hand"); }
+        bow.attach_to(frame, pose[hand], held::model_scale(&dir, &LINK)?)?;
+        assert!((bow.world[bow.attach_joint.unwrap()].w_axis-pose[hand].w_axis).length()<1e-3);
+    }
+    Ok(())
+}
+
+#[test]
 fn link_bow_all_six_states_animate_at_the_authored_hand_anchor() -> Result<()> {
     let dir = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../assets");
     if !LINK.complete(&dir) { eprintln!("SKIP: Link disc cache absent"); return Ok(()); }

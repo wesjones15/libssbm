@@ -55,6 +55,30 @@ cargo run --release -p ssbm-viewer --example link_bow -- assets build/link-bow-h
 `link_bow_probe` reports the source-vs-reconstructed matrix differences without
 rendering other candidate assets.
 
+## Moving charge and camera aim
+
+Link's bow uses the shared gait/upper-body split with torso root 17. Horizontal
+velocity is no longer cleared every charge tick. Its mobile action opts into
+the shared run-speed/Run-animation policy when sprint is held; other fighters'
+sprint-to-store behavior is unchanged. Walk/run tuning and arrow tuning still
+come from the same disc attributes.
+
+The shared splice can retain an action's upper-rig orientation while anchoring
+it to the gait pelvis. Link opts in because his bow clip authors part of its
+facing in HipN; taking the torso locals alone tilted the bow toward the floor
+on Run legs. Shared camera pitch is then applied above the torso, leaving the
+hips and legs untouched. The held bow and arrow-release bone use this same pose.
+The host's existing camera-ray/crosshair convergence still aims the arrow.
+
+```powershell
+cargo run --release -p ssbm-viewer --example link_bow_mobile -- assets build/link-bow-mobile.png
+```
+
+This labeled proof shows running ticks 90/100 at -45/0/+45 degrees. Headless
+tests check full walk/run speed, retained charge, one aimed arrow, unchanged
+gait legs and attached hand alignment. The C# native boundary checks also cover
+running charge, torso pitch and live-aim release at 30/60/144 Hz. Not yet played.
+
 ## ror2-samus handoff
 
 These are additive exports; ABI 5 and existing shared struct layouts are unchanged.

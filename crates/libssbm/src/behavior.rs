@@ -31,6 +31,12 @@ pub trait Behavior: Send {
     fn slot(&self, m: Move) -> u32;
     /// Moves that may steer while grounded with the upper/lower split.
     fn mobile_moves(&self) -> u64;
+    /// Host adaptation: a mobile action may opt into run speed/Run legs.
+    /// Charge moves that use sprint to store/cancel retain the default.
+    fn mobile_sprint(&self, _m: Move) -> bool { false }
+    /// Keep an aimed action's upper rig orientation when grafting it onto a
+    /// gait pelvis that turns/leans differently. Position still follows gait.
+    fn preserve_upper_orientation(&self, _m: Move) -> bool { false }
     /// Root joint of the upper-body subtree for the mobile split. `None` means
     /// the fighter has no split and mobile moves stay whole-body. This is the
     /// per-character "top half of B, bottom half of walk" seam.

@@ -98,6 +98,35 @@ fn bow_held_fires_one_full_charge_arrow() -> Result<()> {
 }
 
 #[test]
+fn bow_can_walk_or_run_at_full_speed_while_charging_at_host_rates() -> Result<()> {
+    for fps in [30, 60, 144] {
+        for sprint in [false, true] {
+            let Some(mut sim) = link()? else { return Ok(()) };
+            let mut host = FlatHost::default();
+            settle(&mut sim, &mut host);
+            let expected_speed = if sprint { sim.params.run_speed } else { sim.params.walk_speed };
+            let moving = Input { buttons: NEUTRAL_B | if sprint { libssbm::SPRINT } else { 0 },
+                movement: Vec3::Z, aim: Vec3::new(0., 1., 1.).normalize(), ..Input::idle() };
+            for _ in 0..fps*2 { sim.advance(&mut host, moving, 1. / fps as f64); }
+            assert_eq!(sim.current_move, Some(libssbm::Move::SpecialN));
+            assert!((sim.velocity.z-expected_speed).abs() < 0.01, "fps {fps}, sprint {sprint}: {} != {expected_speed}",sim.velocity.z);
+            assert!(sim.position.z > expected_speed * 90., "bow did not keep travelling");
+            assert!(sim.gait_layer_weight() > 0.99);
+            if sprint { assert_eq!(sim.locomotion.clip, "Run"); }
+            assert!(shots(&host, 20).is_empty(), "sprint fired/stored the held bow");
+            let released = Input { buttons: moving.buttons & !NEUTRAL_B, ..moving };
+            for _ in 0..fps*2 { sim.advance(&mut host, released, 1. / fps as f64); }
+            let arrows = shots(&host, 20);
+            assert_eq!(arrows.len(), 1);
+            assert!(arrows[0] > 0.99);
+            let shot = host.events.iter().find(|e| e.kind==EventKind::Hit && e.move_id==20).unwrap();
+            assert!((shot.direction-moving.aim).length() < 1e-4, "running arrow lost live aim");
+        }
+    }
+    Ok(())
+}
+
+#[test]
 fn boomerang_leaves_the_hand_once_and_the_empty_clip_plays_while_it_is_out() -> Result<()> {
     let Some(mut sim) = link()? else { return Ok(()) };
     let mut host = FlatHost::default();

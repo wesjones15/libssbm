@@ -79,10 +79,9 @@ impl Link {
     /// (cmd var 2, frame 18 of the draw) the charge climbs one step a tick up to
     /// x0; the Loop clip is the full charge; letting go of B releases the arrow.
     fn tick_bow(&self, sim: &mut Sim, input: Input) {
-        if sim.grounded {
-            sim.velocity.x = 0.;
-            sim.velocity.z = 0.;
-        }
+        // RoR2 adaptation: the shared mobile-action locomotion owns horizontal
+        // velocity. ftlinkspecialn.c's planted source charge must not reset it
+        // each tick while the host lets Link move and aim independently.
         let held = input.buttons & NEUTRAL_B != 0;
         let release = match sim.stage {
             N_START => {
@@ -131,8 +130,10 @@ impl Behavior for Link {
         (1u64 << Move::SpecialN as u32) | (1u64 << Move::SpecialS as u32)
     }
     fn upper_body_root(&self) -> Option<usize> {
-        None
+        Some(17) // LINK.upper_body_root: torso above HipN, leaving both legs free.
     }
+    fn mobile_sprint(&self, m: Move) -> bool { m == Move::SpecialN }
+    fn preserve_upper_orientation(&self, m: Move) -> bool { m == Move::SpecialN }
     fn is_up_special(&self, m: Move) -> bool {
         m == Move::SpecialHi
     }

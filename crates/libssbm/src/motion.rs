@@ -1,7 +1,7 @@
 //! Animation state advances on fighter ticks, independently of renderer calls.
 //! ftwalkcommon::{800DFDDC,800DFEC8}, ftCo_Run_Anim, ftCo_Jump_Anim and
 //! ftCo_JumpAerial_Anim specify speed scaling, gait phase and clip completion.
-use crate::{DOWN, Input, Move, Phase, SPRINT, Sim};
+use crate::{DOWN, Input, Move, Phase, Sim};
 use std::collections::BTreeMap;
 
 #[derive(Clone, Debug)]
@@ -204,7 +204,7 @@ pub fn locomotion(s: &Sim, input: Input) -> (&'static str, f32) {
         return ("Wait", 1.);
     }
     let scaled = speed / s.options.speed_scale.max(0.01);
-    if input.buttons & SPRINT != 0 && !s.mobile_action() {
+    if s.sprint_locomotion(input) {
         return ("Run", speed / s.params.run_animation_rate);
     }
     let gait = if scaled >= s.params.walk_speed * s.params.walk_animation_thresholds[1] {

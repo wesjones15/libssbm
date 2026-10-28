@@ -192,6 +192,10 @@ The ror2-samus adapter now consumes it in play and generated skill portraits,
 using the shared held-item presenter; C# boundary checks pass. Not yet played.
 The distorted bow limbs are corrected in the shared envelope skinning reader;
 `build/link-bow-hold-fixed.png` shows the airborne charge-hold close-up.
+Walking/running charge now reaches normal gait speed, retains upper-body aiming
+when the gait pelvis turns, and shares the camera-pitch pose with the bow's
+attachment. `build/link-bow-mobile.png` shows two Run frames at -45/0/+45 degrees;
+Rust/C# checks pass at 30/60/144 Hz. Still unplayed.
 
 RT Hero's Bow, B A attack, RB Boomerang, LB Spin Attack, LT Bomb (cooldowns 0.3 s, 0, 1 s, 3 s, 1 s).
 

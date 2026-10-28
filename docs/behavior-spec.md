@@ -19,6 +19,14 @@ the blended limbs. The shared reader now distinguishes blended envelope
 coordinates from rigid palettes and preserves authored envelopes when scaling.
 Regression tests compare source-weighted vertex positions across all six states.
 
+Link's held bow also uses the shared running split: the charge no longer clears
+horizontal velocity, and this mobile action opts into normal sprint speed and
+Run legs. Its upper rig retains the authored action orientation when grafted
+onto the gait pelvis, then receives shared camera pitch; hips/legs remain on
+the gait. The native bow attachment and arrow-release point use the same pose.
+Viewer proof: `build/link-bow-mobile.png`; Rust and C# checks cover running
+charge and aimed release at 30/60/144 Hz. Host adaptation, not yet played.
+
 ## Current checkpoint: 0.2.20, 2026-10-19
 
 The shared melee plumbing is now fighter-parameterized, so a second fighter is a

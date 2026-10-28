@@ -604,6 +604,6 @@ impl Sim {
     /// Egg Lay (tongue and swallow) plays, so the head and mouth point where the
     /// lash is aimed. The source clip is unchanged; the host draws the lash.
     pub fn tongue_upper_pitch(&self) -> Option<f32> {
-        (self.current_move == Some(Move::SpecialN)).then(|| crate::sim::aim_pitch(self.move_aim))
+        self.neutral_special_upper_pitch()
     }
 }
