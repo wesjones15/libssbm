@@ -871,6 +871,22 @@ pub unsafe extern "C" fn ssbm_grapple_new(dir: *const c_char, part: u32) -> *mut
         }
     })
 }
+/// Link's hookshot chain parts: 0/1 alternate chain links (x54/x58) and 2 is
+/// the hook head (x5C). Source: itlinkhookshot.c::it_802A2568.
+/// # Safety
+/// Valid UTF-8 cache path; returned view is freed with ssbm_view_free.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn ssbm_hookshot_new(dir: *const c_char, part: u32) -> *mut View {
+    guarded(std::ptr::null_mut(), || {
+        match (|| libssbm_assets::hookshot::part(unsafe { path(dir) }?, part))() {
+            Ok(p) => Box::into_raw(Box::new(View::new(p))),
+            Err(e) => {
+                error(e);
+                std::ptr::null_mut()
+            }
+        }
+    })
+}
 /// # Safety
 /// Live simulation. Motion serial changes on every clip/state transition.
 #[unsafe(no_mangle)]
@@ -3051,12 +3067,18 @@ mod tests {
             eprintln!("SKIP: Link disc cache absent");
             return Ok(());
         }
-        // Hero's Bow arrow (0), Boomerang (1) and Bomb (2) resolve their
-        // state/special-word layouts from itCharItems.h.
-        for (kind, state) in [(0u32, 0u32), (1, 0), (2, 0)] {
+        // Hero's Bow arrow (0), Boomerang (1), Bomb (2) and Hookshot (4) resolve
+        // their state/special-word layouts from itCharItems.h.
+        for (kind, state) in [(0u32, 0u32), (1, 0), (2, 0), (4, 0)] {
             let article = libssbm_assets::article::Article::load_for(&dir, kind, state, link)
                 .map_err(|e| format!("Link article {kind}/{state}: {e}"))?;
             eprintln!("Link article {kind}: {} special words, {} commands", article.special.len(), article.commands.len());
+        }
+        // The chain links and hook are separate joint subtrees, not the held item.
+        for part in 0..=2 {
+            let p = libssbm_assets::hookshot::part(&dir, part)
+                .map_err(|e| format!("Link hookshot part {part}: {e}"))?;
+            assert!(!p.model.batches.is_empty());
         }
         Ok(())
     }

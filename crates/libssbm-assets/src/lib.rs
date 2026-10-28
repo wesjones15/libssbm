@@ -10,6 +10,7 @@ pub mod effects;
 pub mod fighter;
 pub mod grapple;
 pub mod held;
+pub mod hookshot;
 pub mod model;
 pub mod params;
 pub mod portrait;

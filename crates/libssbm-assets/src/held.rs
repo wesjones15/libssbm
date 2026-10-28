@@ -3,6 +3,8 @@ use glam::Mat4;
 
 /// Public article kind 3 maps to ftDataLink.x48_items[4], It_Kind_Link_Bow.
 pub const LINK_BOW: u32 = 3;
+/// Public article kind 4 maps to ftDataLink.x48_items[2], It_Kind_Link_HShot.
+pub const LINK_HOOKSHOT: u32 = 4;
 /// ftlinkspecialn.c::isDrawback attaches the bow to RThumbNb (not LThumbNb,
 /// which holds the nocked arrow). Resolved through FighterPartsTable.
 pub const LINK_BOW_PART: usize = 49;

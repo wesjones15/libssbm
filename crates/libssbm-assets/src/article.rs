@@ -137,9 +137,11 @@ impl Article {
 
 /// The index of a host article kind in the disc's `ftData.x48_items`. Every fighter lists its articles in the
 /// order of `fighter.articles`, except Link, whose table runs Bomb, Boomerang, Hookshot, Arrow, Bow
-/// (`DAT_MATCH_FTITEM`, ft/types.h) while the host names his Arrow 0, Boomerang 1, Bomb 2, Bow 3.
+/// (`DAT_MATCH_FTITEM`, ft/types.h) while the host names his Arrow 0, Boomerang 1, Bomb 2, Bow 3,
+/// Hookshot 4. The Hookshot's model is the held launcher; its chain links and hook head are extra
+/// joints read by `hookshot::part`.
 fn disc_slot(fighter: &crate::fighter::FighterAssets<'_>, kind: u32) -> u32 {
-    const LINK: [u32; 4] = [3, 1, 0, 4];
+    const LINK: [u32; 5] = [3, 1, 0, 4, 2];
     if fighter.data.file == crate::fighter::LINK.data.file {
         return LINK.get(kind as usize).copied().unwrap_or(kind);
     }

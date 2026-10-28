@@ -201,9 +201,9 @@ RT Hero's Bow, B A attack, RB Boomerang, LB Spin Attack, LT Bomb, X grab (cooldo
 
 **Z-grab hookshot, 2026-10-27:** the host now owns the chain from the right hand
 (`FtPart_RThumbNb`) because RoR2's world is stage-scale. It reaches 15 m toward
-Link's facing, draws the extracted hookshot article (PlLk.dat item slot 3,
-public article 2) as repeated links, and attaches to the first wall or body it
-meets. A wall or a boss/big body (isBoss/isChampion or radius >= 1.8 m) reels
+Link's facing, draws the extracted hookshot item (PlLk.dat item slot 2, public
+article 4) and its separate source chain-link/hook-head joints (x54/x58/x5C),
+and attaches to the first wall or body it meets. A wall or a boss/big body (isBoss/isChampion or radius >= 1.8 m) reels
 Link to the hook and calls the new `ssbm_sim_reset_jumps`, so he can jump off
 with his air jumps restored; holding the stick up/down climbs up to 4 m above
 the anchor. An ordinary enemy is captured through the shared `EnemyCapture`,

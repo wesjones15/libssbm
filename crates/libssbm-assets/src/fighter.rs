@@ -316,7 +316,7 @@ pub const CAPTAIN: FighterAssets<'static> = FighterAssets {
     clip_aliases: &[("Wait", "Wait1")],
     rigid_joints: &[],
 };
-/// Link's asset profile. Public article kinds: Arrow, Boomerang, Bomb, held Bow.
+/// Link's asset profile. Public article kinds: Arrow, Boomerang, Bomb, held Bow, Hookshot.
 /// ftlink.c::ftLk_Init_CostumeStrings order: Nr, Re, Bu, Bk, Wh.
 pub const LINK: FighterAssets<'static> = FighterAssets {
     data: Archive {
@@ -351,6 +351,9 @@ pub const LINK: FighterAssets<'static> = FighterAssets {
         // itlinkbow.c::it_803F6E98: six animated descriptors; terminal state 6
         // has motion -1 and destroys the item, so it has no descriptor to load.
         ArticleLayout { states: 6, special_words: 0 },
+        // itlinkhookshot.c: one item state. The chain links and hook head are
+        // loaded from the special-attribute joints x54/x58/x5C, not this model.
+        ArticleLayout { states: 1, special_words: 0 },
     ],
     common_index: 6, // Ft_Kind_Link (ft/forward.h)
     morph_visibility: None,

@@ -48,8 +48,10 @@ Host adaptations, because RoR2 stages are world-scale:
   26 m/s. After it reaches him the authored pummel/throw flow is unchanged.
   `MeleeDriver.CanCapture` refuses bosses and big bodies, so the close grab boxes
   cannot turn an anchor into a capture.
-- The chain visual is public article 2 (`PlLk.dat` item slot 3) repeated along
-  the line; the viewer proof is `build/link-hookshot.png`.
+- The held launcher is public article 4 (`PlLk.dat` item slot 2,
+  `It_Kind_Link_HShot`); the chain links and hook head are the separate source
+  joint subtrees x54/x58/x5C exposed as `ssbm_hookshot_new` parts 0/1/2. The
+  viewer proof is `build/link-hookshot.png`.
 - Multiplayer replay logs the jump reset. The rest of the chain state is host
   policy like Samus's grapple and is not in the sim.
 
