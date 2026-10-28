@@ -1,5 +1,5 @@
 //! Local-disc preview: cargo run --release -p ssbm-viewer --example scope_dust -- assets [capture.png] [frame] [pitch-degrees]
-//! Host-authored charge timing, using the original common ground-smoke model.
+//! The Start script's real dust timing (frames 24..88, every 8) using the original common ground-smoke model.
 use libssbm_assets::{presentation::Presentation, fighter, dat::Dat};
 use macroquad::prelude::*;
 #[path = "../src/models.rs"] mod models;
@@ -63,13 +63,14 @@ async fn main() {
         draw(&luigi, ::glam::Mat4::IDENTITY, &alpha, &additive);
         draw(&scope, luigi.world[hand], &alpha, &additive);
         // Both raw models face +Z here; the host rotates both toward the sim facing.
-        for birth in (12..=frame as u32).step_by(12) {
+        // ItemScopeStart's script: cue 0x3FF every 8 frames from 24 to 88, scattered by +/-6 across and along the
+        // fighter around (0, 0, -1.95). The viewer's spread is a fixed sequence, the sim's is random.
+        for (n, birth) in (24..=88u32).step_by(8).enumerate().filter(|(_, b)| *b as f32 <= frame) {
             let age = frame - birth as f32;
             if age >= dust.duration { continue; }
             dust.object_pose(age);
-            let size = 0.65 + 0.025 * 9.;
-            let placement = ::glam::Mat4::from_translation(::glam::Vec3::Y * 0.2)
-                * ::glam::Mat4::from_scale(::glam::Vec3::splat(size));
+            let spread = |k: f32| ((n as f32 * k).sin() * 6.).clamp(-6., 6.);
+            let placement = ::glam::Mat4::from_translation(::glam::Vec3::new(spread(2.3), 0.2, -1.95 + spread(1.7)));
             draw(&dust, placement, &alpha, &additive);
         }
         set_default_camera();

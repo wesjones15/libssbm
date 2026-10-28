@@ -100,7 +100,19 @@ impl Sim {
             scope.state.level = None;
             scope.state.shots_left = 0;
             scope.state.charge_sound = false;
+            scope.state.tail = 0;
         }
+    }
+
+    /// The Start script's clock while the charge is held: the clip's length plus the ticks since it ran out,
+    /// so the script's own frames (the dust loop, 24..88) keep coming after the clip has stopped. `None`
+    /// outside the Start stage and while its clip is still playing (the clip frame is the clock then).
+    pub(crate) fn scope_script_frame(&self) -> Option<f32> {
+        if self.current_move != Some(Move::SuperScope) || self.stage != STAGE_START || !self.motion.finished() {
+            return None;
+        }
+        let scope = self.scope.as_ref()?;
+        Some(self.motion.length(self.motion.clip) + scope.state.tail as f32)
     }
 
     /// Ticks the scope's use each step: ftCo_ItemScopeStart_IASA (the charge and what it becomes once its clip has
@@ -140,6 +152,7 @@ impl Sim {
                     }
                 }
                 if self.motion.finished() {
+                    scope.state.tail += 1;
                     // The Start clip (and its cocking chirp) has run out. A trigger still down is a charge:
                     // play the disc's charge cue once for this use, on its own track so firing can stop it.
                     if held && !scope.state.released && !scope.state.charge_sound {

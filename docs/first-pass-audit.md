@@ -369,6 +369,8 @@ The Reflector (`fox.rs`, `FoxCombat.cs`, `FoxDriver.cs`): the start event (stren
 elevation (torso bend capped at +/-60 degrees) while preserving the leg/gait
 pose. Held Scope and shot-origin bone use that same pose. Ground charge smoke
 uses animated common model 5 / cue 0x3FF, replacing the earlier 0x405 puffs.
+2026-10-27: that smoke now follows the real ItemScopeStart script (flash 0x3F3 at frame 0, nine 0x3FF puffs
+every 8 frames from 24 to 88, random spread) instead of host timing; see behavior-spec.md.
 Viewer/asset and native-boundary checks cover these adaptations; RoR2 play is
 still unverified.
 

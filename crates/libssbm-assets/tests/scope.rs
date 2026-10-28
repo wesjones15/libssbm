@@ -152,6 +152,40 @@ mod in_hand {
         assert!(cues.iter().any(|(sound, stop)| *sound == 0xFE && *stop), "the charge cue was not stopped: {cues:?}");
     }
 
+    /// The Start script (not the clip) runs the charge's effects: ItemScopeStart's GFX events are cue 0x3F3 at
+    /// frame 0 and cue 0x3FF every eight frames from 24 to 88, each placed with a random spread (ftCo_8009F834).
+    #[test]
+    fn a_hold_flashes_once_then_blows_nine_puffs_of_dust_along_the_ground() {
+        let Some((mut sim, mut host)) = luigi(None) else { return };
+        let mut flashes = Vec::new();
+        let mut puffs = Vec::new();
+        for tick in 0..96u32 {
+            step(&mut sim, &mut host, true);
+            for cue in &sim.action.effects {
+                match cue.id {
+                    0x3F3 => flashes.push((tick, cue.offset)),
+                    0x3FF => puffs.push((tick, cue.offset)),
+                    _ => {}
+                }
+            }
+        }
+        assert_eq!(flashes.len(), 1, "the frame-0 flash: {flashes:?}");
+        assert!(flashes[0].0 <= 1, "the flash is the first thing the script does: {flashes:?}");
+        assert_eq!(puffs.len(), 9, "frames 24, 32 .. 88: {puffs:?}");
+        for pair in puffs.windows(2) {
+            assert!((pair[1].0 as i32 - pair[0].0 as i32 - 8).abs() <= 1, "every eight frames: {puffs:?}");
+        }
+        // Offset (0, 0, -1.95) with a +/-6 spread across and along the fighter, on the ground.
+        for (_, offset) in &puffs {
+            assert!((-6.0..=6.0).contains(&offset.x) && (-8.0..=4.1).contains(&offset.z) && offset.y == 0., "{puffs:?}");
+        }
+        assert!(puffs.iter().any(|(_, o)| o.x < -2.) && puffs.iter().any(|(_, o)| o.x > 2.), "no spread: {puffs:?}");
+        assert!(puffs.iter().any(|(_, o)| o.z < -2.) && puffs.iter().any(|(_, o)| o.z > 0.), "no spread: {puffs:?}");
+        // The flash: 0x3F3 (generator 0xB) about 7 forward at 5.9 up, +/-3, +/-2, +/-3.
+        let flash = flashes[0].1;
+        assert!((-3.0..=3.0).contains(&flash.x) && (3.8..=7.9).contains(&flash.y) && (4.0..=10.1).contains(&flash.z), "{flash:?}");
+    }
+
     #[test]
     fn a_hold_is_one_charged_shot_that_costs_more() {
         let Some((mut sim, mut host)) = luigi(None) else { return };

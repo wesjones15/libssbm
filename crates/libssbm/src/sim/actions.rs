@@ -189,7 +189,8 @@ impl Sim {
 
     pub(crate) fn execute_disc_commands(&mut self, host: &mut impl Host, input: Input) {
         let clip = self.motion.clip;
-        let frame = self.motion.frame;
+        // The Super Scope's Start script keeps running after its clip holds its last pose.
+        let frame = self.scope_script_frame().unwrap_or(self.motion.frame);
         if self.action.script_clip != clip {
             // ftAnim_80070F28 (on every motion change): part animations end.
             self.parts = [None; 5];
@@ -237,6 +238,22 @@ impl Sim {
                         ..
                     }
                 )
+            {
+                continue;
+            }
+            // The loaded scope's scripts spawn the charge dust, the recoil and the shot's ground dust; the empty
+            // scope's (ftCo_MS_ItemScope*Empty, which shares their clips) spawn none, so an empty one mutes them.
+            if self.current_move == Some(Move::SuperScope)
+                && self.scope.as_ref().is_some_and(|scope| scope.state.ammo == 0)
+                && matches!(event.command, Command::Raw { opcode: 10, .. })
+            {
+                continue;
+            }
+            // The Start script's second sound (0xFE, frame 16) is the held charge cue, which the scope's own
+            // logic plays on a track of its own so firing can stop it (`update_scope`).
+            if self.current_move == Some(Move::SuperScope)
+                && self.scope.is_some()
+                && matches!(&event.command, Command::Raw { opcode: 17, words } if words.get(1) == Some(&0xFE))
             {
                 continue;
             }
@@ -506,6 +523,16 @@ impl Sim {
 
 impl Sim {
     /// ftAction_80071028: a GFX spawn command's five words become a cue.
+    /// A random number in -0.5..0.5 for a cue's spread (HSD_Randf - 0.5), from a generator separate from
+    /// the gameplay one.
+    fn gfx_unit(&mut self) -> f32 {
+        let mut x = self.gfx_rng;
+        x ^= x << 13;
+        x ^= x >> 17;
+        x ^= x << 5;
+        self.gfx_rng = x;
+        (x >> 8) as f32 / (1u32 << 24) as f32 - 0.5
+    }
     fn queue_gfx(&mut self, words: &[u32], clip: &'static str, frame: f32) {
         let signed = |n: u32| (n as u16 as i16) as f32 / 256.;
         let bone = if words[0] & (1 << 15) != 0 {
@@ -520,6 +547,11 @@ impl Sim {
         if bone == 0x8d {
             self.action.effect_cycle = (cycle + 1) % 5;
         }
+        // ftCo_8009F834: the position is the offset plus a random point within +/- the range on each axis
+        // (words 3-4: x, y, z as unsigned 8.8). The sim's own generator, so gameplay rolls never move.
+        let range = |n: Option<&u32>, shift: u32| (n.map_or(0, |w| w >> shift & 65535) as f32) / 256.;
+        let ranges = Vec3::new(range(words.get(3), 0), range(words.get(4), 16), range(words.get(4), 0));
+        let spread = Vec3::new(self.gfx_unit(), self.gfx_unit(), self.gfx_unit()) * 2. * ranges;
         self.action.effects.push(crate::action::GfxCue {
             id: words[1] >> 16,
             bone,
@@ -530,7 +562,7 @@ impl Sim {
                 signed(words[2] >> 16),
                 signed(words[2]),
                 signed(words[3] >> 16),
-            ),
+            ) + spread,
             param: (words[1] & 65535) as f32,
             clip,
             frame,

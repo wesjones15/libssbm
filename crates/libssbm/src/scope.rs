@@ -140,6 +140,9 @@ pub struct ScopeState {
     pub refill_carry: f32,
     /// The held-charge cue (SFX 0xFE, SFX_IT_SCORPE_TAME) has been started for this use.
     pub charge_sound: bool,
+    /// Ticks since the Start clip ran out. The clip holds its last pose, but the Start script goes on: its
+    /// loop spawns the ground dust (cue 0x3FF) every eight frames from frame 24 to 88.
+    pub tail: u32,
 }
 
 impl ScopeState {

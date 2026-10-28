@@ -730,18 +730,32 @@ tail-of-bolt scaling when it reaches the ground (`UnkMotion2`), Pichu/Kirby
 variants, and the air jolt after its 24-tick contact arc (the host redraws a new
 arc per bounce rather than following the source's single air-jolt item).
 
-### Super Scope ground-smoke presentation
+### Super Scope charge effects (the Start script)
 
-The reference's curling ground smoke and trailing streaks visually match
-`EfCoData.dat` effect model 5 (`efasync.c`, cue `0x3FF`). This is a 20-frame
-animated mesh/material effect, not the `0x405` empty-click particle from
-`ftCo_ItemScopeFire.c::fn_800D84D4`. The existing shared `MeleeEffects` model path
-already renders its animated textures. Luigi's host charge presentation repeats
-it at the grounded fighter's feet every 12 frames after a 12-frame delay, with
-scale 0.65–0.875 according to charge level. Released/airborne charges stop emitting;
-existing waves finish. Timing and charge scaling are host-authored, not a claim
-that the original Start callback emitted this effect. Asset visibility/animation
-regression and local `scope_dust` viewer preview pass; RoR2 play is unverified.
+The charge's flash and ground dust are the GFX events of the `ItemScopeStart` / `ItemScopeAirStart` motion
+scripts (identical in the eight fighters read so far; only the flash's height differs per fighter). The
+scripts outlast their 15-16-frame clips: the clip holds its last pose while the script goes on, so a decode
+bounded by the clip length (what `action::parse_for` did) never saw them. Frames are script frames:
+
+| Frame | Event |
+|---|---|
+| 0 | `ft_PlaySFX` 0xFD (the cocking chirp); GFX cue `0x3F3` (efasync.c: common generator `0xB`, a one-particle, four-tick flash) at bone 0, offset (0, 5.9, 7.0) with spread (3, 2, 3) |
+| 16 | face frame, colour animation 110, `ft_PlaySFX` 0xFE (the held charge cue), rumble |
+| 24, 32 .. 88 | GFX cue `0x3FF` (efasync.c: EfCoData model 5, the ground smoke with wind streaks) at bone 0, offset (0, 0, -1.95) with spread (6, 0, 6), plus rumble; nine puffs, then the script ends |
+
+Each cue's position is its offset plus a uniform random point within plus/minus its spread on each axis
+(`ftCo_8009F834`). The sim draws them from a generator of its own (`Sim::gfx_unit`), so effects never move a
+gameplay roll, and applies the same rule to every fighter's GFX events. The disc lists every ItemScope motion
+twice, the loaded scope's and the empty scope's (`+ 8`, ftCo_MS_ItemScope*Empty, `fn_800D769C`), under the same
+clip names; the loaded scope's scripts are the ones kept, and the sim mutes their GFX when the magazine is empty,
+as the empty scripts have none. The Fire script's 0x3FD / 0x513 (recoil dust and camera kick) and the Rapid
+script's 0x400 now run for the same reason. Max charge (level 9) arrives at tick 64 (`charge_levels` 8 x 8) and
+the hold fires on its own at tick 100, so the last three puffs follow the top level. The script clock is the clip
+frame while the clip plays and the clip length plus ticks since it ran out afterwards (`ScopeState::tail`); a
+ground-air change keeps the script's place. The 0xFE command is skipped in the script because the scope's own
+logic plays it on a track of its own so firing can stop it. The floor-angle roll the source gives 0x3FF on slopes
+is not applied. Not played in RoR2; headless tests (`tests/scope.rs`) and the C# native boundary check cover
+the cue count, timing and spread.
 
 Scope camera elevation now pitches only the upper-body subtree around its torso
 pivot, after the shared action/gait blend. Hips and legs retain their original

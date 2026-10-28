@@ -340,6 +340,8 @@ pub struct Sim {
     /// Whether the knockback eyes (`Behavior::hurt_eyes`) are showing.
     knockback_eyes: bool,
     rng: u32,
+    /// Spreads GFX cue positions (`Sim::queue_gfx`), apart from `rng` so effects never change gameplay rolls.
+    gfx_rng: u32,
 }
 impl Sim {
     /// The host presentation frame override for a held pose (Pikachu's Egg Lay).
@@ -449,6 +451,7 @@ impl Sim {
             colanim_clip: "",
             knockback_eyes: false,
             rng: 0,
+            gfx_rng: 0x6d2b_79f5,
         }
     }
     /// Split-borrow bridge: temporarily moves the behavior out so `f` can mutate

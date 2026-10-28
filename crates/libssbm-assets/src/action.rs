@@ -5,6 +5,10 @@ use glam::Vec3;
 use libssbm::action::{ActionDef, Command, Hitbox, TimedCommand};
 use std::{collections::{BTreeMap, HashSet}, path::Path};
 
+/// How far into the Super Scope's Start script to decode (its last event is at frame 88; every fighter's
+/// script ends there).
+const SCOPE_START_SCRIPT_FRAMES: f32 = 128.;
+
 pub fn load(dir: &Path, animations: &Animations) -> Result<BTreeMap<String, ActionDef>> {
     load_for(dir, animations, &crate::fighter::SAMUS)
 }
@@ -56,8 +60,22 @@ pub fn parse_for(
         let Some(clip) = animations.clips.get(name.as_ref()) else {
             continue;
         };
+        // The disc lists each ItemScope motion twice: the loaded scope's (ftCo_MS_ItemScopeStart..AirEnd), then
+        // the empty scope's (`+ 8`), whose scripts share the clip names. The loaded scope's come first and win;
+        // the sim mutes the effect cues the empty scope's scripts lack.
+        if name.starts_with("ItemScope") && result.contains_key(name.as_ref()) {
+            continue;
+        }
+        // The Super Scope's charge scripts outlast their 15-frame clip: the clip holds its last pose while
+        // the script's loop spawns the ground dust (cue 0x3FF) until the charge tops out, so decode
+        // them to their own end instead of the clip's.
+        let horizon = if matches!(name.as_ref(), "ItemScopeStart" | "ItemScopeAirStart") {
+            clip.frames.max(SCOPE_START_SCRIPT_FRAMES)
+        } else {
+            clip.frames
+        };
         let commands = match dat.ptr(at + 12)? {
-            Some(script) => script_commands(dat, script, clip.frames)
+            Some(script) => script_commands(dat, script, horizon)
                 .map_err(|e| format!("{name}: {e}"))?,
             None => Vec::new(),
         };
