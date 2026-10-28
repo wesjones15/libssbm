@@ -18,7 +18,7 @@ fn main() -> libssbm_assets::Result<()> {
         "donkey" | "dk" => &libssbm_assets::fighter::DONKEY,
         other => return Err(format!("unknown fighter {other}").into()),
     };
-    let animations = libssbm_assets::animation::Animations::load(dir)?;
+    let animations = libssbm_assets::animation::Animations::load_for(dir, fighter)?;
     let actions = libssbm_assets::action::load_for(dir, &animations, fighter)?;
     for (action, def) in &actions {
         if !action.contains(filter) {
