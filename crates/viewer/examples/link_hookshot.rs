@@ -86,19 +86,21 @@ async fn main() {
         // Held launcher at the left, then alternating links, then the hook head.
         let item_rot = ::glam::Quat::from_rotation_y(std::f32::consts::FRAC_PI_2);
         draw(&item, ::glam::Mat4::from_scale_rotation_translation(::glam::Vec3::splat(1.0), item_rot, ::glam::Vec3::new(-19., 1., 0.)), &alpha, &additive);
+        // The item extends 5.375 source units past its origin; start the chain
+        // after the solid launcher so no link shows through it.
         let link_rot = ::glam::Quat::from_rotation_y(std::f32::consts::FRAC_PI_2);
         for i in 0..18 {
             let p = if i & 1 == 0 { &parts[0] } else { &parts[1] };
             let t = ::glam::Mat4::from_scale_rotation_translation(
                 ::glam::Vec3::splat(1.0),
                 link_rot,
-                ::glam::Vec3::new(-17. + i as f32 * 1.9, 1., 0.),
+                ::glam::Vec3::new(-13.4 + i as f32 * 1.9, 1., 0.),
             );
             draw(p, t, &alpha, &additive);
         }
-        // The hook's claw is local -Z, so it points outward with -90 degrees.
-        let hook_rot = ::glam::Quat::from_rotation_y(-std::f32::consts::FRAC_PI_2);
-        draw(&parts[2], ::glam::Mat4::from_scale_rotation_translation(::glam::Vec3::splat(1.0), hook_rot, ::glam::Vec3::new(17.5, 1., 0.)), &alpha, &additive);
+        // The hook's claw is local +Z: point it outward, away from Link.
+        let hook_rot = ::glam::Quat::from_rotation_y(std::f32::consts::FRAC_PI_2);
+        draw(&parts[2], ::glam::Mat4::from_scale_rotation_translation(::glam::Vec3::splat(1.0), hook_rot, ::glam::Vec3::new(20.9, 1., 0.)), &alpha, &additive);
         set_default_camera();
         draw_text("assembled at sim scale: article 4 -> x54/x58 alternating -> x5C", 12., 530., 20., WHITE);
 
