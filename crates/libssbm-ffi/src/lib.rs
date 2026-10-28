@@ -530,7 +530,8 @@ pub unsafe extern "C" fn ssbm_sim_new_fighter(dir: *const c_char, pos: V3, kind:
             sim.defense.health = sim.defense.params.maximum;
             let rig = Rig::load_for(dir, fighter)?;
             sim.motion.definitions = rig.animations.motion_definitions();
-            sim.action.definitions = libssbm_assets::action::load_for(dir, &rig.animations, fighter)?;
+            sim.action.definitions =
+                libssbm_assets::action::load_for_variants(dir, &rig.animations, fighter)?;
             for (name, action) in &sim.action.definitions {
                 if let Some(motion) = sim.motion.definitions.get_mut(name) {
                     motion.looping |= action.looping;

@@ -41,6 +41,10 @@ pub struct MotionState {
     pub rate: f32,
     pub serial: u64,
     pub definitions: BTreeMap<String, MotionDef>,
+    /// A behavior's per-state answer to whether the current clip loops. Two disc
+    /// motion states can share one clip with different loop flags (Pikachu's
+    /// Thunder wait and struck loops); `None` uses the clip's own flag.
+    pub looping_override: Option<bool>,
 }
 impl Default for MotionState {
     fn default() -> Self {
@@ -50,6 +54,7 @@ impl Default for MotionState {
             rate: 1.,
             serial: 0,
             definitions: BTreeMap::new(),
+            looping_override: None,
         }
     }
 }
@@ -58,12 +63,14 @@ impl MotionState {
         self.definitions.get(clip).map_or(1., |d| d.frames.max(1.))
     }
     pub fn looping(&self) -> bool {
-        self.definitions.get(self.clip).is_some_and(|d| d.looping)
+        self.looping_override
+            .unwrap_or_else(|| self.definitions.get(self.clip).is_some_and(|d| d.looping))
     }
     pub fn finished(&self) -> bool {
         self.frame >= self.length(self.clip)
     }
     pub fn select(&mut self, clip: &'static str, rate: f32) {
+        self.looping_override = None;
         if clip != self.clip {
             let gait = |s: &str| s.starts_with("Walk") || s == "Run";
             self.frame = if gait(self.clip) && gait(clip) {

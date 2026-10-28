@@ -1513,6 +1513,10 @@ impl Sim {
             && clip.replace("Air", "") == self.motion.clip.replace("Air", "");
         let scope_frame = self.motion.frame;
         self.motion.select(clip, rate * self.behavior.animation_rate(self) * self.attack_rate());
+        // Two disc motion states can share a clip with different loop flags (Pikachu's
+        // Thunder wait and struck loops); the behavior answers for the current stage.
+        let looping = self.behavior.motion_looping(self);
+        self.motion.looping_override = looping;
         if scope_transition {
             self.motion.frame = scope_frame;
             self.action.script_clip = clip;

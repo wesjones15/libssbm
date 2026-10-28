@@ -653,6 +653,26 @@ impl Behavior for Pikachu {
         // Thunder's waiting loop keeps its own rumble.
         Self::egg_lay(sim) && sim.current_move == Some(Move::SpecialN)
     }
+    fn script_key(&self, sim: &Sim) -> Option<&'static str> {
+        // Pikachu's Thunder has two motion states on the same `SpecialLwLoop` clip:
+        // the wait (SpecialLwLoop0) and the struck loop (SpecialLwLoop1). The disc
+        // lists the wait first, so its script is kept as `#0`; the plain name is the
+        // last one, the struck script the sim already used. The wait script is what
+        // plays the thunder (SFX 0x3A9D2, sample 1020) as the bolt forms.
+        (sim.current_move == Some(Move::SpecialLw) && sim.stage == THUNDER_WAIT)
+            .then_some("SpecialLwLoop#0")
+    }
+    fn motion_looping(&self, sim: &Sim) -> Option<bool> {
+        // The wait holds its 10-frame clip (its script runs on past it); the struck
+        // loop repeats for its ten ticks. The clip's own flag is false, and the
+        // struck script's flag is what made the sim loop the wait before.
+        (sim.current_move == Some(Move::SpecialLw)).then_some(sim.stage == THUNDER_STRUCK)
+    }
+    fn stage_held(&self, sim: &Sim) -> bool {
+        // The wait's 10-frame clip holds at its last pose until the bolt reaches
+        // Pikachu (thunder_strike_frames); the sim must not end the move at frame 10.
+        sim.current_move == Some(Move::SpecialLw) && sim.stage == THUNDER_WAIT
+    }
     fn on_connect(&self, sim: &mut Sim) {
         // Borrowed Egg Lay: the tongue caught something; start the swallow stage now.
         if Self::egg_lay(sim)

@@ -21,6 +21,18 @@ pub fn load_for(
     let bytes = std::fs::read(dir.join(fighter.data.file))?;
     parse_for(&Dat::parse(&bytes)?, animations, fighter.data.root, fighter.clip_aliases)
 }
+/// Like [`load_for`], and also keeps every duplicate motion-state script under
+/// `name#0`, `name#1`, ... The plain name remains the last state, as before. Only a
+/// behavior that selects a stage-specific script (`Behavior::script_key`) needs these.
+pub fn load_for_variants(
+    dir: &Path,
+    animations: &Animations,
+    fighter: &crate::fighter::FighterAssets<'_>,
+) -> Result<BTreeMap<String, ActionDef>> {
+    fighter.required()?;
+    let bytes = std::fs::read(dir.join(fighter.data.file))?;
+    parse_for_variants(&Dat::parse(&bytes)?, animations, fighter.data.root, fighter.clip_aliases)
+}
 
 pub fn parse(dat: &Dat, animations: &Animations) -> Result<BTreeMap<String, ActionDef>> {
     parse_for(dat, animations, crate::fighter::SAMUS.data.root, &[])
@@ -31,6 +43,23 @@ pub fn parse_for(
     root: &str,
     aliases: &[(&str, &str)],
 ) -> Result<BTreeMap<String, ActionDef>> {
+    parse_inner(dat, animations, root, aliases, false)
+}
+pub fn parse_for_variants(
+    dat: &Dat,
+    animations: &Animations,
+    root: &str,
+    aliases: &[(&str, &str)],
+) -> Result<BTreeMap<String, ActionDef>> {
+    parse_inner(dat, animations, root, aliases, true)
+}
+fn parse_inner(
+    dat: &Dat,
+    animations: &Animations,
+    root: &str,
+    aliases: &[(&str, &str)],
+    variants: bool,
+) -> Result<BTreeMap<String, ActionDef>> {
     let root = dat.root(root)?;
     let start = dat.required_ptr(root + 0xc)?;
     let end = dat.required_ptr(root + 0x14)?;
@@ -38,6 +67,12 @@ pub fn parse_for(
         return Err("invalid fighter motion descriptor table".into());
     }
     let mut result = BTreeMap::new();
+    // Disc motion descriptors are not unique by clip name: two motion states can play
+    // one animation clip with different scripts (Pikachu's Thunder wait and struck
+    // loops both use `SpecialLwLoop`). Keep the last one under the plain name, as the
+    // sim always has; opt-in variant keys keep every occurrence so a behavior can
+    // select the state it is in.
+    let mut seen: BTreeMap<String, u32> = BTreeMap::new();
     for at in (start..end).step_by(24) {
         let Some(name_at) = dat.ptr(at)? else {
             continue;
@@ -79,14 +114,24 @@ pub fn parse_for(
                 .map_err(|e| format!("{name}: {e}"))?,
             None => Vec::new(),
         };
-        result.insert(
-            name.into_owned(),
-            ActionDef {
-                frames: clip.frames,
-                looping: dat.u32(at + 16)? & 0x40000000 != 0,
-                commands,
-            },
-        );
+        let base = name.into_owned();
+        let alternate = if variants {
+            let count = seen.entry(base.clone()).or_insert(0);
+            let key = format!("{base}#{count}");
+            *count += 1;
+            Some(key)
+        } else {
+            None
+        };
+        let action = ActionDef {
+            frames: clip.frames,
+            looping: dat.u32(at + 16)? & 0x40000000 != 0,
+            commands,
+        };
+        if let Some(key) = alternate {
+            result.insert(key, action.clone());
+        }
+        result.insert(base, action);
     }
     Ok(result)
 }

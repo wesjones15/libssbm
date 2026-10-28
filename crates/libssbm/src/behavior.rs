@@ -132,6 +132,25 @@ pub trait Behavior: Send {
     fn script_mute_sounds(&self, sim: &Sim) -> bool {
         self.script_muted(sim)
     }
+    /// The action script to run for this moment. Two disc motion states can share
+    /// one animation clip but carry different scripts (Pikachu's Thunder wait and
+    /// struck loops both play `SpecialLwLoop`). `None` uses the clip name, whose
+    /// script is the last state the disc lists for that clip.
+    fn script_key(&self, _sim: &Sim) -> Option<&'static str> {
+        None
+    }
+    /// Per-state looping when the shared clip's own flag belongs to another
+    /// state. `None` uses the clip's flag (or the action's, when the loader ORs
+    /// it into the motion definition).
+    fn motion_looping(&self, _sim: &Sim) -> Option<bool> {
+        None
+    }
+    /// The current stage is still running after its clip has held its last frame
+    /// (Pikachu's Thunder wait, which holds `SpecialLwLoop` until the bolt lands).
+    /// The shared disc-action updater must not treat the held clip as the move's end.
+    fn stage_held(&self, _sim: &Sim) -> bool {
+        false
+    }
     /// Facing lock that may depend on the move's current stage (Skull Bash
     /// follows the camera while charging, then commits to its heading).
     fn facing_locked_now(&self, _sim: &Sim, m: Move) -> bool {

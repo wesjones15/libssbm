@@ -90,6 +90,11 @@ impl Sim {
         if !self.motion.finished() {
             return;
         }
+        // A held stage (Thunder's wait) has finished its clip but is still running on
+        // its own clock; it must not end the move until the behavior advances it.
+        if self.using_behavior(|b, s| b.stage_held(s)) {
+            return;
+        }
         // A multi-stage special (Pikachu's Skull Bash, Quick Attack, Thunder)
         // continues into its next clip instead of ending with this one.
         if self.using_behavior(|b, s| b.next_stage(s, host, m, input)) {
@@ -189,15 +194,23 @@ impl Sim {
 
     pub(crate) fn execute_disc_commands(&mut self, host: &mut impl Host, input: Input) {
         let clip = self.motion.clip;
+        // A clip can stand for more than one disc motion state (Pikachu's Thunder wait
+        // and struck loops share `SpecialLwLoop`); the behavior picks the state's script.
+        // Fall back to the clip if the caller loaded only the base scripts.
+        let script = self
+            .behavior
+            .script_key(self)
+            .filter(|key| self.action.definitions.contains_key(*key))
+            .unwrap_or(clip);
         // The Super Scope's Start script keeps running after its clip holds its last pose.
         let frame = self.scope_script_frame().unwrap_or(self.motion.frame);
-        if self.action.script_clip != clip {
+        if self.action.script_clip != script {
             // ftAnim_80070F28 (on every motion change): part animations end.
             self.parts = [None; 5];
         }
-        if self.action.script_clip != clip || frame < self.action.script_frame {
+        if self.action.script_clip != script || frame < self.action.script_frame {
             self.action.cursor = 0;
-            self.action.script_clip = clip;
+            self.action.script_clip = script;
             // ftAnim_80070654: a new motion puts the face back to its first frame.
             self.face = [0.; 8];
         }
@@ -210,7 +223,7 @@ impl Sim {
         while let Some(event) = self
             .action
             .definitions
-            .get(clip)
+            .get(script)
             .and_then(|a| a.commands.get(self.action.cursor))
             .cloned()
         {

@@ -24,7 +24,8 @@ fn pikachu_at(position: Vec3, grounded: bool) -> Result<Option<Sim>> {
     let mut sim = Sim::with_behavior(params, Box::new(Pikachu::new(specials)), position);
     let animations = Animations::load_for(&dir, &PIKACHU)?;
     sim.motion.definitions = animations.motion_definitions();
-    sim.action.definitions = libssbm_assets::action::load_for(&dir, &animations, &PIKACHU)?;
+    sim.action.definitions =
+        libssbm_assets::action::load_for_variants(&dir, &animations, &PIKACHU)?;
     for (name, action) in &sim.action.definitions {
         if let Some(motion) = sim.motion.definitions.get_mut(name) {
             motion.looping |= action.looping;
@@ -111,6 +112,49 @@ fn skull_bash_travel_scales_with_charge_and_never_snaps_back() -> Result<()> {
     assert!(reach[1] > reach[0] * 1.2, "charge did not extend the bash: {reach:?}");
     assert!((damage[0] - 4.).abs() < 0.5, "uncharged bash should hit for ~4%: {damage:?}");
     assert!(damage[1] > damage[0] * 3., "charge did not raise damage: {damage:?}");
+    Ok(())
+}
+
+#[test]
+fn thunder_rumble_plays_when_the_wait_starts_not_at_the_strike() -> Result<()> {
+    let Some(mut sim) = pikachu_at(Vec3::ZERO, true)? else { return Ok(()) };
+    let mut host = FlatHost { events: Vec::new() };
+    for _ in 0..4 {
+        step(&mut sim, &mut host, idle());
+    }
+    step(&mut sim, &mut host, press(DOWN_B));
+    let mut spawned: Option<i32> = None;
+    let mut struck: Option<i32> = None;
+    let mut heard: Option<i32> = None;
+    for tick in 0..300i32 {
+        step(&mut sim, &mut host, idle());
+        if heard.is_none()
+            && sim.action.sounds.iter().any(|s| s.sound == 240082 && !s.stop)
+        {
+            assert_eq!(sim.motion.clip, "SpecialLwLoop", "the rumble left the wait clip");
+            heard = Some(tick);
+        }
+        for e in host.events.drain(..) {
+            if e.kind == EventKind::Hit && e.move_id == Move::SpecialLw as u32 {
+                match e.strength {
+                    1. => spawned = Some(tick),
+                    2. => struck = Some(tick),
+                    _ => {}
+                }
+            }
+        }
+        if sim.current_move.is_none() && tick > 3 {
+            break;
+        }
+    }
+    let heard = heard.expect("Thunder's wait never played its 240082 rumble");
+    let spawned = spawned.expect("no cloud spawn");
+    let struck = struck.expect("no strike");
+    assert!(
+        heard <= spawned + 1,
+        "rumble at tick {heard}, cloud spawn at {spawned}: it must start with the wait"
+    );
+    assert!(heard < struck, "rumble at tick {heard}, strike at {struck}");
     Ok(())
 }
 

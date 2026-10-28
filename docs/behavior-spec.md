@@ -730,10 +730,15 @@ Hit event (strength 1; `direction` = cloud height, ticks to strike, fall speed i
 Melee units) and the cloud poof (efSync 1219 at `xD0 + xCC`). The four 40-unit
 bolt segments (`xD4`/`xD8`) fall so the tip reaches Pikachu after
 `ceil((xD0 - tip - (|xBC| + xC8)) / |xC0|)` = 19 ticks, when the sim emits
-strength 2, restarts the loop clip unmuted (its 17% electric hitbox, effects
-and sounds), hops him `xB4` in the air under `xB8` gravity, and plays the
-crackle (1216). While waiting the clip's script is muted (`script_muted`), so
-the hitbox and effects of the struck state do not fire early. Enemies in the
+strength 2, starts the struck loop (its 17% electric hitbox and effects; that
+script has no sound), hops him `xB4` in the air under `xB8` gravity, and plays
+the crackle (1216). The wait loop's own script (`SpecialLwLoop0`, the first of
+two motion states that share the `SpecialLwLoop` clip) plays **240082**
+(`0x3A9D2`, sample 1020, the 1.9 s thunder) as the bolt forms; the sim keeps
+both scripts (`SpecialLwLoop#0` for the wait, the plain name for the struck
+loop) and picks by stage. While waiting the struck script is muted
+(`script_muted`), so its hitbox and effects do not fire early; the wait's
+10-frame clip holds until the strike instead of looping. Enemies in the
 bolt's column are hit once for the bolt's 10%. At the strike the host adds a
 10 m electric burst (30x damage coefficient) with outward/upward knockback.
 An overhead surface within the fixed 16 m column blocks the cloud, bolt and
