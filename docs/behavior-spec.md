@@ -27,6 +27,35 @@ the gait. The native bow attachment and arrow-release point use the same pose.
 Viewer proof: `build/link-bow-mobile.png`; Rust and C# checks cover running
 charge and aimed release at 30/60/144 Hz. Host adaptation, not yet played.
 
+## Link Z-grab hookshot: 2026-10-27
+
+The grab button now runs a host-owned tether alongside the disc's `Catch` /
+`AirCatch` action. Source launch points: `ft/kinds/ftCommon/ftCo_0D8E.c::
+fn_800D8EC8` for the standing grab, `ftCo_AirCatch.c::ftCo_AirCatch_Anim` for the
+air tether, and `it/kinds/itlinkhookshot.c::it_802A2BA4` / `it_802A2568` for the
+`It_Kind_Link_HShot` article and its chain-link list. The launch bone is
+`FtPart_RThumbNb` (common part 49).
+
+Host adaptations, because RoR2 stages are world-scale:
+
+- Reach is 15 m along the horizontal host facing (the requested 10-20 m band),
+  extending at 55 m/s. The first wall or body hit stops the chain.
+- A wall, boss (`isBoss` / `isChampion`) or big body (`radius >= 1.8 m`) is an
+  anchor. The host reels Link to a stand-off point at 26 m/s, calls the new
+  `ssbm_sim_reset_jumps` export, and lets the stick raise/lower him up to 4 m
+  around the anchor. Jump/attack/knockdown detaches; the restored jumps remain.
+- A normal enemy is captured by the shared `EnemyCapture` and pulled to Link at
+  26 m/s. After it reaches him the authored pummel/throw flow is unchanged.
+  `MeleeDriver.CanCapture` refuses bosses and big bodies, so the close grab boxes
+  cannot turn an anchor into a capture.
+- The chain visual is public article 2 (`PlLk.dat` item slot 3) repeated along
+  the line; the viewer proof is `build/link-hookshot.png`.
+- Multiplayer replay logs the jump reset. The rest of the chain state is host
+  policy like Samus's grapple and is not in the sim.
+
+Not verified in game. Reach, climb speed/limit and the enemy pull are host
+values, not source tuning.
+
 ## Current checkpoint: 0.2.20, 2026-10-19
 
 The shared melee plumbing is now fighter-parameterized, so a second fighter is a

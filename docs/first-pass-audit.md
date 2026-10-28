@@ -17,7 +17,7 @@ written earlier the same day; everything that has since been fixed is moved into
 | Luigi | Super Scope as an alternate neutral special (2026-10-23, unplayed: charge to ten levels, rapid taps, 48-shot magazine, the disc's beam table; needs ItCo.dat extracted). Fireball (shared bouncing shot). Green Missile (charge, misfire, fly, stops on a hit), Super Jump Punch (root-motion rise, special fall, landing lag) and Cyclone (re-hits, pull, air taps) rebuilt as staged specials (2026-10-20 night). Held-charge feedback (2026-10-23): `ItemScopeStart`'s cocking chirp (SFX 0xFD) stays a one-shot; when its 15 frames end with the trigger still down the sim plays the disc's separate charge cue (SFX 0xFE, `SFX_IT_SCORPE_TAME`) once on its own track, and firing stops it. The held-charge visual is a host reconstruction: the scope's smoke puff (efSync 0x405, common Particle 44) puffs above the holder's feet and grows with the level, because the decomp's Start state has no effect at all. The beam's ball is only the shot; each shot draws 0x42F's white burst (common effect model 32) plus the 0x405 smoke at the muzzle, because 0x430's generator 0x140 produces no drawable common particles and 0x431's model 33 is invisible. Shots fire along the camera ray, not from the hand to the first crosshair hit. The beam model itself is the disc's: an opaque white core plus a translucent and an additive glow layer. The decomp's scope code never calls 0xFE, though the disc's sound test names it. Host adaptations (2026-10-24): the runtime scope has an infinite magazine (the loader sets `ScopeParams.infinite`; fixtures keep the 48-shot rules), and `Move::SuperScope` is a mobile move with Luigi's upper-body root 5, so the legs keep the gait and he can walk while charging | Not re-audited | Generic grab, unplayed | Unplayed: everything; slippery movement not checked; no wall-embed (not in the decomp) |
 | Pikachu | Thunder Jolt (crosshair shot, Luigi-fireball bounce, ten surface contacts; airborne clip when fired up or from the air), Skull Bash, Quick Attack, Thunder (stuns bosses) all staged | Forward smash dead | Generic grab, unplayed | Forward smash alias; Skull Bash wall rebound; cloud model; unplayed Thunder Jolt bounce |
 | Captain Falcon | Falcon Punch, Raptor Boost (uppercut or spike), Falcon Dive (catch, explosion, rebound) and Falcon Kick all staged (2026-10-20 evening) | OK (jab 3 and rapid jab reachable) | Generic grab, unplayed | Unplayed: travel distances, Dive grab reach, force multipliers |
-| Link | Spin Attack OK; bow, boomerang and bomb staged (2026-10-20 evening); the bomb is carried, thrown or dropped | Forward tilt and forward smash were dead until the alias fix | Generic grab, unplayed | Unplayed: arrow numbers, boomerang arc, bomb feel; no boomerang catch animation |
+| Link | Spin Attack OK; bow, boomerang and bomb staged (2026-10-20 evening); the bomb is carried, thrown or dropped; the Z-grab hookshot is host-owned (2026-10-27) | Forward tilt and forward smash were dead until the alias fix | Hookshot capture/anchor, unplayed | Unplayed: arrow numbers, boomerang arc, bomb feel, hookshot reach/reel/climb; no boomerang catch animation |
 | Yoshi | Flutter jump, Egg Lay, Egg Roll, Egg Throw and Yoshi Bomb all staged (2026-10-20 evening); tongue lash, full-belly carry, egg-roll egg and repeated roll hits added 2026-10-23 | OK | Generic grab, unplayed | Unplayed: the egg size, 20 m tongue reach, carry feel and roll feel; the tongue is a host-drawn lash because the disc has no tongue model |
 | Donkey Kong | Giant Punch (stored swings), Headbutt (buries, spikes), Spinning Kong (steerable) and Hand Slap (infinite, shockwaves, stunlock) all staged (2026-10-20 evening) | OK | Generic grab, unplayed | Unplayed: burial look, shockwave reach, force multipliers; no cargo carry |
 
@@ -197,7 +197,24 @@ when the gait pelvis turns, and shares the camera-pitch pose with the bow's
 attachment. `build/link-bow-mobile.png` shows two Run frames at -45/0/+45 degrees;
 Rust/C# checks pass at 30/60/144 Hz. Still unplayed.
 
-RT Hero's Bow, B A attack, RB Boomerang, LB Spin Attack, LT Bomb (cooldowns 0.3 s, 0, 1 s, 3 s, 1 s).
+RT Hero's Bow, B A attack, RB Boomerang, LB Spin Attack, LT Bomb, X grab (cooldowns 0.3 s, 0, 1 s, 3 s, 1 s).
+
+**Z-grab hookshot, 2026-10-27:** the host now owns the chain from the right hand
+(`FtPart_RThumbNb`) because RoR2's world is stage-scale. It reaches 15 m toward
+Link's facing, draws the extracted hookshot article (PlLk.dat item slot 3,
+public article 2) as repeated links, and attaches to the first wall or body it
+meets. A wall or a boss/big body (isBoss/isChampion or radius >= 1.8 m) reels
+Link to the hook and calls the new `ssbm_sim_reset_jumps`, so he can jump off
+with his air jumps restored; holding the stick up/down climbs up to 4 m above
+the anchor. An ordinary enemy is captured through the shared `EnemyCapture`,
+pulled to Link, then uses the authored pummel and throws. Bosses and big bodies
+are refused by the generic close grab (`MeleeDriver.CanCapture`), so they are
+anchors rather than captures. The source is `ftCo_0D8E.c::fn_800D8EC8`
+(standing hookshot launch), `ftCo_AirCatch.c` (air tether), and
+`itlinkhookshot.c::it_802A2568` / `it_802A2BA4` (chain links); the 15 m reach,
+reel-in, climb and jump refresh are RoR2 adaptations. Viewer proof:
+`build/link-hookshot.png`. Native article/reset check passes against the
+extracted disc; not yet played.
 
 ### Specials
 
@@ -228,13 +245,15 @@ RT Hero's Bow, B A attack, RB Boomerang, LB Spin Attack, LT Bomb (cooldowns 0.3 
 | Up air | Up + A in the air | LS held, camera 20 deg or more up, + LT | `AttackAirHi`, 71 ticks, top hit 16%. | OK |
 | Down air | Down + A in the air | LS held, camera 50 deg or more down, + LT | `AttackAirLw`, 91 ticks, top hit 22%. | OK |
 
-Link's Z-air (air grab) is the one that does damage in the disc: `AirCatch` carries 6% boxes, so in the air X acts as a short
-tether hit rather than a capture.
+Link's Z-air (air grab) is the one that does damage in the disc: `AirCatch` carries 6% boxes. In play the host hookshot
+now runs from the same grab press in the air as on the ground, so it can anchor a wall or capture at range before the
+authored boxes matter; the 6% boxes still run underneath.
 
 Not reachable: the second hit of the forward smash
 (`AttackS41` / `AttackS42`).
 
-**Link to fix, in order:** the boomerang catch pose (`SpecialS2`); check the arrow, boomerang and bomb numbers in game (damage, fuse and blast radius are placeholders).
+**Link to fix, in order:** play-test the hookshot (reach, reel-in, climb and jump refresh); the boomerang catch pose (`SpecialS2`);
+check the arrow, boomerang and bomb numbers in game (damage, fuse and blast radius are placeholders).
 
 ---
 

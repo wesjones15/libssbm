@@ -45,6 +45,8 @@ pub(crate) enum Op {
     SetStomp(u32),
     /// RoR2 attack speed: the move-playback multiplier.
     SetAttackSpeed(f32),
+    /// Link's hookshot took hold: restore the fighter's jumps without landing.
+    ResetJumps,
 }
 
 #[derive(Default)]
@@ -256,6 +258,7 @@ fn encode(b: &mut Vec<u8>, op: Op) {
             b.push(23);
             f32w(b, speed);
         }
+        Op::ResetJumps => b.push(24),
     }
 }
 
@@ -316,6 +319,7 @@ impl Reader<'_> {
             21 => Op::BoostJump(self.f32()?),
             22 => Op::SetStomp(self.u32()?),
             23 => Op::SetAttackSpeed(self.f32()?),
+            24 => Op::ResetJumps,
             _ => return None,
         })
     }
@@ -430,6 +434,9 @@ pub unsafe extern "C" fn ssbm_sim_replay(
                 }
                 Op::SetAttackSpeed(speed) => {
                     ssbm_sim_set_attack_speed(handle, speed);
+                }
+                Op::ResetJumps => {
+                    ssbm_sim_reset_jumps(handle);
                 }
                 Op::Sync { position, grounded } => {
                     let h = &mut *handle;

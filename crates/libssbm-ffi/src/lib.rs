@@ -1422,6 +1422,22 @@ pub unsafe extern "C" fn ssbm_sim_jump_height(handle: *mut Handle, height: f32) 
         }
     }
 }
+/// Give the fighter its jumps back without landing. Link's hookshot uses this
+/// when the chain bites: ftCo_AirCatch.c's tether recovery restores the air
+/// jump after the hookshot takes hold.
+/// # Safety
+/// Unique live handle or null.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn ssbm_sim_reset_jumps(handle: *mut Handle) -> u32 {
+    if let Some(h) = unsafe { handle.as_mut() } {
+        if !h.poisoned && h.sim.entry.is_none() {
+            h.sim.jumps_used = 0;
+            h.net.log(Op::ResetJumps);
+            return 1;
+        }
+    }
+    0
+}
 /// # Safety
 /// Live fighter or null. Bits: shield=1, dodge invulnerability=2, broken=4,
 /// air dodge=8, shield pose=16, guard-on=32, knockdown/get-up immunity=64,
