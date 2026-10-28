@@ -2006,6 +2006,46 @@ pub unsafe extern "C" fn ssbm_object_duration(view: *const View) -> f32 {
     }
     unsafe { &*view }.actor.duration
 }
+/// One particle generator an effect model's animation starts (`Presentation::particle_triggers`).
+#[repr(C)]
+#[derive(Clone, Copy)]
+pub struct ObjectParticle {
+    pub frame: f32,
+    pub joint: u32,
+    pub bank: u32,
+    pub generator: u32,
+}
+/// The particle generators the view's animation starts, in time order. Returns the count; writes up to `max`.
+/// # Safety
+/// Live object view and `max` writable entries (or null to count).
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn ssbm_object_particles(view: *const View, out: *mut ObjectParticle, max: u32) -> u32 {
+    if view.is_null() {
+        return 0;
+    }
+    guarded(0, || unsafe {
+        let triggers = (&*view).actor.particle_triggers();
+        if !out.is_null() {
+            for (i, (frame, joint, bank, generator)) in triggers.iter().take(max as usize).enumerate() {
+                *out.add(i) = ObjectParticle { frame: *frame, joint: *joint as u32, bank: *bank, generator: *generator };
+            }
+        }
+        triggers.len() as u32
+    })
+}
+/// The posed joint's matrix (16 floats, column-major, the view's own units and unmirrored axes) at the view's current
+/// frame, for placing what an animation spawns. Returns 0 if the joint is outside the model.
+/// # Safety
+/// Live object view and 16 writable floats.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn ssbm_object_joint(view: *const View, joint: u32, out: *mut f32) -> u32 {
+    if view.is_null() || out.is_null() {
+        return 0;
+    }
+    let Some(world) = unsafe { &*view }.actor.world.get(joint as usize) else { return 0 };
+    unsafe { std::ptr::copy_nonoverlapping(world.to_cols_array().as_ptr(), out, 16) };
+    1
+}
 /// # Safety
 /// Unique live object view and finite nonnegative frame, main thread only.
 #[unsafe(no_mangle)]

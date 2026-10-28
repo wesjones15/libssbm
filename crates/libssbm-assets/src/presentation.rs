@@ -241,6 +241,27 @@ impl Presentation {
             parts: [None; 5],
         })
     }
+    /// The particle generators the object's animation starts (HSD_JObjAnim, baselib/jobj.c: track 0x28 calls
+    /// efLib_Cb_DPtcl(bank = value & 0x3F, generator = value >> 6, joint)): `(frame, joint, bank, generator)`,
+    /// in time order. An effect model's dust cloud, sparks and smoke are these, not its mesh.
+    pub fn particle_triggers(&self) -> Vec<(f32, usize, u32, u32)> {
+        let mut triggers: Vec<_> = self
+            .animations
+            .clips
+            .get("Object")
+            .into_iter()
+            .flat_map(|clip| clip.tracks.iter())
+            .filter(|t| t.channel == 0x28)
+            .flat_map(|t| {
+                t.keys.iter().map(move |k| {
+                    let value = k.value.to_bits();
+                    (k.time.max(0.), t.joint, value & 0x3f, value >> 6 & 0xff_ffff)
+                })
+            })
+            .collect();
+        triggers.sort_by(|a, b| a.0.total_cmp(&b.0));
+        triggers
+    }
     pub fn object_pose(&mut self, frame: f32) {
         self.frame = frame;
         self.world = self.animations.pose_object(&self.model, frame);

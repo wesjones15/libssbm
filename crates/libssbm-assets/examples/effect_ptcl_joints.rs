@@ -15,6 +15,9 @@ fn main() {
         // Joint animation tracks 0x28 (dynamic particle: bank = value & 0x3F, generator = value >> 6), 0x29 (sound), 0x2A.
         for (name, clip) in &m.animations.clips {
             for t in clip.tracks.iter().filter(|t| t.channel >= 0x14) {
+                let at = t.keys.first().map_or(0., |k| k.time.max(0.));
+                let pose = m.animations.pose_object(&m.model, at);
+                println!("model {i} joint {} sits at {:?} (frame {at})", t.joint, pose.get(t.joint).map(|w| w.w_axis.truncate()));
                 println!("model {i} clip {name} joint {} track {:#x}: {:?}", t.joint, t.channel, t.keys.iter().map(|k| (k.time, format!("bank {} gen {:#x} raw {:#x}", k.value.to_bits() & 0x3f, k.value.to_bits() >> 6 & 0xff_ffff, k.value.to_bits()))).collect::<Vec<_>>());
             }
         }
