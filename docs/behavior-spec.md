@@ -43,7 +43,7 @@ Host adaptations, because RoR2 stages are world-scale:
 - A wall, boss (`isBoss` / `isChampion`) or big body (`radius >= 1.8 m`) is an
   anchor. The host reels Link to a stand-off point at 26 m/s, calls the new
   `ssbm_sim_reset_jumps` export, and lets the stick raise/lower him up to 4 m
-  around the anchor. Jump/attack/knockdown detaches; the restored jumps remain.
+  around the anchor. Jump or knockdown detaches; the restored jumps remain.
 - A normal enemy is captured by the shared `EnemyCapture` and pulled to Link at
   26 m/s. After it reaches him the authored pummel/throw flow is unchanged.
   `MeleeDriver.CanCapture` refuses bosses and big bodies, so the close grab boxes
