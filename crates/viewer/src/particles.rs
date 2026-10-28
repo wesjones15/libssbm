@@ -4,7 +4,8 @@ use macroquad::{
     prelude::*,
 };
 pub struct Renderer {
-    textures: Vec<Vec<Vec<Texture2D>>>,
+    // [group][palette][frame] -> the sprite as drawn for kind bits 5/6: none, MirrorS, MirrorT, both (psdisp.c).
+    textures: Vec<Vec<Vec<[Texture2D; 4]>>>,
     alpha: Material,
     additive: Material,
     radial: Texture2D,
@@ -87,7 +88,18 @@ impl Renderer {
                             .map(|frames| {
                                 frames
                                     .iter()
-                                    .map(|t| Texture2D::from_rgba8(t.width, t.height, &t.rgba))
+                                    .map(|t| {
+                                        std::array::from_fn(|mode| {
+                                            let (w, h, rgba) = libssbm_assets::effects::mirror_sprite(
+                                                t.width as usize,
+                                                t.height as usize,
+                                                &t.rgba,
+                                                mode & 1 != 0,
+                                                mode & 2 != 0,
+                                            );
+                                            Texture2D::from_rgba8(w as u16, h as u16, &rgba)
+                                        })
+                                    })
                                     .collect()
                             })
                             .collect()
@@ -127,6 +139,7 @@ impl Renderer {
             else {
                 continue;
             };
+            let texture = &texture[((p.kind >> 5) & 3) as usize];
             let glow = self.glow.filter(|(id, _, _)| *id == p.emitter);
             let (texture, size_mul, alpha_mul) = match glow {
                 Some((_, scale, alpha)) => (&self.radial, scale, alpha),

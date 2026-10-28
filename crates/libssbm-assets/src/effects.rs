@@ -331,3 +331,68 @@ impl Effects {
         })
     }
 }
+
+/// Lays a mirrored particle sprite out as the source draws it. A sprite whose kind has MirrorS/MirrorT
+/// (psstructs.h bits 5/6) stores half or a quarter of its picture; psdisp.c draws it with GX_MIRROR and the
+/// texture coordinates doubled (T also offset by one). So the full sprite is the stored image followed by its
+/// reflection across S, and the reflection followed by the stored image down T (the stored image's top row lies
+/// on the sprite's centre line). Input and output are RGBA8, top row first. A host that clamps instead shows only
+/// that stored part of the picture.
+pub fn mirror_sprite(width: usize, height: usize, rgba: &[u8], mirror_s: bool, mirror_t: bool) -> (usize, usize, Vec<u8>) {
+    if (!mirror_s && !mirror_t) || width == 0 || height == 0 || rgba.len() < width * height * 4 {
+        return (width, height, rgba.to_vec());
+    }
+    let (out_w, out_h) = (if mirror_s { width * 2 } else { width }, if mirror_t { height * 2 } else { height });
+    let mut out = vec![0u8; out_w * out_h * 4];
+    for y in 0..out_h {
+        let sy = if !mirror_t { y } else if y < height { height - 1 - y } else { y - height };
+        for x in 0..out_w {
+            let sx = if !mirror_s || x < width { x } else { 2 * width - 1 - x };
+            let from = (sy * width + sx) * 4;
+            out[(y * out_w + x) * 4..][..4].copy_from_slice(&rgba[from..from + 4]);
+        }
+    }
+    (out_w, out_h, out)
+}
+
+#[cfg(test)]
+mod mirror_tests {
+    use super::mirror_sprite;
+    fn px(v: u8) -> [u8; 4] {
+        [v, 0, 0, 255]
+    }
+    #[test]
+    fn s_mirror_appends_the_reflection() {
+        let img: Vec<u8> = [px(1), px(2)].concat();
+        let (w, h, out) = mirror_sprite(2, 1, &img, true, false);
+        assert_eq!((w, h), (4, 1));
+        assert_eq!(out.iter().step_by(4).copied().collect::<Vec<_>>(), vec![1, 2, 2, 1]);
+    }
+    #[test]
+    fn t_mirror_puts_the_reflection_above_the_image() {
+        let img: Vec<u8> = [px(1), px(2)].concat(); // one column, two rows
+        let (w, h, out) = mirror_sprite(1, 2, &img, false, true);
+        assert_eq!((w, h), (1, 4));
+        assert_eq!(out.iter().step_by(4).copied().collect::<Vec<_>>(), vec![2, 1, 1, 2]);
+    }
+    #[test]
+    fn both_mirrors_make_a_symmetric_quad_from_a_quarter() {
+        // rows: [1 2] / [3 4]
+        let img: Vec<u8> = [px(1), px(2), px(3), px(4)].concat();
+        let (w, h, out) = mirror_sprite(2, 2, &img, true, true);
+        assert_eq!((w, h), (4, 4));
+        let at = |x: usize, y: usize| out[(y * w + x) * 4];
+        for y in 0..4 {
+            for x in 0..4 {
+                assert_eq!(at(x, y), at(3 - x, y), "left/right symmetric");
+                assert_eq!(at(x, y), at(x, 3 - y), "top/bottom symmetric");
+            }
+        }
+        assert_eq!((at(0, 2), at(1, 2), at(0, 3), at(1, 3)), (1, 2, 3, 4), "the stored image sits bottom-left");
+    }
+    #[test]
+    fn no_mirror_is_untouched() {
+        let img: Vec<u8> = [px(1), px(2)].concat();
+        assert_eq!(mirror_sprite(2, 1, &img, false, false), (2, 1, img));
+    }
+}
