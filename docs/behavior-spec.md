@@ -753,8 +753,9 @@ script's 0x400 now run for the same reason. Max charge (level 9) arrives at tick
 the hold fires on its own at tick 100, so the last three puffs follow the top level. The script clock is the clip
 frame while the clip plays and the clip length plus ticks since it ran out afterwards (`ScopeState::tail`); a
 ground-air change keeps the script's place. The 0xFE command is skipped in the script because the scope's own
-logic plays it on a track of its own so firing can stop it. The floor-angle roll the source gives 0x3FF on slopes
-is not applied. Not played in RoR2; headless tests (`tests/scope.rs`) and the C# native boundary check cover
+logic plays it on a track of its own so firing can stop it. The floor-angle roll the source gives the ground-dust cues (0x3F7-0x3F9, 0x3FD, 0x3FF: atan2(-nx, ny) while
+grounded, else 0) is the host's: the cue carries a grounded bit (bit 18 of its `move_id`) and `MeleeEffects` turns the
+effect's up onto the floor normal found under it. Not played in RoR2; headless tests (`tests/scope.rs`) and the C# native boundary check cover
 the cue count, timing and spread.
 
 Scope camera elevation now pitches only the upper-body subtree around its torso

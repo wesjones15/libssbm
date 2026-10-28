@@ -725,7 +725,11 @@ pub unsafe extern "C" fn ssbm_sim_gfx(
             unsafe {
                 *out.add(i) = NativeEvent {
                     kind: cue.id,
-                    move_id: bone as u32 | if cue.destroy_on_change { 1 << 17 } else { 0 },
+                    // Bit 17: the effect ends with the motion. Bit 18: the fighter is on the ground (the floor-slope
+                    // roll of ftCo_8009F834's ground-dust cues applies only then; the host measures the slope).
+                    move_id: bone as u32
+                        | if cue.destroy_on_change { 1 << 17 } else { 0 }
+                        | if h.sim.grounded { 1 << 18 } else { 0 },
                     strength: cue.param,
                     position: position.into(),
                     direction: cue.facing.into(),
