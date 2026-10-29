@@ -451,6 +451,98 @@ pub unsafe extern "C" fn ssbm_extract(disc: *const c_char, dir: *const c_char, k
 pub unsafe extern "C" fn ssbm_sim_new(dir: *const c_char, pos: V3) -> *mut Handle {
     unsafe { ssbm_sim_new_fighter(dir, pos, 0) }
 }
+/// Mario's Melee clips posed onto Sunshine's `ma_mdl1.bmd` rig (the A-attack
+/// animation port). Load once; free with ssbm_mario_pose_free.
+pub struct MarioPose {
+    model: libssbm_assets::model::Model,
+    animations: libssbm_assets::animation::Animations,
+    rig: libssbm_assets::sms::Rig,
+    retarget: libssbm_assets::sms::Retarget,
+}
+
+/// Loads Mario's Melee assets and the Sunshine rig for [`ssbm_mario_pose_sample`].
+/// # Safety
+/// Two NUL-terminated UTF-8 paths: the Melee cache and Sunshine's `ma_mdl1.bmd`.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn ssbm_mario_pose_new(
+    dir: *const c_char,
+    sms_bmd: *const c_char,
+) -> *mut MarioPose {
+    guarded(std::ptr::null_mut(), || {
+        let result = (|| -> libssbm_assets::Result<MarioPose> {
+            let dir = unsafe { path(dir) }?;
+            let bmd = unsafe { path(sms_bmd) }?;
+            let fighter = &libssbm_assets::fighter::MARIO;
+            let model = libssbm_assets::model::Model::load_for(dir, 0, fighter)?;
+            let animations = libssbm_assets::animation::Animations::load_for(dir, fighter)?;
+            let rig = libssbm_assets::sms::Rig::from_file(bmd)?;
+            let retarget = libssbm_assets::sms::Retarget::new(&model, &rig);
+            Ok(MarioPose {
+                model,
+                animations,
+                rig,
+                retarget,
+            })
+        })();
+        match result {
+            Ok(p) => Box::into_raw(Box::new(p)),
+            Err(e) => {
+                error(e);
+                std::ptr::null_mut()
+            }
+        }
+    })
+}
+
+/// Writes `clip` at `frame` posed on the Sunshine rig: one column-major 4x4 per
+/// joint, at most `max` matrices. Returns the joint count (29 for `ma_mdl1`).
+/// # Safety
+/// A live pose handle, a NUL-terminated clip name, a finite frame and `max * 16`
+/// writable floats.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn ssbm_mario_pose_sample(
+    pose: *const MarioPose,
+    clip: *const c_char,
+    frame: f32,
+    out: *mut f32,
+    max: u32,
+) -> u32 {
+    if pose.is_null() || clip.is_null() || !frame.is_finite() || frame < 0. {
+        return 0;
+    }
+    let pose = unsafe { &*pose };
+    guarded(0, || {
+        let Ok(clip) = unsafe { CStr::from_ptr(clip) }.to_str() else {
+            return 0;
+        };
+        if !pose.animations.clips.contains_key(clip) {
+            error("unknown Mario clip");
+            return 0;
+        }
+        let joints =
+            pose.retarget
+                .pose_on_sms(&pose.model, &pose.rig, &pose.animations, clip, frame);
+        if !out.is_null() {
+            let n = joints.len().min(max as usize);
+            for (i, m) in joints.iter().take(n).enumerate() {
+                unsafe {
+                    std::ptr::copy_nonoverlapping(m.to_cols_array().as_ptr(), out.add(i * 16), 16)
+                };
+            }
+        }
+        joints.len() as u32
+    })
+}
+
+/// # Safety
+/// A pose from ssbm_mario_pose_new, freed once.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn ssbm_mario_pose_free(pose: *mut MarioPose) {
+    if !pose.is_null() {
+        drop(unsafe { Box::from_raw(pose) });
+    }
+}
+
 /// # Safety
 /// A valid cache path, finite starting position and a supported fighter kind
 /// (0 = Samus). Free once with ssbm_sim_free.
@@ -3064,6 +3156,29 @@ mod tests {
         eprintln!("Mario jab: max hitboxes {max_hitboxes}");
         assert!(max_hitboxes > 0, "Mario jab produced no FFI hitboxes");
         unsafe { ssbm_sim_free(sim) };
+        Ok(())
+    }
+    #[test]
+    fn mario_pose_ffi_returns_sunshine_joints() -> libssbm_assets::Result<()> {
+        let dir = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../assets");
+        let bmd = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../../libsms/assets/bmd/ma_mdl1.bmd");
+        let mario = &libssbm_assets::fighter::MARIO;
+        if !mario.complete(&dir) || !bmd.exists() {
+            eprintln!("SKIP: Mario or Sunshine assets absent");
+            return Ok(());
+        }
+        let cdir = std::ffi::CString::new(dir.to_str().unwrap()).unwrap();
+        let cbmd = std::ffi::CString::new(bmd.to_str().unwrap()).unwrap();
+        let pose = unsafe { ssbm_mario_pose_new(cdir.as_ptr(), cbmd.as_ptr()) };
+        assert!(!pose.is_null(), "{}", ERROR.with(|e| e.borrow().to_string_lossy().into_owned()));
+        let clip = std::ffi::CString::new("AttackS3S").unwrap();
+        let mut mats = vec![0f32; 64 * 16];
+        let n = unsafe { ssbm_mario_pose_sample(pose, clip.as_ptr(), 10., mats.as_mut_ptr(), 64) };
+        eprintln!("Mario side tilt on Sunshine: {n} joints");
+        assert!(n > 20 && n <= 64);
+        assert!(mats[..n as usize * 16].iter().all(|v| v.is_finite()));
+        assert!(mats[..n as usize * 16].iter().any(|v| *v != 0.0));
+        unsafe { ssbm_mario_pose_free(pose) };
         Ok(())
     }
     #[test]
