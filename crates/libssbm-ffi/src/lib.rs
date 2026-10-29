@@ -3182,6 +3182,34 @@ mod tests {
         Ok(())
     }
     #[test]
+    fn mario_airborne_press_chooses_an_aerial() -> libssbm_assets::Result<()> {
+        let dir = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../assets");
+        let mario = &libssbm_assets::fighter::MARIO;
+        if !mario.complete(&dir) {
+            eprintln!("SKIP: Mario disc cache absent");
+            return Ok(());
+        }
+        let cdir = std::ffi::CString::new(dir.to_str().unwrap()).unwrap();
+        let sim = unsafe { ssbm_sim_new_fighter(cdir.as_ptr(), V3::default(), 8) };
+        assert!(!sim.is_null());
+        let mut host = HostTable { collide: None, event: None, user: std::ptr::null_mut() };
+        let idle = Pad { movement: V3::default(), aim: V3 { x: 0., y: 0., z: 1. }, buttons: 0, allowed: 0x1f };
+        for _ in 0..5 {
+            unsafe { ssbm_sim_step(sim, &mut host, &idle, 1. / 60.) };
+        }
+        // The Mario plugin keeps the lab sim above the floor while RoR2 says Mario is airborne.
+        let up = V3 { x: 0., y: 25., z: 0. };
+        unsafe { ssbm_sim_nudge(sim, up, 0) };
+        let press = Pad { buttons: libssbm::sim::ATTACK, ..idle };
+        unsafe { ssbm_sim_step(sim, &mut host, &press, 1. / 60.) };
+        let mut st = State::default();
+        assert_eq!(unsafe { ssbm_sim_state(sim, &mut st) }, 1);
+        eprintln!("airborne A chose move {}", st.move_id);
+        assert!(matches!(st.move_id, 6..=9 | 14), "airborne A chose {} (not an aerial)", st.move_id);
+        unsafe { ssbm_sim_free(sim) };
+        Ok(())
+    }
+    #[test]
     fn yoshi_and_donkey_assets_load_and_sim_steps() -> libssbm_assets::Result<()> {
         let dir = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../assets");
         for kind in [6u32, 7u32] {

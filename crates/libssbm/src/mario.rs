@@ -2,12 +2,11 @@
 //!
 //! Melee's shared A-attack selector (ftCo_Attack1.c / ftCo_AttackS4.c and the
 //! aerials) is fighter-neutral; it picks the move, plays the disc clip and runs
-//! that clip's hitbox/effect script. Mario's four specials are not implemented
-//! here yet, so every special press falls back to the same contextual A rather
-//! than pretending to be a Fireball/Cape/Super Jump Punch/Tornado. The reason is
-//! the animation port this exists for: Sunshine Mario's FLUDDless contextual A
-//! only needs Mario's A clips, and adding a half-guessed special would be worse
-//! than leaving it out. Clip names and frame counts come from `PlMrAJ.dat`.
+//! that clip's hitbox/effect script. This module is only the A lab: the Sunshine
+//! host never feeds it a B press, so Sunshine's B dive stays libsms's. A host
+//! that uses `FighterKind::Mario` directly and presses B gets the shared
+//! fallback to contextual A, not a Sunshine dive; Mario's four specials are not
+//! implemented here yet.
 use crate::{
     action::{GfxCue, SoundCue},
     behavior::Behavior,
