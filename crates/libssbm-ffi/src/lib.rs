@@ -523,6 +523,10 @@ pub unsafe extern "C" fn ssbm_sim_new_fighter(dir: *const c_char, pos: V3, kind:
                         libssbm_assets::params::load_donkey_specials(dir)?,
                     )),
                 ),
+                libssbm_assets::fighter::FighterKind::Mario => (
+                    libssbm_assets::params::load_common(dir, fighter)?,
+                    Box::new(libssbm::mario::Mario::new()),
+                ),
             };
             let mut sim = Sim::with_behavior(params, behavior, pos.into());
             sim.colanim.table = libssbm_assets::params::load_colanim(dir).ok();
@@ -3030,6 +3034,35 @@ mod tests {
         eprintln!("Falcon Punch: max hitboxes {max_hitboxes} max gfx {max_gfx} err {}", ERROR.with(|e| e.borrow().to_string_lossy().into_owned()));
         assert!(max_hitboxes > 0, "Falcon Punch produced no FFI hitboxes");
         assert!(max_gfx > 0, "Falcon Punch produced no FFI effects");
+        unsafe { ssbm_sim_free(sim) };
+        Ok(())
+    }
+    #[test]
+    fn mario_a_attacks_load_and_hit_via_ffi() -> libssbm_assets::Result<()> {
+        let dir = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../assets");
+        let mario = &libssbm_assets::fighter::MARIO;
+        if !mario.complete(&dir) {
+            eprintln!("SKIP: Mario disc cache absent");
+            return Ok(());
+        }
+        let cdir = std::ffi::CString::new(dir.to_str().unwrap()).unwrap();
+        let sim = unsafe { ssbm_sim_new_fighter(cdir.as_ptr(), V3::default(), 8) };
+        assert!(!sim.is_null(), "{}", ERROR.with(|e| e.borrow().to_string_lossy().into_owned()));
+        let mut host = HostTable { collide: None, event: None, user: std::ptr::null_mut() };
+        let idle = Pad { movement: V3::default(), aim: V3 { x: 0., y: 0., z: 1. }, buttons: 0, allowed: 0x1f };
+        for _ in 0..30 {
+            unsafe { ssbm_sim_step(sim, &mut host, &idle, 1. / 60.) };
+        }
+        // Press A for one tick: the shared selector chooses Mario's jab.
+        let press = Pad { buttons: libssbm::sim::ATTACK, ..idle };
+        unsafe { ssbm_sim_step(sim, &mut host, &press, 1. / 60.) };
+        let mut max_hitboxes = 0u32;
+        for _ in 0..60 {
+            unsafe { ssbm_sim_step(sim, &mut host, &idle, 1. / 60.) };
+            max_hitboxes = max_hitboxes.max(unsafe { ssbm_sim_hitboxes(sim, std::ptr::null_mut(), 0) });
+        }
+        eprintln!("Mario jab: max hitboxes {max_hitboxes}");
+        assert!(max_hitboxes > 0, "Mario jab produced no FFI hitboxes");
         unsafe { ssbm_sim_free(sim) };
         Ok(())
     }

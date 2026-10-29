@@ -61,6 +61,49 @@ pub const RESULTS_SCENE: Archive<'static> = Archive {
     root: "ScInfCnt_scene_models",
 };
 pub const COSTUMES: [&str; 5] = ["Nr", "Pi", "Bk", "Gr", "La"];
+/// Mario's asset profile. A contextual-A lab first: the disc data is enough for
+/// the shared A attack selector (Jab / tilts / smashes / aerials), but his four
+/// specials are not wired into a `Behavior` yet, so `FighterKind::Mario` treats
+/// every special press as contextual A for now.
+pub const MARIO: FighterAssets<'static> = FighterAssets {
+    data: Archive {
+        file: "PlMr.dat",
+        root: "ftDataMario",
+    },
+    animations: "PlMrAJ.dat",
+    // ftmariostrings.c::ftMr_Init_CostumeStrings (ftMr_CostumeList order):
+    // Nr, Ye, Bk, Bu, Gr.
+    costumes: &[
+        "PlMrNr.dat",
+        "PlMrYe.dat",
+        "PlMrBk.dat",
+        "PlMrBu.dat",
+        "PlMrGr.dat",
+    ],
+    effects: Archive {
+        file: "EfMrData.dat",
+        root: "effMarioDataTable",
+    },
+    // Mario has no character .ssm in the US release; his voice lives in main.ssm.
+    samples: &["audio/us/main.ssm", "audio/us/nr_name.ssm"],
+    sequences: "audio/us/smash2.sem",
+    articles: &[],
+    common_index: 0, // Ft_Kind_Mario (ft/forward.h)
+    morph_visibility: None,
+    upper_body_root: Some(5), // torso root above HipN (arms + head subtree)
+    portrait: crate::portrait::Portrait {
+        archive: Archive {
+            file: "MnSlChr.usd",
+            root: "MnSelectChrDataTable",
+        },
+        joint: 51,
+        frame: 8,       // ICONHUD_MARIO (mn/forward.h)
+        grid_joint: 16, // ICONJOINT_MARIO (mn/types.h)
+    },
+    announce_sound: 0x7C830, // CKind_Mario -> gm_1601.c::gm_80168C5C case 0
+    clip_aliases: &[("Wait", "Wait1")],
+    rigid_joints: &[],
+};
 pub const SAMUS: FighterAssets<'static> = FighterAssets {
     data: Archive {
         file: "PlSs.dat",
@@ -498,6 +541,7 @@ pub enum FighterKind {
     Link = 5,
     Yoshi = 6,
     Donkey = 7,
+    Mario = 8,
 }
 impl FighterKind {
     pub fn from_u32(kind: u32) -> Option<Self> {
@@ -510,6 +554,7 @@ impl FighterKind {
             5 => Some(Self::Link),
             6 => Some(Self::Yoshi),
             7 => Some(Self::Donkey),
+            8 => Some(Self::Mario),
             _ => None,
         }
     }
@@ -523,6 +568,7 @@ impl FighterKind {
             Self::Link => "Link",
             Self::Yoshi => "Yoshi",
             Self::Donkey => "Donkey",
+            Self::Mario => "Mario",
         }
     }
     /// The fighter's asset profile. Every variant now resolves to a defined
@@ -537,6 +583,7 @@ impl FighterKind {
             Self::Link => Some(&LINK),
             Self::Yoshi => Some(&YOSHI),
             Self::Donkey => Some(&DONKEY),
+            Self::Mario => Some(&MARIO),
         }
     }
 }

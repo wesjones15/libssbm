@@ -1,4 +1,4 @@
-﻿use libssbm::{
+use libssbm::{
     ATTACK, CANCEL, DOWN, DOWN_B, EventKind, FlatHost, GRAB, Input, JUMP, NEUTRAL_B, Phase, SIDE_B,
     SPECIAL, SPRINT, Sim, UP, UP_B,
 };
@@ -47,6 +47,7 @@ fn fighter_assets(name: &str) -> Option<&'static libssbm_assets::fighter::Fighte
         "link" => &LINK,
         "yoshi" => &YOSHI,
         "donkey" | "dk" | "donkeykong" => &DONKEY,
+        "mario" => &MARIO,
         _ => return None,
     })
 }
@@ -59,6 +60,7 @@ fn fighter_label(name: &str) -> &'static str {
         "captain" | "falcon" | "captainfalcon" => "CAPTAIN FALCON",
         "link" => "LINK",
         "yoshi" => "YOSHI",
+        "mario" => "MARIO",
         _ => "DONKEY KONG",
     }
 }

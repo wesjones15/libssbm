@@ -20,6 +20,7 @@ written earlier the same day; everything that has since been fixed is moved into
 | Link | Spin Attack OK; bow, boomerang and bomb staged (2026-10-20 evening); the bomb is carried, thrown or dropped; the Z-grab hookshot is host-owned (2026-10-27) | Forward tilt and forward smash were dead until the alias fix | Hookshot capture/anchor, unplayed | Unplayed: arrow numbers, boomerang arc, bomb feel, hookshot reach/reel/climb; no boomerang catch animation |
 | Yoshi | Flutter jump, Egg Lay, Egg Roll, Egg Throw and Yoshi Bomb all staged (2026-10-20 evening); tongue lash, full-belly carry, egg-roll egg and repeated roll hits added 2026-10-23 | OK | Generic grab, unplayed | Unplayed: the egg size, 20 m tongue reach, carry feel and roll feel; the tongue is a host-drawn lash because the disc has no tongue model |
 | Donkey Kong | Giant Punch (stored swings), Headbutt (buries, spikes), Spinning Kong (steerable) and Hand Slap (infinite, shockwaves, stunlock) all staged (2026-10-20 evening) | OK | Generic grab, unplayed | Unplayed: burial look, shockwave reach, force multipliers; no cargo carry |
+| Mario | Not implemented (A-attack lab only) | Contextual A verified through the FFI: jab 3%, side tilt 9%, up tilt 8%, down tilt 8%, side smash 18%, up smash 15%, down smash 16%, dash 9%, nair 12%, fair 15%, bair 11%, uair 11%, dair 2% | n/a | Four specials absent; no RoR2 Mario fighter |
 
 ## 2. What changed since the first version of this audit
 
@@ -404,7 +405,28 @@ still unverified.
 
 Not done: the source's Luigi does not embed himself in walls; the spec asked for it and it is not in the decomp, so nothing implements it. Slippery movement comes from the disc's own numbers through the shared sim and was checked at the data level: Luigi's ground friction is 0.025 against 0.06 to 0.09 for Samus, Fox, Pikachu and Falcon, and his air speed (0.68) and acceleration (0.025) are the lowest of those; how it feels in RoR2 is unplayed. The wall detection for the missile is a heuristic.
 
-## 7. Pause-menu controls window
+## 6c. Mario, contextual-A lab (2026-10-28)
+
+Mario is `FighterKind::Mario = 8` with `PlMr.dat` / `PlMrAJ.dat`, the five
+`PlMr*` costumes and `EfMrData.dat` (`effMarioDataTable`). `ssbm-extract … mario`
+extracts them; `crates/libssbm/src/mario.rs` is a behavior with no specials:
+every B press falls back to the shared contextual A attack, so the lab can
+exercise Mario's real jab, tilts, smashes, dash attack and aerials without
+inventing Fireball/Cape/Super Jump Punch/Tornado. The shared selector and action
+scripts supply the disc's clips, timing and hitboxes; the FFI test
+`mario_a_attacks_load_and_hit_via_ffi` asserts the jab reaches hitboxes.
+
+The animation port lives in `crates/libssbm-assets/src/sms.rs`,
+`Retarget::pose_on_sms`: Mario's Melee world rotations (scale dropped) are
+mapped onto `ma_mdl1.bmd` through the same Sunshine→Melee joint pairs used for
+Luigi, producing one matrix per Sunshine joint for `libsms_assets::Pose`. A side
+tilt moves `jnt_hand_R` about 52 Sunshine units; the test also checks every
+joint stays a rigid rotation. `examples/mario_sms_pose.rs` writes such a pose,
+and the `sms-viewer` `SMS_JOINTS` hook draws it on the real Sunshine body
+(`captures/mario_sms_s3s.png` was rendered that way). The RoR2 wiring is not
+done yet.
+
+
 
 Done. `ror2-common/src/MeleeSheet.cs` builds the sheet for any Melee fighter from its `MeleeSkillLayout` (the names and descriptions the loadout and HUD already show) plus the generic scheme: Special moves, A attacks
 (including camera up/down), Grab, Moving, and a fighter's own extras (Samus's captured-enemy section, Pikachu's Quick Attack footer). `ror2-samus/Samus/MeleeSheets.cs` is now a handful of lines per fighter. The controls label auto-sizes between 13 and 21 so a long list still fits.

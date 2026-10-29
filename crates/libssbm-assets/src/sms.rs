@@ -1,4 +1,4 @@
-﻿//! Sunshine's rig reader and a shared-joint retarget onto a Melee fighter, for hosts that
+//! Sunshine's rig reader and a shared-joint retarget onto a Melee fighter, for hosts that
 //! want to try an SMS clip on an HSD skeleton.
 //!
 //! The clip side is J3D (`JNT1`/`INF1` + `ANK1`), which libssbm's HSD readers do not cover;
@@ -7,7 +7,7 @@
 //!
 //! Mario's motion is rotation-only: every `ma_*.bck` sampled has constant root translation.
 //! Movement in Sunshine comes from the game code, so a host still owns root motion.
-use crate::{model::Model, Result};
+use crate::{animation::Animations, model::Model, Result};
 use glam::{EulerRot, Mat3, Mat4, Quat, Vec3};
 use libcommon::anim::hermite;
 use std::path::Path;
@@ -424,6 +424,79 @@ impl Retarget {
                 q,
                 model.joints[i].translation,
             );
+            out[i] = match p {
+                Some(p) => out[p] * local,
+                None => local,
+            };
+        }
+        out
+    }
+
+    /// The reverse of [`Self::pose`]: a Melee animation clip posed onto the
+    /// Sunshine rig. `model`/`animations` are Mario's Melee side, `rig` is
+    /// `ma_mdl1.bmd`; the result has one model-space joint matrix per Sunshine
+    /// joint, ready for `libsms_assets::Pose::new`. The ported animation keeps
+    /// Sunshine's skeleton, so the host still draws Mario's body; only the
+    /// mapped joints take the Melee clip's world rotation delta.
+    pub fn pose_on_sms(
+        &self,
+        model: &Model,
+        rig: &Rig,
+        animations: &Animations,
+        clip: &str,
+        frame: f32,
+    ) -> Vec<Mat4> {
+        // `Animations::pose` returns world matrices (it already accumulated the
+        // parent chain). Taking a rotation delta against the Melee bind therefore
+        // needs no second accumulation; doing it twice tips the whole body over.
+        let local = animations.pose(model, clip, frame, false);
+        let mut melee_world = vec![Mat3::IDENTITY; model.joints.len()];
+        for i in 0..model.joints.len() {
+            // A clip may animate joint scale (Mario's feet squash in the tilts);
+            // the port keeps Sunshine's bone scale, so take the rotation only.
+            let m = local[i];
+            let r = Mat3::from_cols(
+                m.x_axis.truncate().normalize_or_zero(),
+                m.y_axis.truncate().normalize_or_zero(),
+                m.z_axis.truncate().normalize_or_zero(),
+            );
+            melee_world[i] = if r.determinant().abs() < 0.5 {
+                Mat3::IDENTITY
+            } else {
+                r
+            };
+        }
+        // Start every Sunshine joint at its bind rotation, then overwrite the
+        // mapped ones with the Melee joint's world delta. An unmapped joint
+        // follows its parent's animated rotation with its bind local rotation;
+        // leaving it at the absolute bind frame would tear it off a moved
+        // parent chain (the first ported side tilt scrambled the mesh).
+        let mut world = self.sms_bind.clone();
+        for &(s, m) in MAP {
+            if s >= world.len() || m >= melee_world.len() {
+                continue;
+            }
+            let delta = melee_world[m] * self.lg_bind[m].transpose();
+            world[s] = delta * self.sms_bind[s];
+        }
+        for i in 0..world.len() {
+            if MAP.iter().any(|&(s, _)| s == i) {
+                continue;
+            }
+            if let Some(p) = rig.parents[i] {
+                world[i] = world[p] * (self.sms_bind[p].transpose() * self.sms_bind[i]);
+            }
+        }
+        let n = rig.bind.len();
+        let mut out = vec![Mat4::IDENTITY; n];
+        for i in 0..n {
+            let p = rig.parents[i];
+            let q = match p {
+                Some(p) => Quat::from_mat3(&(world[p].transpose() * world[i])),
+                None => Quat::from_mat3(&world[i]),
+            };
+            let b = rig.bind[i];
+            let local = Mat4::from_scale_rotation_translation(b.s, q, b.t);
             out[i] = match p {
                 Some(p) => out[p] * local,
                 None => local,
