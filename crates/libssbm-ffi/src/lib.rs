@@ -8,7 +8,7 @@ mod moves;
 mod particles;
 mod projectile;
 mod replay;
-pub use replay::{ssbm_sim_ops_take, ssbm_sim_record, ssbm_sim_replay};
+pub use replay::{ssbm_ops_steps, ssbm_sim_ops_take, ssbm_sim_record, ssbm_sim_replay};
 pub use moves::{MoveEntry, ssbm_sim_moves};
 use replay::{NetLog, Op};
 use std::{

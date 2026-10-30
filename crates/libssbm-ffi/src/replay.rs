@@ -366,6 +366,44 @@ pub unsafe extern "C" fn ssbm_sim_ops_take(handle: *mut Handle, out: *mut u8, ca
     len
 }
 
+/// Where each step of a recorded log ends, so a shadow can replay it one step per frame instead of a
+/// batch at once: writes the byte offset just past each step's `Sync` (the ops that led up to the step,
+/// the step, and where it ended) to `ends`, up to `cap` of them, plus the log's end if ops follow the
+/// last one. Returns how many pieces there are (which may exceed `cap`), or `u32::MAX` when the bytes
+/// are not a log.
+/// # Safety
+/// `len` readable bytes at `bytes`; `ends` null or `cap` writable u32s.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn ssbm_ops_steps(bytes: *const u8, len: u32, ends: *mut u32, cap: u32) -> u32 {
+    if bytes.is_null() || len > MAX_REPLAY {
+        return u32::MAX;
+    }
+    let data = unsafe { std::slice::from_raw_parts(bytes, len as usize) };
+    let mut reader = Reader(data);
+    let mut count = 0u32;
+    let mut put = |at: usize, count: &mut u32| {
+        if !ends.is_null() && *count < cap {
+            unsafe { *ends.add(*count as usize) = at as u32 };
+        }
+        *count += 1;
+    };
+    let mut tail = false;
+    while !reader.0.is_empty() {
+        let Some(op) = reader.op() else { return u32::MAX };
+        let at = data.len() - reader.0.len();
+        if matches!(op, Op::Sync { .. }) {
+            put(at, &mut count);
+            tail = false;
+        } else {
+            tail = true;
+        }
+    }
+    if tail {
+        put(data.len(), &mut count);
+    }
+    count
+}
+
 /// Replays a recorded log on this (shadow) sim, calling `host` for the collision and events of its
 /// steps. Returns the number of operations applied, or `u32::MAX` when the bytes are not a log.
 /// # Safety

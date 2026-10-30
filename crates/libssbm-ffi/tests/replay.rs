@@ -76,6 +76,9 @@ fn a_shadow_sim_follows_the_owners_recorded_calls_for_every_fighter() {
         }
         let shadow = unsafe { ssbm_sim_new_fighter(cdir.as_ptr(), V3::default(), kind) };
         assert!(!shadow.is_null());
+        // A second shadow fed the same logs one step at a time (ssbm_ops_steps), as a host replays them.
+        let stepper = unsafe { ssbm_sim_new_fighter(cdir.as_ptr(), V3::default(), kind) };
+        assert!(!stepper.is_null());
         assert_eq!(unsafe { ssbm_sim_record(owner, 1) }, 1);
         let tuning = Tuning { speed_scale: 1.37, jump_scale: 1.0, extra_jumps: 0, hold_charge: 0, smash_max_frames: 60 };
         let mut bytes = vec![0u8; 1 << 14];
@@ -101,6 +104,19 @@ fn a_shadow_sim_follows_the_owners_recorded_calls_for_every_fighter() {
             let applied = unsafe { ssbm_sim_replay(shadow, &host, bytes.as_ptr(), n) };
             assert_ne!(applied, u32::MAX, "replay rejected the log");
             shadow_cues += unsafe { ssbm_sim_gfx(shadow, std::ptr::null_mut(), 0) };
+            let mut ends = [0u32; 8];
+            let pieces = unsafe { ssbm_ops_steps(bytes.as_ptr(), n, ends.as_mut_ptr(), 8) };
+            assert_eq!(pieces, 3, "fighter {kind} batch {batch}: one piece per step");
+            let mut from = 0usize;
+            for &end in &ends[..pieces as usize] {
+                let piece = &bytes[from..end as usize];
+                assert_ne!(unsafe { ssbm_sim_replay(stepper, &host, piece.as_ptr(), piece.len() as u32) }, u32::MAX);
+                from = end as usize;
+            }
+            assert_eq!(from, n as usize, "the pieces cover the log");
+            let (s, w) = (state(shadow), state(stepper));
+            assert_eq!((s.position.x, s.position.y, s.position.z, s.move_id, s.frame), (w.position.x, w.position.y, w.position.z, w.move_id, w.frame),
+                "fighter {kind} batch {batch}: step-by-step replay differs from the batch's");
             let (a, b) = (state(owner), state(shadow));
             let d = ((a.position.x - b.position.x).powi(2) + (a.position.y - b.position.y).powi(2) + (a.position.z - b.position.z).powi(2)).sqrt();
             worst = worst.max(d);
@@ -117,6 +133,7 @@ fn a_shadow_sim_follows_the_owners_recorded_calls_for_every_fighter() {
         unsafe {
             ssbm_sim_free(owner);
             ssbm_sim_free(shadow);
+            ssbm_sim_free(stepper);
         }
     }
 }
@@ -139,5 +156,6 @@ fn a_log_that_is_not_one_is_refused_and_a_big_one_is_too() {
     assert_eq!(unsafe { ssbm_sim_replay(h, &host, junk.as_ptr(), 1 << 20) }, u32::MAX);
     // Not recording: nothing to take.
     assert_eq!(unsafe { ssbm_sim_ops_take(h, std::ptr::null_mut(), 0) }, 0);
+    assert_eq!(unsafe { ssbm_ops_steps(junk.as_ptr(), junk.len() as u32, std::ptr::null_mut(), 0) }, u32::MAX);
     unsafe { ssbm_sim_free(h) };
 }
