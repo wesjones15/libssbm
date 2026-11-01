@@ -1,5 +1,20 @@
 # Samus / Melee behavior specification
 
+## Cached character portraits: 2026-11-01
+
+The RoR2 host uses the existing idle-only character-select source (Wait frame 0,
+unchanged model orientation) through the common Mario/Olimar portrait camera's
+45-degree-left framing. Original CSS photos remain fallbacks. Generated character
+and skill pictures persist in the local asset cache; cache revisions are independent
+of gameplay releases, and new/missing pictures generate individually.
+
+Viewer proof: `crates/viewer/examples/character_portrait.rs` compares Samus
+(`PlSsNr.dat`, `PlSsAJ.dat`) and DK (`PlDkNr.dat`, `PlDkAJ.dat`) at Wait frames
+0/15/30. Source: `ftSamus/ftsamus.c` and `ftDonkey/ftdonkey.c` costume/animation
+tables, `ftCommon/ftCo_Wait.c::ftCo_Wait_Anim`. No effect cue/emitter is involved.
+Shared C# cache and UI boundary checks pass; generated portraits have not yet been
+played in RoR2.
+
 ## Link held bow: 2026-10-27
 
 The bow item is available as public article 3, mapped to `PlLk.dat` item slot 4.
