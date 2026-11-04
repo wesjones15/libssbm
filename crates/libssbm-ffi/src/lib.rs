@@ -445,6 +445,27 @@ pub unsafe extern "C" fn ssbm_extract(disc: *const c_char, dir: *const c_char, k
         }
     })
 }
+/// First run, after extraction: cuts every extracted fighter costume's VR arms (forearms and
+/// hands: libssbm_assets::vr_arms) into `dir/vr_arms/`, skipping cuts already there. Returns
+/// 1 + the number written, or 0 (the reason through the last error).
+/// # Safety
+/// A valid NUL-terminated UTF-8 cache path.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn ssbm_bake_vr_arms(dir: *const c_char) -> u32 {
+    guarded(0, || {
+        let result = (|| -> libssbm_assets::Result<u32> {
+            let notes = libssbm_assets::vr_arms::bake(unsafe { path(dir) }?)?;
+            Ok(notes.len() as u32)
+        })();
+        match result {
+            Ok(n) => 1 + n,
+            Err(e) => {
+                error(e);
+                0
+            }
+        }
+    })
+}
 /// # Safety
 /// A valid cache path and finite starting position. Free once with ssbm_sim_free.
 #[unsafe(no_mangle)]

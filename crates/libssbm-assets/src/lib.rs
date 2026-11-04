@@ -17,6 +17,7 @@ pub mod portrait;
 pub mod presentation;
 pub mod sms;
 pub mod texture;
+pub mod vr_arms;
 
 pub type Result<T> = std::result::Result<T, Box<dyn std::error::Error + Send + Sync>>;
 

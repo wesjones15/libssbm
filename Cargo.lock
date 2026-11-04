@@ -319,6 +319,7 @@ name = "ssbm-viewer"
 version = "0.1.0"
 dependencies = [
  "glam 0.30.10",
+ "libcommon",
  "libsms",
  "libsms-assets",
  "libssbm",
