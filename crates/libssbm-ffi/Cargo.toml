@@ -11,4 +11,5 @@ crate-type = ["cdylib", "rlib"]
 [dependencies]
 libssbm.workspace = true
 libssbm-assets.workspace = true
+libcommon.workspace = true
 glam.workspace = true

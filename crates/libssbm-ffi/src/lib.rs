@@ -270,6 +270,14 @@ pub struct View {
     colors: Vec<[f32; 4]>,
     alpha_sources: Vec<[f32; 3]>,
     texture_ids: Vec<i32>,
+    /// The host's VR arms ([`ssbm_view_set_vr_arms`]): the body's cut and each side's vertex map.
+    vr_arms: Option<VrArms>,
+}
+/// A fighter body's VR arms (libcommon's `vr_arms` cut, libssbm_assets::vr_arms), drawn as one
+/// more copy of the posed vertices a side after the body's own.
+struct VrArms {
+    arms: libcommon::vr_arms::Arms,
+    maps: Vec<(u8, Vec<u32>)>,
 }
 thread_local! {static ERROR:RefCell<CString>=RefCell::new(CString::default());}
 fn error(e: impl std::fmt::Display) {
@@ -464,6 +472,62 @@ pub unsafe extern "C" fn ssbm_bake_vr_arms(dir: *const c_char) -> u32 {
                 0
             }
         }
+    })
+}
+/// A fighter body view's VR arms for the local player's controllers: `on` 1 reads the cut of
+/// fighter `kind` costume `costume` from `dir/vr_arms/` (cutting it there when absent), 0 drops
+/// them. While on, each update appends one copy of the posed vertices a side after the body's
+/// (side order from [`ssbm_view_vr_arm_sides`]), in that arm's space for the host to put on its
+/// controller. Returns the number of arms (0 when off or the body has none).
+/// # Safety
+/// A live view; a valid NUL-terminated UTF-8 cache path when `on` is 1.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn ssbm_view_set_vr_arms(v: *mut View, dir: *const c_char, kind: u32, costume: u32, on: u32) -> u32 {
+    guarded(0, || {
+        let Some(v) = (unsafe { v.as_mut() }) else { return 0 };
+        if on == 0 {
+            v.vr_arms = None;
+        } else if v.vr_arms.is_none() {
+            let result = (|| -> libssbm_assets::Result<VrArms> {
+                let dir = unsafe { path(dir) }?;
+                let kind = libssbm_assets::fighter::FighterKind::from_u32(kind).ok_or("unknown fighter")?;
+                let name = libssbm_assets::vr_arms::name(kind, costume as usize);
+                let mesh = libssbm_assets::vr_arms::mesh(&v.actor.model, |i| v.actor.visible(i));
+                let arms = match libcommon::vr_arms::Arms::load(dir, &name) {
+                    Some(a) if a.fits(mesh.positions.len(), mesh.triangles.len()) => a,
+                    _ => {
+                        let (_, arms) = libssbm_assets::vr_arms::cut_fighter(dir, kind, costume as usize)?;
+                        arms.save(dir)?;
+                        arms
+                    }
+                };
+                let maps = arms.arms.iter().map(|a| (a.side, a.vertex_map(&mesh.triangles, mesh.positions.len()))).collect();
+                Ok(VrArms { arms, maps })
+            })();
+            match result {
+                Ok(a) => v.vr_arms = Some(a),
+                Err(e) => {
+                    error(e);
+                    return 0;
+                }
+            }
+        }
+        let n = v.vr_arms.as_ref().map_or(0, |a| a.arms.arms.len() as u32);
+        let count = v.info.vertex_count as usize;
+        v.push_vr_arms(count);
+        n
+    })
+}
+/// The side of each VR arm copy in order (0 the fighter's right, 1 its left) into `out`; returns
+/// the count.
+/// # Safety
+/// A live view; `out` holds `max` bytes or is null.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn ssbm_view_vr_arm_sides(v: *const View, out: *mut u8, max: u32) -> u32 {
+    guarded(0, || {
+        let Some(v) = (unsafe { v.as_ref() }) else { return 0 };
+        let sides: Vec<u8> = v.vr_arms.as_ref().map_or(Vec::new(), |a| a.arms.arms.iter().map(|a| a.side).collect());
+        unsafe { copy(&sides, out, max) }
     })
 }
 /// # Safety
@@ -1700,6 +1764,37 @@ impl View {
                 offset += 1;
             }
         }
+        self.push_vr_arms(offset);
+    }
+    /// After the body's `n` posed vertices: each arm's copy, taken into its arm space by the
+    /// wrist's posed matrix (the hand's middle at the origin, +z the fingers, +y the back of the
+    /// hand), with the body's uvs. Vertices off the arm sit at the origin, degenerate.
+    fn push_vr_arms(&mut self, n: usize) {
+        self.positions.truncate(n);
+        self.normals.truncate(n);
+        self.frame_uvs.truncate(n * 2);
+        let Some(vr) = &self.vr_arms else { return };
+        for arm in &vr.arms.arms {
+            let (Some(wrist), Some((_, map))) = (self.actor.world.get(arm.wrist as usize), vr.maps.iter().find(|(s, _)| *s == arm.side)) else {
+                continue;
+            };
+            let to_arm = glam::Mat4::from_cols_array(&arm.to_arm(&wrist.to_cols_array()));
+            for i in 0..n {
+                let src = map.get(i).copied().unwrap_or(libcommon::vr_arms::COLLAPSED) as usize;
+                if src < n {
+                    let p: Vec3 = self.positions[src].into();
+                    let q: Vec3 = self.normals[src].into();
+                    self.positions.push(to_arm.transform_point3(p).into());
+                    self.normals.push(to_arm.transform_vector3(q).normalize_or_zero().into());
+                    let (u, v) = (self.frame_uvs[src * 2], self.frame_uvs[src * 2 + 1]);
+                    self.frame_uvs.extend([u, v]);
+                } else {
+                    self.positions.push(V3::default());
+                    self.normals.push(Vec3::Y.into());
+                    self.frame_uvs.extend([0., 0.]);
+                }
+            }
+        }
     }
     fn new(actor: Presentation) -> Self {
         let mut v = Self {
@@ -1716,6 +1811,7 @@ impl View {
             colors: vec![],
             alpha_sources: vec![],
             texture_ids: vec![],
+            vr_arms: None,
         };
         let mut lo = Vec3::splat(f32::INFINITY);
         let mut hi = Vec3::splat(f32::NEG_INFINITY);
