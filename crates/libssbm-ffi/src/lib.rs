@@ -285,11 +285,16 @@ fn error(e: impl std::fmt::Display) {
         *s.borrow_mut() = CString::new(e.to_string().replace('\0', " ")).unwrap_or_default()
     });
 }
-fn guarded<T>(fallback: T, f: impl FnOnce() -> T) -> T {
-    catch_unwind(AssertUnwindSafe(f)).unwrap_or_else(|_| {
-        error("native panic");
-        fallback
-    })
+/// Every export's body runs through here: libcommon's guard catches a panic, keeps its message
+/// and location for `ssbm_take_panic`, and the export returns `fallback`. The message also goes
+/// to `ssbm_last_error` as before.
+fn guarded<T>(name: &'static str, fallback: T, f: impl FnOnce() -> T) -> T {
+    let before = libcommon::ffi::panic_count();
+    let r = libcommon::ffi::guard(name, fallback, f);
+    if libcommon::ffi::panic_count() != before {
+        error(format!("{name}: native panic (details from ssbm_take_panic)"));
+    }
+    r
 }
 unsafe fn path<'a>(p: *const c_char) -> Result<&'a Path, Box<dyn std::error::Error + Send + Sync>> {
     if p.is_null() {
@@ -320,14 +325,18 @@ fn fighter_assets(
 
 #[unsafe(no_mangle)]
 pub extern "C" fn ssbm_abi_version() -> u32 {
-    SSBM_ABI_VERSION
+    guarded("ssbm_abi_version", 0, || {
+        SSBM_ABI_VERSION
+    })
 }
 /// Announcer name-call sound for the current fighter, played on the character
 /// select screen. gm_1601.c::gm_80168C5C (invoked from mncharsel.c) maps the
 /// CharacterKind to the 0x7C83X name bank; nr_name.ssm holds the samples.
 #[unsafe(no_mangle)]
 pub extern "C" fn ssbm_announce_sound(kind: u32) -> u32 {
-    fighter_assets(kind).map_or(0, |f| f.announce_sound)
+    guarded("ssbm_announce_sound", 0, || {
+        fighter_assets(kind).map_or(0, |f| f.announce_sound)
+    })
 }
 /// Decode the player's original character-select photo, rows top first.
 /// # Safety
@@ -344,7 +353,7 @@ pub unsafe extern "C" fn ssbm_portrait(
     if info.is_null() {
         return 0;
     }
-    guarded(0, || {
+    guarded("ssbm_portrait", 0, || {
         let result = (|| -> libssbm_assets::Result<_> {
             let fighter = fighter_assets(kind)?;
             if costume >= fighter.costumes.len() as u32 {
@@ -384,36 +393,54 @@ pub unsafe extern "C" fn ssbm_portrait(
 }
 #[unsafe(no_mangle)]
 pub extern "C" fn ssbm_last_error() -> *const c_char {
-    ERROR.with(|e| e.borrow().as_ptr())
+    guarded("ssbm_last_error", std::ptr::null(), || {
+        ERROR.with(|e| e.borrow().as_ptr())
+    })
+}
+/// Takes the oldest panic caught at this library's boundary into `out`
+/// ("export: panicked at file:line:col: message", UTF-8, NUL-terminated when it fits; see
+/// `libcommon::ffi`). Hosts call this once a frame and log what it returns. Returns the bytes
+/// written, 0 when no panic is waiting.
+/// # Safety
+/// `out` is null or writable for `len` bytes.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn ssbm_take_panic(out: *mut u8, len: u32) -> u32 {
+    if out.is_null() || len == 0 {
+        return 0;
+    }
+    // SAFETY: as documented.
+    libcommon::ffi::take_panic_into(unsafe { std::slice::from_raw_parts_mut(out, len as usize) })
 }
 /// # Safety
 /// Caller supplies `max` writable u32 slots, or null to query count.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn ssbm_struct_sizes(out: *mut u32, max: u32) -> u32 {
-    let sizes = [
-        size_of::<V3>(),
-        size_of::<Pad>(),
-        size_of::<State>(),
-        size_of::<Collision>(),
-        size_of::<NativeEvent>(),
-        size_of::<HostTable>(),
-        size_of::<Tuning>(),
-        size_of::<ModelInfo>(),
-        size_of::<Batch>(),
-        size_of::<TextureInfo>(),
-        size_of::<Draw>(),
-        size_of::<HitboxSample>(),
-        size_of::<particles::Sprite>(),
-        size_of::<projectile::State>(),
-    ]
-    .map(|s| s as u32);
-    unsafe { copy(&sizes, out, max) }
+    guarded("ssbm_struct_sizes", 0, || {
+        let sizes = [
+            size_of::<V3>(),
+            size_of::<Pad>(),
+            size_of::<State>(),
+            size_of::<Collision>(),
+            size_of::<NativeEvent>(),
+            size_of::<HostTable>(),
+            size_of::<Tuning>(),
+            size_of::<ModelInfo>(),
+            size_of::<Batch>(),
+            size_of::<TextureInfo>(),
+            size_of::<Draw>(),
+            size_of::<HitboxSample>(),
+            size_of::<particles::Sprite>(),
+            size_of::<projectile::State>(),
+        ]
+        .map(|s| s as u32);
+        unsafe { copy(&sizes, out, max) }
+    })
 }
 /// # Safety
 /// UTF-8 NUL-terminated cache folder path; returns 1 only for a complete cache.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn ssbm_assets_complete(dir: *const c_char, kind: u32) -> u32 {
-    guarded(0, || {
+    guarded("ssbm_assets_complete", 0, || {
         let result = (|| -> libssbm_assets::Result<u32> {
             let fighter = fighter_assets(kind)?;
             Ok(fighter.complete(unsafe { path(dir) }?) as u32)
@@ -431,7 +458,7 @@ pub unsafe extern "C" fn ssbm_assets_complete(dir: *const c_char, kind: u32) -> 
 /// Paths must be valid UTF-8 NUL-terminated strings for this call.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn ssbm_extract(disc: *const c_char, dir: *const c_char, kind: u32) -> u32 {
-    guarded(0, || {
+    guarded("ssbm_extract", 0, || {
         let result = (|| -> libssbm_assets::Result<()> {
             // 100: the common item archive (the Super Scope), which no fighter's set includes.
             if kind == 100 {
@@ -460,7 +487,7 @@ pub unsafe extern "C" fn ssbm_extract(disc: *const c_char, dir: *const c_char, k
 /// A valid NUL-terminated UTF-8 cache path.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn ssbm_bake_vr_arms(dir: *const c_char) -> u32 {
-    guarded(0, || {
+    guarded("ssbm_bake_vr_arms", 0, || {
         let result = (|| -> libssbm_assets::Result<u32> {
             let notes = libssbm_assets::vr_arms::bake(unsafe { path(dir) }?)?;
             Ok(notes.len() as u32)
@@ -483,7 +510,7 @@ pub unsafe extern "C" fn ssbm_bake_vr_arms(dir: *const c_char) -> u32 {
 /// A live view; a valid NUL-terminated UTF-8 cache path when `on` is 1.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn ssbm_view_set_vr_arms(v: *mut View, dir: *const c_char, kind: u32, costume: u32, on: u32) -> u32 {
-    guarded(0, || {
+    guarded("ssbm_view_set_vr_arms", 0, || {
         let Some(v) = (unsafe { v.as_mut() }) else { return 0 };
         if on == 0 {
             v.vr_arms = None;
@@ -524,7 +551,7 @@ pub unsafe extern "C" fn ssbm_view_set_vr_arms(v: *mut View, dir: *const c_char,
 /// A live view; `out` holds `max` bytes or is null.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn ssbm_view_vr_arm_sides(v: *const View, out: *mut u8, max: u32) -> u32 {
-    guarded(0, || {
+    guarded("ssbm_view_vr_arm_sides", 0, || {
         let Some(v) = (unsafe { v.as_ref() }) else { return 0 };
         let sides: Vec<u8> = v.vr_arms.as_ref().map_or(Vec::new(), |a| a.arms.arms.iter().map(|a| a.side).collect());
         unsafe { copy(&sides, out, max) }
@@ -534,7 +561,9 @@ pub unsafe extern "C" fn ssbm_view_vr_arm_sides(v: *const View, out: *mut u8, ma
 /// A valid cache path and finite starting position. Free once with ssbm_sim_free.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn ssbm_sim_new(dir: *const c_char, pos: V3) -> *mut Handle {
-    unsafe { ssbm_sim_new_fighter(dir, pos, 0) }
+    guarded("ssbm_sim_new", std::ptr::null_mut(), || {
+        unsafe { ssbm_sim_new_fighter(dir, pos, 0) }
+    })
 }
 /// Mario's Melee clips posed onto Sunshine's `ma_mdl1.bmd` rig (the A-attack
 /// animation port). Load once; free with ssbm_mario_pose_free.
@@ -553,7 +582,7 @@ pub unsafe extern "C" fn ssbm_mario_pose_new(
     dir: *const c_char,
     sms_bmd: *const c_char,
 ) -> *mut MarioPose {
-    guarded(std::ptr::null_mut(), || {
+    guarded("ssbm_mario_pose_new", std::ptr::null_mut(), || {
         let result = (|| -> libssbm_assets::Result<MarioPose> {
             let dir = unsafe { path(dir) }?;
             let bmd = unsafe { path(sms_bmd) }?;
@@ -596,7 +625,7 @@ pub unsafe extern "C" fn ssbm_mario_pose_sample(
         return 0;
     }
     let pose = unsafe { &*pose };
-    guarded(0, || {
+    guarded("ssbm_mario_pose_sample", 0, || {
         let Ok(clip) = unsafe { CStr::from_ptr(clip) }.to_str() else {
             return 0;
         };
@@ -623,9 +652,11 @@ pub unsafe extern "C" fn ssbm_mario_pose_sample(
 /// A pose from ssbm_mario_pose_new, freed once.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn ssbm_mario_pose_free(pose: *mut MarioPose) {
-    if !pose.is_null() {
-        drop(unsafe { Box::from_raw(pose) });
-    }
+    guarded("ssbm_mario_pose_free", (), || {
+        if !pose.is_null() {
+            drop(unsafe { Box::from_raw(pose) });
+        }
+    })
 }
 
 /// # Safety
@@ -633,7 +664,7 @@ pub unsafe extern "C" fn ssbm_mario_pose_free(pose: *mut MarioPose) {
 /// (0 = Samus). Free once with ssbm_sim_free.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn ssbm_sim_new_fighter(dir: *const c_char, pos: V3, kind: u32) -> *mut Handle {
-    guarded(std::ptr::null_mut(), || {
+    guarded("ssbm_sim_new_fighter", std::ptr::null_mut(), || {
         let result = (|| -> libssbm_assets::Result<(
             Sim,
             Rig,
@@ -774,7 +805,7 @@ pub unsafe extern "C" fn ssbm_sim_hitboxes(
     if out.is_null() || max == 0 {
         return count;
     }
-    guarded(0, || {
+    guarded("ssbm_sim_hitboxes", 0, || {
         for (i, sample) in h.sim.action.samples.iter().take(max as usize).enumerate() {
             let hit = &sample.hitbox;
             let joint = if hit.common_bone {
@@ -869,7 +900,7 @@ pub unsafe extern "C" fn ssbm_sim_gfx(
     if out.is_null() {
         return count;
     }
-    guarded(0, || {
+    guarded("ssbm_sim_gfx", 0, || {
         for (i, cue) in h.sim.action.effects.iter().take(max as usize).enumerate() {
             let part = if cue.bone == usize::MAX {
                 h.rig.effect_bone
@@ -936,7 +967,7 @@ pub unsafe extern "C" fn ssbm_sim_common_bone(
         return 0;
     }
     let h = unsafe { &*handle };
-    guarded(0, || {
+    guarded("ssbm_sim_common_bone", 0, || {
         let Some(&joint) = h.rig.common_bones.get(part as usize) else {
             return 0;
         };
@@ -951,7 +982,7 @@ pub unsafe extern "C" fn ssbm_sim_bone(handle: *const Handle, bone: u32, out: *m
         return 0;
     }
     let h = unsafe { &*handle };
-    guarded(0, || {
+    guarded("ssbm_sim_bone", 0, || {
         if bone == 139 {
             let local = *h
                 .rig
@@ -982,32 +1013,38 @@ pub unsafe extern "C" fn ssbm_sim_bone(handle: *const Handle, bone: u32, out: *m
 /// Unique live fighter; host reports a successful capture/release.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn ssbm_sim_set_grabbed(h: *mut Handle, held: u32) {
-    if !h.is_null() {
-        unsafe {
-            (&mut *h).sim.set_grabbed(held != 0);
-            (&mut *h).net.log(Op::SetGrabbed(held));
+    guarded("ssbm_sim_set_grabbed", (), || {
+        if !h.is_null() {
+            unsafe {
+                (&mut *h).sim.set_grabbed(held != 0);
+                (&mut *h).net.log(Op::SetGrabbed(held));
+            }
         }
-    }
+    })
 }
 /// # Safety
 /// Live fighter or null.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn ssbm_sim_grabbed(h: *const Handle) -> u32 {
-    if h.is_null() {
-        0
-    } else {
-        unsafe { (&*h).sim.grabbed as u32 }
-    }
+    guarded("ssbm_sim_grabbed", 0, || {
+        if h.is_null() {
+            0
+        } else {
+            unsafe { (&*h).sim.grabbed as u32 }
+        }
+    })
 }
 /// # Safety
 /// Live fighter or null; read-only source motion clock for accessory posing.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn ssbm_sim_motion_frame(h: *const Handle) -> f32 {
-    if h.is_null() {
-        0.
-    } else {
-        unsafe { (&*h).sim.motion.frame }
-    }
+    guarded("ssbm_sim_motion_frame", 0.0, || {
+        if h.is_null() {
+            0.
+        } else {
+            unsafe { (&*h).sim.motion.frame }
+        }
+    })
 }
 /// Posed source grapple chain for the RoR2 3D extension policy. Endpoint is also
 /// used by the source virtual hitbox joint 0x8B, so contact follows the model.
@@ -1018,7 +1055,7 @@ pub unsafe extern "C" fn ssbm_sim_grapple_points(h: *const Handle, out: *mut V3,
     if h.is_null() {
         return 0;
     }
-    guarded(0, || unsafe {
+    guarded("ssbm_sim_grapple_points", 0, || unsafe {
         let h = &*h;
         let clip = h.sim.motion.clip;
         if !matches!(clip, "Catch" | "CatchDash" | "AirCatch") {
@@ -1043,7 +1080,7 @@ pub unsafe extern "C" fn ssbm_sim_grapple_points(h: *const Handle, out: *mut V3,
 /// Valid cache path; returned native view must be freed once.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn ssbm_grapple_new(dir: *const c_char, part: u32) -> *mut View {
-    guarded(std::ptr::null_mut(), || {
+    guarded("ssbm_grapple_new", std::ptr::null_mut(), || {
         match (|| libssbm_assets::grapple::part(unsafe { path(dir) }?, part))() {
             Ok(p) => Box::into_raw(Box::new(View::new(p))),
             Err(e) => {
@@ -1059,7 +1096,7 @@ pub unsafe extern "C" fn ssbm_grapple_new(dir: *const c_char, part: u32) -> *mut
 /// Valid UTF-8 cache path; returned view is freed with ssbm_view_free.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn ssbm_hookshot_new(dir: *const c_char, part: u32) -> *mut View {
-    guarded(std::ptr::null_mut(), || {
+    guarded("ssbm_hookshot_new", std::ptr::null_mut(), || {
         match (|| libssbm_assets::hookshot::part(unsafe { path(dir) }?, part))() {
             Ok(p) => Box::into_raw(Box::new(View::new(p))),
             Err(e) => {
@@ -1073,11 +1110,13 @@ pub unsafe extern "C" fn ssbm_hookshot_new(dir: *const c_char, part: u32) -> *mu
 /// Live simulation. Motion serial changes on every clip/state transition.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn ssbm_sim_motion_serial(handle: *const Handle) -> u64 {
-    if handle.is_null() {
-        0
-    } else {
-        unsafe { &*handle }.sim.motion.serial
-    }
+    guarded("ssbm_sim_motion_serial", 0, || {
+        if handle.is_null() {
+            0
+        } else {
+            unsafe { &*handle }.sim.motion.serial
+        }
+    })
 }
 /// # Safety
 /// Live sim and sixteen writable floats. Returns the original held charge
@@ -1087,7 +1126,7 @@ pub unsafe extern "C" fn ssbm_sim_charge_visual(h: *const Handle, out: *mut f32)
     if h.is_null() || out.is_null() {
         return 0;
     }
-    guarded(0, || unsafe {
+    guarded("ssbm_sim_charge_visual", 0, || unsafe {
         let h = &*h;
         if h.sim.phase != libssbm::Phase::ChargeShot {
             return 0;
@@ -1111,14 +1150,16 @@ pub unsafe extern "C" fn ssbm_sim_charge_visual(h: *const Handle, out: *mut f32)
 /// Live fighter or null. UI resource amount, independent of the charge article.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn ssbm_sim_charge_fraction(h: *const Handle) -> f32 {
-    if h.is_null() {
-        0.
-    } else {
-        unsafe {
-            let h = &*h;
-            h.sim.shot_charge as f32 / h.sim.behavior.charge_steps().max(1) as f32
+    guarded("ssbm_sim_charge_fraction", 0.0, || {
+        if h.is_null() {
+            0.
+        } else {
+            unsafe {
+                let h = &*h;
+                h.sim.shot_charge as f32 / h.sim.behavior.charge_steps().max(1) as f32
+            }
         }
-    }
+    })
 }
 /// # Safety
 /// Writable max u32 IDs (or null). Host presentation supplies completed fighter
@@ -1133,7 +1174,7 @@ pub unsafe extern "C" fn ssbm_article_cues(
     out: *mut u32,
     max: u32,
 ) -> u32 {
-    guarded(0, || unsafe {
+    guarded("ssbm_article_cues", 0, || unsafe {
         copy(
             &libssbm::effect::article_cues(kind, state, previous, frame, full_charge != 0),
             out,
@@ -1143,35 +1184,41 @@ pub unsafe extern "C" fn ssbm_article_cues(
 }
 #[unsafe(no_mangle)]
 pub extern "C" fn ssbm_effect_target(id: u32) -> i32 {
-    match libssbm::effect::resolve(id) {
-        libssbm::effect::Target::Particle(id) => id as i32,
-        libssbm::effect::Target::Model(id) => -(id as i32) - 1,
-        libssbm::effect::Target::NoOp => i32::MIN,
-        libssbm::effect::Target::CameraShake(id) => i32::MIN + id as i32 + 1,
-        libssbm::effect::Target::Unknown => i32::MAX,
-    }
+    guarded("ssbm_effect_target", i32::MAX, || {
+        match libssbm::effect::resolve(id) {
+            libssbm::effect::Target::Particle(id) => id as i32,
+            libssbm::effect::Target::Model(id) => -(id as i32) - 1,
+            libssbm::effect::Target::NoOp => i32::MIN,
+            libssbm::effect::Target::CameraShake(id) => i32::MIN + id as i32 + 1,
+            libssbm::effect::Target::Unknown => i32::MAX,
+        }
+    })
 }
 #[unsafe(no_mangle)]
 pub extern "C" fn ssbm_effect_flags(id: u32) -> u32 {
-    // Attachment policy from ftCo_8009F834 and efAlt_Spawn.
-    u32::from(libssbm::effect::attached(id))
+    guarded("ssbm_effect_flags", 0, || {
+        // Attachment policy from ftCo_8009F834 and efAlt_Spawn.
+        u32::from(libssbm::effect::attached(id))
+    })
 }
 /// A second effect spawned with `id` (same encoding as `ssbm_effect_target`;
 /// `i32::MIN` when there is none).
 #[unsafe(no_mangle)]
 pub extern "C" fn ssbm_effect_companion(id: u32) -> i32 {
-    match libssbm::effect::companion(id) {
-        Some(libssbm::effect::Target::Particle(id)) => id as i32,
-        Some(libssbm::effect::Target::Model(id)) => -(id as i32) - 1,
-        _ => i32::MIN,
-    }
+    guarded("ssbm_effect_companion", i32::MIN, || {
+        match libssbm::effect::companion(id) {
+            Some(libssbm::effect::Target::Particle(id)) => id as i32,
+            Some(libssbm::effect::Target::Model(id)) => -(id as i32) - 1,
+            _ => i32::MIN,
+        }
+    })
 }
 /// # Safety
 /// `handle` is null or a live unique handle; consume it exactly once.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn ssbm_sim_free(handle: *mut Handle) {
     if !handle.is_null() {
-        guarded((), || drop(unsafe { Box::from_raw(handle) }));
+        guarded("ssbm_sim_free", (), || drop(unsafe { Box::from_raw(handle) }));
     }
 }
 struct Adapter<'a>(&'a HostTable, &'a Rig);
@@ -1350,26 +1397,28 @@ fn sample_trail(h: &mut Handle) {
 /// Live handle; `out` is null or holds `max * 7` floats.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn ssbm_sim_trail(handle: *const Handle, out: *mut f32, max: u32) -> u32 {
-    if handle.is_null() {
-        return 0;
-    }
-    let h = unsafe { &*handle };
-    let Some((params, _)) = h.trail else { return 0 };
-    let strip = libssbm::trail::strip(&h.trail_samples, &params);
-    if out.is_null() {
-        return strip.len() as u32;
-    }
-    let n = strip.len().min(max as usize);
-    for (i, v) in strip.iter().take(n).enumerate() {
-        let at = unsafe { std::slice::from_raw_parts_mut(out.add(i * 7), 7) };
-        at[0] = v.position.x;
-        at[1] = v.position.y;
-        at[2] = v.position.z;
-        for c in 0..4 {
-            at[3 + c] = v.color[c] as f32 / 255.;
+    guarded("ssbm_sim_trail", 0, || {
+        if handle.is_null() {
+            return 0;
         }
-    }
-    n as u32
+        let h = unsafe { &*handle };
+        let Some((params, _)) = h.trail else { return 0 };
+        let strip = libssbm::trail::strip(&h.trail_samples, &params);
+        if out.is_null() {
+            return strip.len() as u32;
+        }
+        let n = strip.len().min(max as usize);
+        for (i, v) in strip.iter().take(n).enumerate() {
+            let at = unsafe { std::slice::from_raw_parts_mut(out.add(i * 7), 7) };
+            at[0] = v.position.x;
+            at[1] = v.position.y;
+            at[2] = v.position.z;
+            for c in 0..4 {
+                at[3 + c] = v.color[c] as f32 / 255.;
+            }
+        }
+        n as u32
+    })
 }
 /// Render stereo float PCM at 32 kHz. Call after stepping, outside host callbacks.
 /// # Safety
@@ -1383,7 +1432,7 @@ pub unsafe extern "C" fn ssbm_sim_audio(handle: *mut Handle, out: *mut f32, fram
     if h.poisoned {
         return 0;
     }
-    guarded(0, || {
+    guarded("ssbm_sim_audio", 0, || {
         let out = unsafe { std::slice::from_raw_parts_mut(out, frames as usize * 2) };
         h.audio.render(out);
         if !h.foreign_audio.is_empty() {
@@ -1424,7 +1473,7 @@ pub unsafe extern "C" fn ssbm_sim_play_sound(handle: *mut Handle, sound: u32) ->
     if h.poisoned {
         return 0;
     }
-    guarded(0, || match h.audio.play(sound, 127, 64, 0) {
+    guarded("ssbm_sim_play_sound", 0, || match h.audio.play(sound, 127, 64, 0) {
         Ok(()) => 1,
         Err(e) => {
             error(e);
@@ -1450,7 +1499,7 @@ pub unsafe extern "C" fn ssbm_sim_play_sound_from(
     if h.poisoned {
         return 0;
     }
-    guarded(0, || {
+    guarded("ssbm_sim_play_sound_from", 0, || {
         let fighter = match fighter_assets(fighter_kind) {
             Ok(f) => f,
             Err(e) => {
@@ -1490,96 +1539,106 @@ pub unsafe extern "C" fn ssbm_sim_play_sound_from(
 /// Unique live fighter; call outside host callbacks.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn ssbm_sim_audio_active(handle: *const Handle) -> u32 {
-    if handle.is_null() {
-        return 0;
-    }
-    let h = unsafe { &*handle };
-    if h.poisoned {
-        return 0;
-    }
-    h.audio.active() as u32
-        | (h.foreign_audio.values().any(|m| m.active()) as u32)
+    guarded("ssbm_sim_audio_active", 0, || {
+        if handle.is_null() {
+            return 0;
+        }
+        let h = unsafe { &*handle };
+        if h.poisoned {
+            return 0;
+        }
+        h.audio.active() as u32
+            | (h.foreign_audio.values().any(|m| m.active()) as u32)
+    })
 }
 /// # Safety
 /// Live handle and writable State pointer. Returns 0 for poisoned handles.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn ssbm_sim_state(handle: *const Handle, out: *mut State) -> u32 {
-    if handle.is_null() || out.is_null() {
-        return 0;
-    }
-    let h = unsafe { &*handle };
-    if h.poisoned {
-        return 0;
-    }
-    let s = &h.sim;
-    unsafe {
-        *out = State {
-            position: s.position.into(),
-            velocity: s.velocity.into(),
-            facing: s.facing.into(),
-            grounded: s.grounded as u32,
-            phase: s.phase as u32,
-            move_id: s.current_move.map(|m| m as u32).unwrap_or(0),
-            jumps_used: s.jumps_used,
-            shot_charge: s.shot_charge,
-            smash_charge: s.smash_charge,
-            frame: s.frame,
-        };
-    }
-    1
+    guarded("ssbm_sim_state", 0, || {
+        if handle.is_null() || out.is_null() {
+            return 0;
+        }
+        let h = unsafe { &*handle };
+        if h.poisoned {
+            return 0;
+        }
+        let s = &h.sim;
+        unsafe {
+            *out = State {
+                position: s.position.into(),
+                velocity: s.velocity.into(),
+                facing: s.facing.into(),
+                grounded: s.grounded as u32,
+                phase: s.phase as u32,
+                move_id: s.current_move.map(|m| m as u32).unwrap_or(0),
+                jumps_used: s.jumps_used,
+                shot_charge: s.shot_charge,
+                smash_charge: s.smash_charge,
+                frame: s.frame,
+            };
+        }
+        1
+    })
 }
 /// # Safety
 /// Live handle and finite/bounded tuning. Invalid tuning leaves previous values intact.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn ssbm_sim_tuning(handle: *mut Handle, t: Tuning) -> u32 {
-    if handle.is_null()
-        || !t.speed_scale.is_finite()
-        || !t.jump_scale.is_finite()
-        || !(0. ..=100.).contains(&t.speed_scale)
-        || !(0. ..=100.).contains(&t.jump_scale)
-        || t.extra_jumps > 100
-        || t.smash_max_frames == 0
-    {
-        return 0;
-    }
-    let h = unsafe { &mut *handle };
-    if h.poisoned {
-        return 0;
-    }
-    h.sim.options = libssbm::Options {
-        speed_scale: t.speed_scale,
-        jump_scale: t.jump_scale,
-        extra_jumps: t.extra_jumps,
-        hold_charge: t.hold_charge != 0,
-        smash_max_frames: t.smash_max_frames,
-    };
-    h.net.log(Op::Tuning(t));
-    1
+    guarded("ssbm_sim_tuning", 0, || {
+        if handle.is_null()
+            || !t.speed_scale.is_finite()
+            || !t.jump_scale.is_finite()
+            || !(0. ..=100.).contains(&t.speed_scale)
+            || !(0. ..=100.).contains(&t.jump_scale)
+            || t.extra_jumps > 100
+            || t.smash_max_frames == 0
+        {
+            return 0;
+        }
+        let h = unsafe { &mut *handle };
+        if h.poisoned {
+            return 0;
+        }
+        h.sim.options = libssbm::Options {
+            speed_scale: t.speed_scale,
+            jump_scale: t.jump_scale,
+            extra_jumps: t.extra_jumps,
+            hold_charge: t.hold_charge != 0,
+            smash_max_frames: t.smash_max_frames,
+        };
+        h.net.log(Op::Tuning(t));
+        1
+    })
 }
 /// Deprecated host mobile-move override: the fighter's `Behavior` now owns which
 /// moves steer with the upper/lower split. Kept for ABI compatibility; ignored.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn ssbm_sim_mobile_moves(_handle: *mut Handle, _mask: u64) -> u32 {
-    1
+    guarded("ssbm_sim_mobile_moves", 0, || {
+        1
+    })
 }
 /// # Safety
 /// Live handle; finite vector. kind=0 teleports, kind=1 applies velocity in units/tick.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn ssbm_sim_place(handle: *mut Handle, v: V3, kind: u32) {
-    if handle.is_null() || !Vec3::from(v).is_finite() {
-        return;
-    }
-    let h = unsafe { &mut *handle };
-    if !h.poisoned {
-        h.net.log(Op::Place { v, kind });
-        if kind == 2 {
-            h.sim.correct_position(v.into());
-        } else if kind == 0 {
-            h.sim.teleport(v.into());
-        } else {
-            h.sim.launch(v.into());
+    guarded("ssbm_sim_place", (), || {
+        if handle.is_null() || !Vec3::from(v).is_finite() {
+            return;
         }
-    }
+        let h = unsafe { &mut *handle };
+        if !h.poisoned {
+            h.net.log(Op::Place { v, kind });
+            if kind == 2 {
+                h.sim.correct_position(v.into());
+            } else if kind == 0 {
+                h.sim.teleport(v.into());
+            } else {
+                h.sim.launch(v.into());
+            }
+        }
+    })
 }
 /// Move a live fighter without touching its action, velocity or clocks (a host
 /// terrain correction, e.g. lifting an Illusion out of an uphill slope).
@@ -1587,13 +1646,15 @@ pub unsafe extern "C" fn ssbm_sim_place(handle: *mut Handle, v: V3, kind: u32) {
 /// Live handle; finite vector.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn ssbm_sim_nudge(handle: *mut Handle, v: V3, grounded: u32) {
-    if handle.is_null() || !Vec3::from(v).is_finite() {
-        return;
-    }
-    let h = unsafe { &mut *handle };
-    if !h.poisoned {
-        h.sim.nudge(v.into(), grounded != 0);
-    }
+    guarded("ssbm_sim_nudge", (), || {
+        if handle.is_null() || !Vec3::from(v).is_finite() {
+            return;
+        }
+        let h = unsafe { &mut *handle };
+        if !h.poisoned {
+            h.sim.nudge(v.into(), grounded != 0);
+        }
+    })
 }
 /// Supply the host's resolved horizontal heading without changing momentum or
 /// the aim ray. Existing ABI-4 layouts are unchanged.
@@ -1601,24 +1662,28 @@ pub unsafe extern "C" fn ssbm_sim_nudge(handle: *mut Handle, v: V3, grounded: u3
 /// Unique live handle or null. No concurrent calls.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn ssbm_sim_facing(handle: *mut Handle, facing: V3) {
-    if let Some(h) = unsafe { handle.as_mut() } {
-        if !h.poisoned {
-            h.sim.set_host_facing(facing.into());
-            h.net.log(Op::Facing(facing));
+    guarded("ssbm_sim_facing", (), || {
+        if let Some(h) = unsafe { handle.as_mut() } {
+            if !h.poisoned {
+                h.sim.set_host_facing(facing.into());
+                h.net.log(Op::Facing(facing));
+            }
         }
-    }
+    })
 }
 /// Set the requested jump apex in sim units; zero restores source jump tuning.
 /// # Safety
 /// Unique live handle or null.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn ssbm_sim_jump_height(handle: *mut Handle, height: f32) {
-    if let Some(h) = unsafe { handle.as_mut() } {
-        if !h.poisoned && height.is_finite() && height >= 0. {
-            h.sim.host_jump_height = if height > 0. { Some(height) } else { None };
-            h.net.log(Op::JumpHeight(height));
+    guarded("ssbm_sim_jump_height", (), || {
+        if let Some(h) = unsafe { handle.as_mut() } {
+            if !h.poisoned && height.is_finite() && height >= 0. {
+                h.sim.host_jump_height = if height > 0. { Some(height) } else { None };
+                h.net.log(Op::JumpHeight(height));
+            }
         }
-    }
+    })
 }
 /// Give the fighter its jumps back without landing. Link's hookshot uses this
 /// when the chain bites: ftCo_AirCatch.c's tether recovery restores the air
@@ -1627,14 +1692,16 @@ pub unsafe extern "C" fn ssbm_sim_jump_height(handle: *mut Handle, height: f32) 
 /// Unique live handle or null.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn ssbm_sim_reset_jumps(handle: *mut Handle) -> u32 {
-    if let Some(h) = unsafe { handle.as_mut() } {
-        if !h.poisoned && h.sim.entry.is_none() {
-            h.sim.jumps_used = 0;
-            h.net.log(Op::ResetJumps);
-            return 1;
+    guarded("ssbm_sim_reset_jumps", 0, || {
+        if let Some(h) = unsafe { handle.as_mut() } {
+            if !h.poisoned && h.sim.entry.is_none() {
+                h.sim.jumps_used = 0;
+                h.net.log(Op::ResetJumps);
+                return 1;
+            }
         }
-    }
-    0
+        0
+    })
 }
 /// # Safety
 /// Live fighter or null. Bits: shield=1, dodge invulnerability=2, broken=4,
@@ -1642,28 +1709,34 @@ pub unsafe extern "C" fn ssbm_sim_reset_jumps(handle: *mut Handle) -> u32 {
 /// up-special (Screw Attack) i-frames=128.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn ssbm_sim_defense_flags(h: *const Handle) -> u32 {
-    unsafe { h.as_ref() }
-        .filter(|h| !h.poisoned)
-        .map(|h| h.sim.defense_flags())
-        .unwrap_or(0)
+    guarded("ssbm_sim_defense_flags", 0, || {
+        unsafe { h.as_ref() }
+            .filter(|h| !h.poisoned)
+            .map(|h| h.sim.defense_flags())
+            .unwrap_or(0)
+    })
 }
 /// Extend an existing knockdown's recovery immunity while host stun owns input.
 /// Does nothing when no knockdown protection is active.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn ssbm_sim_hold_knockdown(h: *mut Handle) {
-    if let Some(h) = unsafe { h.as_mut() }.filter(|h| !h.poisoned) {
-        h.sim.hold_knockdown_protection();
-        h.net.log(Op::HoldKnockdown);
-    }
+    guarded("ssbm_sim_hold_knockdown", (), || {
+        if let Some(h) = unsafe { h.as_mut() }.filter(|h| !h.poisoned) {
+            h.sim.hold_knockdown_protection();
+            h.net.log(Op::HoldKnockdown);
+        }
+    })
 }
 /// # Safety
 /// Unique fighter or null, damage as a finite fraction of host maximum health.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn ssbm_sim_shield_hit(h: *mut Handle, damage: f32) -> u32 {
-    unsafe { h.as_mut() }
-        .filter(|h| !h.poisoned)
-        .map(|h| h.sim.shield_hit(damage * h.sim.defense.params.maximum) as u32)
-        .unwrap_or(0)
+    guarded("ssbm_sim_shield_hit", 0, || {
+        unsafe { h.as_mut() }
+            .filter(|h| !h.poisoned)
+            .map(|h| h.sim.shield_hit(damage * h.sim.defense.params.maximum) as u32)
+            .unwrap_or(0)
+    })
 }
 /// End a host-armored roll on the next tick (Yoshi's egg or Samus's Morph Ball; the
 /// host's armor ran out). Returns 1 when a roll was out, 0 otherwise.
@@ -1671,18 +1744,20 @@ pub unsafe extern "C" fn ssbm_sim_shield_hit(h: *mut Handle, damage: f32) -> u32
 /// Unique live fighter or null.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn ssbm_sim_break_roll(h: *mut Handle) -> u32 {
-    unsafe { h.as_mut() }
-        .filter(|h| !h.poisoned && {
-            h.sim.current_move == Some(libssbm::Move::SpecialS)
-                || (h.sim.current_move == Some(libssbm::Move::SpecialLw)
-                    && h.sim.host_flags & libssbm::samus::HOST_MORPH_ROLL != 0)
-        })
-        .map(|h| {
-            h.sim.roll_break = true;
-            h.net.log(crate::replay::Op::BreakRoll);
-            1
-        })
-        .unwrap_or(0)
+    guarded("ssbm_sim_break_roll", 0, || {
+        unsafe { h.as_mut() }
+            .filter(|h| !h.poisoned && {
+                h.sim.current_move == Some(libssbm::Move::SpecialS)
+                    || (h.sim.current_move == Some(libssbm::Move::SpecialLw)
+                        && h.sim.host_flags & libssbm::samus::HOST_MORPH_ROLL != 0)
+            })
+            .map(|h| {
+                h.sim.roll_break = true;
+                h.net.log(crate::replay::Op::BreakRoll);
+                1
+            })
+            .unwrap_or(0)
+    })
 }
 /// Bounce a held Samus Morph Ball off an enemy (the host's morph hitbox landed). Returns 1
 /// when a morph roll was out, 0 otherwise.
@@ -1690,61 +1765,71 @@ pub unsafe extern "C" fn ssbm_sim_break_roll(h: *mut Handle) -> u32 {
 /// Unique live fighter or null.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn ssbm_sim_bonk_roll(h: *mut Handle) -> u32 {
-    unsafe { h.as_mut() }
-        .filter(|h| !h.poisoned && h.sim.morph_roll_hold)
-        .map(|h| {
-            h.sim.roll_bonk = true;
-            h.net.log(crate::replay::Op::BonkRoll);
-            1
-        })
-        .unwrap_or(0)
+    guarded("ssbm_sim_bonk_roll", 0, || {
+        unsafe { h.as_mut() }
+            .filter(|h| !h.poisoned && h.sim.morph_roll_hold)
+            .map(|h| {
+                h.sim.roll_bonk = true;
+                h.net.log(crate::replay::Op::BonkRoll);
+                1
+            })
+            .unwrap_or(0)
+    })
 }
 /// # Safety
 /// Live fighter or null.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn ssbm_sim_shield_fraction(h: *const Handle) -> f32 {
-    unsafe { h.as_ref() }
-        .filter(|h| !h.poisoned)
-        .map(|h| h.sim.defense.health / h.sim.defense.params.maximum)
-        .unwrap_or(0.)
+    guarded("ssbm_sim_shield_fraction", 0.0, || {
+        unsafe { h.as_ref() }
+            .filter(|h| !h.poisoned)
+            .map(|h| h.sim.defense.health / h.sim.defense.params.maximum)
+            .unwrap_or(0.)
+    })
 }
 /// Disc shield radius/health scale for the host's extracted guard model.
 /// # Safety
 /// Live fighter or null.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn ssbm_sim_shield_scale(h: *const Handle) -> f32 {
-    unsafe { h.as_ref() }
-        .filter(|h| !h.poisoned)
-        .map(|h| h.sim.shield_scale())
-        .unwrap_or(0.)
+    guarded("ssbm_sim_shield_scale", 0.0, || {
+        unsafe { h.as_ref() }
+            .filter(|h| !h.poisoned)
+            .map(|h| h.sim.shield_scale())
+            .unwrap_or(0.)
+    })
 }
 /// Collision-resolved self placement for a held grapple; preserves action clocks.
 /// # Safety
 /// Unique live handle or null, finite position.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn ssbm_sim_anchor(handle: *mut Handle, position: V3, grounded: u32) {
-    if let Some(h) = unsafe { handle.as_mut() } {
-        let p: Vec3 = position.into();
-        if !h.poisoned
-            && p.is_finite()
-            && h.sim.entry.is_none()
-            && !h.sim.rebirth.as_ref().is_some_and(|s| s.flags() & 1 != 0)
-        {
-            h.sim.position = p;
-            h.sim.velocity = Vec3::ZERO;
-            h.sim.grounded = grounded != 0;
-            h.net.log(Op::Anchor { position, grounded });
+    guarded("ssbm_sim_anchor", (), || {
+        if let Some(h) = unsafe { handle.as_mut() } {
+            let p: Vec3 = position.into();
+            if !h.poisoned
+                && p.is_finite()
+                && h.sim.entry.is_none()
+                && !h.sim.rebirth.as_ref().is_some_and(|s| s.flags() & 1 != 0)
+            {
+                h.sim.position = p;
+                h.sim.velocity = Vec3::ZERO;
+                h.sim.grounded = grounded != 0;
+                h.net.log(Op::Anchor { position, grounded });
+            }
         }
-    }
+    })
 }
 /// Whether authored motion/capture currently owns yaw. Null is unlocked.
 /// # Safety
 /// Live handle or null; no concurrent mutation.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn ssbm_sim_facing_locked(handle: *const Handle) -> u32 {
-    unsafe { handle.as_ref() }
-        .map(|h| h.sim.facing_locked() as u32)
-        .unwrap_or(0)
+    guarded("ssbm_sim_facing_locked", 0, || {
+        unsafe { handle.as_ref() }
+            .map(|h| h.sim.facing_locked() as u32)
+            .unwrap_or(0)
+    })
 }
 
 impl View {
@@ -1859,7 +1944,7 @@ impl View {
 /// UTF-8 cache path; costume index 0..4. Free with ssbm_view_free.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn ssbm_view_new(dir: *const c_char, kind: u32, costume: u32) -> *mut View {
-    guarded(std::ptr::null_mut(), || {
+    guarded("ssbm_view_new", std::ptr::null_mut(), || {
         let result = (|| {
             let fighter = fighter_assets(kind)?;
             Presentation::load_for(unsafe { path(dir) }?, costume as usize, fighter)
@@ -1885,7 +1970,7 @@ pub unsafe extern "C" fn ssbm_view_new_choice(
     costume: u32,
     choice: u32,
 ) -> *mut View {
-    guarded(std::ptr::null_mut(), || {
+    guarded("ssbm_view_new_choice", std::ptr::null_mut(), || {
         let result = (|| {
             let fighter = fighter_assets(kind)?;
             Presentation::load_for_variant(
@@ -1914,7 +1999,7 @@ pub unsafe extern "C" fn ssbm_article_new(
     article_kind: u32,
     state: u32,
 ) -> *mut View {
-    guarded(std::ptr::null_mut(), || {
+    guarded("ssbm_article_new", std::ptr::null_mut(), || {
         let result = (|| {
             let fighter = fighter_assets(fighter_kind)?;
             Presentation::article_for(unsafe { path(dir) }?, article_kind, state, fighter)
@@ -1938,12 +2023,14 @@ pub unsafe extern "C" fn ssbm_article_new(
 /// Live fighter handle or null; no concurrent mutation.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn ssbm_sim_link_bow_state(handle: *const Handle) -> i32 {
-    let Some(h) = (unsafe { handle.as_ref() }) else { return -1 };
-    if h.poisoned || h.kind != libssbm_assets::fighter::FighterKind::Link {
-        return -1;
-    }
-    libssbm_assets::held::link_bow_state(h.sim.motion.clip, h.sim.motion.frame)
-        .map_or(-1, |s| s as i32)
+    guarded("ssbm_sim_link_bow_state", -1, || {
+        let Some(h) = (unsafe { handle.as_ref() }) else { return -1 };
+        if h.poisoned || h.kind != libssbm_assets::fighter::FighterKind::Link {
+            return -1;
+        }
+        libssbm_assets::held::link_bow_state(h.sim.motion.clip, h.sim.motion.frame)
+            .map_or(-1, |s| s as i32)
+    })
 }
 
 /// Pose a fighter article at `frame`, constraining its authored anchor to a
@@ -1958,7 +2045,7 @@ pub unsafe extern "C" fn ssbm_article_attach(
 ) -> u32 {
     let (Some(v), Some(h)) = (unsafe { view.as_mut() }, unsafe { handle.as_ref() }) else { return 0 };
     if v.poisoned || h.poisoned || !frame.is_finite() || frame < 0. { return 0; }
-    guarded(0, || {
+    guarded("ssbm_article_attach", 0, || {
         let Some(&joint) = h.rig.common_bones.get(part as usize) else { return 0 };
         let pose = h.rig.pose_for_sim(&h.sim, h.sim.motion.clip, h.sim.motion.frame);
         let Some(&hand) = pose.get(joint as usize) else { return 0 };
@@ -1975,17 +2062,19 @@ pub unsafe extern "C" fn ssbm_article_attach(
 /// Unique live bow article view for the selected state; live fighter handle.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn ssbm_link_bow_update(view: *mut View, handle: *const Handle) -> u32 {
-    let state = unsafe { ssbm_sim_link_bow_state(handle) };
-    let Some(v) = (unsafe { view.as_ref() }) else { return 0 };
-    if state < 0 || v.article_kind_state != Some((5, libssbm_assets::held::LINK_BOW, state as u32)) { return 0; }
-    let frame = unsafe { (*handle).sim.motion.frame };
-    unsafe { ssbm_article_attach(view, handle, libssbm_assets::held::LINK_BOW_PART as u32, frame) }
+    guarded("ssbm_link_bow_update", 0, || {
+        let state = unsafe { ssbm_sim_link_bow_state(handle) };
+        let Some(v) = (unsafe { view.as_ref() }) else { return 0 };
+        if state < 0 || v.article_kind_state != Some((5, libssbm_assets::held::LINK_BOW, state as u32)) { return 0; }
+        let frame = unsafe { (*handle).sim.motion.frame };
+        unsafe { ssbm_article_attach(view, handle, libssbm_assets::held::LINK_BOW_PART as u32, frame) }
+    })
 }
 /// # Safety
 /// NUL-terminated asset path, common model index or Samus model ID 2000..2002.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn ssbm_effect_new(dir: *const c_char, fighter_kind: u32, id: u32) -> *mut View {
-    guarded(std::ptr::null_mut(), || {
+    guarded("ssbm_effect_new", std::ptr::null_mut(), || {
         let result = (|| {
             let fighter = fighter_assets(fighter_kind)?;
             Presentation::effect_for(unsafe { path(dir) }?, id, fighter)
@@ -2003,7 +2092,7 @@ pub unsafe extern "C" fn ssbm_effect_new(dir: *const c_char, fighter_kind: u32, 
 /// Valid UTF-8 cache path; returned platform is freed with ssbm_view_free.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn ssbm_entry_platform_new(dir: *const c_char) -> *mut View {
-    guarded(std::ptr::null_mut(), || {
+    guarded("ssbm_entry_platform_new", std::ptr::null_mut(), || {
         match (|| Presentation::platform(unsafe { path(dir) }?))() {
             Ok(a) => Box::into_raw(Box::new(View::new(a))),
             Err(e) => {
@@ -2017,7 +2106,7 @@ pub unsafe extern "C" fn ssbm_entry_platform_new(dir: *const c_char) -> *mut Vie
 /// Valid UTF-8 cache path; the results-screen GAME! burst, freed with ssbm_view_free.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn ssbm_game_new(dir: *const c_char) -> *mut View {
-    guarded(std::ptr::null_mut(), || {
+    guarded("ssbm_game_new", std::ptr::null_mut(), || {
         match (|| Presentation::game(unsafe { path(dir) }?))() {
             Ok(a) => Box::into_raw(Box::new(View::new(a))),
             Err(e) => {
@@ -2034,7 +2123,7 @@ pub unsafe extern "C" fn ssbm_sim_begin_entry(h: *mut Handle, dir: *const c_char
     if h.is_null() {
         return 0;
     }
-    guarded(0, || {
+    guarded("ssbm_sim_begin_entry", 0, || {
         let kind = unsafe { (&*h).kind };
         let Some(fighter) = kind.assets() else {
             error(format!("fighter kind {kind:?} not implemented"));
@@ -2067,20 +2156,24 @@ pub unsafe extern "C" fn ssbm_sim_begin_rebirth(
     dir: *const c_char,
     destination: V3,
 ) -> u32 {
-    unsafe { begin_return(h, dir, destination, false) }
+    guarded("ssbm_sim_begin_rebirth", 0, || {
+        unsafe { begin_return(h, dir, destination, false) }
+    })
 }
 /// Initial spawn uses the same automatic figurine return, without the fall KO.
 /// # Safety
 /// Unique live fighter, valid UTF-8 cache path. Host has placed it on safe ground.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn ssbm_sim_begin_arrival(h: *mut Handle, dir: *const c_char) -> u32 {
-    unsafe { begin_return(h, dir, V3::default(), true) }
+    guarded("ssbm_sim_begin_arrival", 0, || {
+        unsafe { begin_return(h, dir, V3::default(), true) }
+    })
 }
 unsafe fn begin_return(h: *mut Handle, dir: *const c_char, destination: V3, initial: bool) -> u32 {
     if h.is_null() {
         return 0;
     }
-    guarded(0, || {
+    guarded("begin_return", 0, || {
         let kind = unsafe { (&*h).kind };
         let result = (|| -> libssbm_assets::Result<_> {
             let dir = unsafe { path(dir) }?;
@@ -2120,34 +2213,38 @@ unsafe fn begin_return(h: *mut Handle, dir: *const c_char, destination: V3, init
 /// 8 waiting figurine. Zero means normal play. Existing ABI layouts unchanged.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn ssbm_sim_rebirth_flags(h: *const Handle) -> u32 {
-    if h.is_null() {
-        return 0;
-    }
-    unsafe { (&*h).sim.rebirth.as_ref().map_or(0, |s| s.flags()) }
+    guarded("ssbm_sim_rebirth_flags", 0, || {
+        if h.is_null() {
+            return 0;
+        }
+        unsafe { (&*h).sim.rebirth.as_ref().map_or(0, |s| s.flags()) }
+    })
 }
 /// # Safety
 /// Unique live fighter. kind=0 waits as a figurine; kind=1 starts its original
 /// entry transform. Returns 1 while entry exists, zero once complete.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn ssbm_sim_entry_control(h: *mut Handle, kind: u32) -> u32 {
-    if h.is_null() {
-        return 0;
-    }
-    unsafe {
-        let h = &mut *h;
-        if let Some(entry) = h.sim.entry.as_mut() {
-            if kind == 0 {
-                entry.waiting = true;
-            } else if kind == 1 {
-                entry.waiting = false;
-                entry.frame = entry.frame.max(entry.params.grow);
-                entry.started = false;
-            }
-            1
-        } else {
-            0
+    guarded("ssbm_sim_entry_control", 0, || {
+        if h.is_null() {
+            return 0;
         }
-    }
+        unsafe {
+            let h = &mut *h;
+            if let Some(entry) = h.sim.entry.as_mut() {
+                if kind == 0 {
+                    entry.waiting = true;
+                } else if kind == 1 {
+                    entry.waiting = false;
+                    entry.frame = entry.frame.max(entry.params.grow);
+                    entry.started = false;
+                }
+                1
+            } else {
+                0
+            }
+        }
+    })
 }
 /// # Safety
 /// Unique live platform view and live sim. Returns zero once entry ends.
@@ -2159,7 +2256,7 @@ pub unsafe extern "C" fn ssbm_entry_platform_update(v: *mut View, h: *const Hand
     let Some(entry) = unsafe { &*h }.sim.entry else {
         return 0;
     };
-    guarded(0, || {
+    guarded("ssbm_entry_platform_update", 0, || {
         let v = unsafe { &mut *v };
         let scale = entry.params.platform;
         let transform = glam::Mat4::from_scale(Vec3::new(
@@ -2189,7 +2286,7 @@ pub unsafe extern "C" fn ssbm_sim_light(h: *const Handle, out: *mut f32) -> u32 
     if h.is_null() || out.is_null() {
         return 0;
     }
-    guarded(0, || unsafe {
+    guarded("ssbm_sim_light", 0, || unsafe {
         let Some(light) = (*h).sim.colanim.light() else { return 0 };
         let values = [
             light.color[0],
@@ -2214,7 +2311,7 @@ pub unsafe extern "C" fn ssbm_sim_overlay(h: *const Handle, rgba: *mut f32) -> u
     if h.is_null() || rgba.is_null() {
         return 0;
     }
-    guarded(0, || unsafe {
+    guarded("ssbm_sim_overlay", 0, || unsafe {
         let h = &*h;
         if let Some(color) = h.sim.rebirth.as_ref().and_then(|s| s.overlay()) {
             std::ptr::copy_nonoverlapping(color.as_ptr(), rgba, 4);
@@ -2247,10 +2344,12 @@ pub unsafe extern "C" fn ssbm_sim_overlay(h: *const Handle, rgba: *mut f32) -> u
 /// Live object view. Animation duration from the disc; zero if no animation.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn ssbm_object_duration(view: *const View) -> f32 {
-    if view.is_null() {
-        return 0.;
-    }
-    unsafe { &*view }.actor.duration
+    guarded("ssbm_object_duration", 0.0, || {
+        if view.is_null() {
+            return 0.;
+        }
+        unsafe { &*view }.actor.duration
+    })
 }
 /// One particle generator an effect model's animation starts (`Presentation::particle_triggers`).
 #[repr(C)]
@@ -2269,7 +2368,7 @@ pub unsafe extern "C" fn ssbm_object_particles(view: *const View, out: *mut Obje
     if view.is_null() {
         return 0;
     }
-    guarded(0, || unsafe {
+    guarded("ssbm_object_particles", 0, || unsafe {
         let triggers = (&*view).actor.particle_triggers();
         if !out.is_null() {
             for (i, (frame, joint, bank, generator)) in triggers.iter().take(max as usize).enumerate() {
@@ -2285,12 +2384,14 @@ pub unsafe extern "C" fn ssbm_object_particles(view: *const View, out: *mut Obje
 /// Live object view and 16 writable floats.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn ssbm_object_joint(view: *const View, joint: u32, out: *mut f32) -> u32 {
-    if view.is_null() || out.is_null() {
-        return 0;
-    }
-    let Some(world) = unsafe { &*view }.actor.world.get(joint as usize) else { return 0 };
-    unsafe { std::ptr::copy_nonoverlapping(world.to_cols_array().as_ptr(), out, 16) };
-    1
+    guarded("ssbm_object_joint", 0, || {
+        if view.is_null() || out.is_null() {
+            return 0;
+        }
+        let Some(world) = unsafe { &*view }.actor.world.get(joint as usize) else { return 0 };
+        unsafe { std::ptr::copy_nonoverlapping(world.to_cols_array().as_ptr(), out, 16) };
+        1
+    })
 }
 /// # Safety
 /// Unique live object view and finite nonnegative frame, main thread only.
@@ -2323,7 +2424,7 @@ pub unsafe extern "C" fn ssbm_object_camera(v: *mut View, camera: V3) -> u32 {
     if v.is_null() || !Vec3::from(camera).is_finite() {
         return 0;
     }
-    guarded(0, || unsafe {
+    guarded("ssbm_object_camera", 0, || unsafe {
         let v = &mut *v;
         v.actor.face_camera(camera.into());
         v.refresh();
@@ -2344,7 +2445,7 @@ pub unsafe extern "C" fn ssbm_view_pose(v: *mut View, clip: *const c_char, frame
     if v.poisoned {
         return 0;
     }
-    guarded(0, || {
+    guarded("ssbm_view_pose", 0, || {
         let Ok(clip) = unsafe { CStr::from_ptr(clip) }.to_str() else {
             return 0;
         };
@@ -2366,7 +2467,7 @@ pub unsafe extern "C" fn ssbm_view_pose(v: *mut View, clip: *const c_char, frame
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn ssbm_view_free(v: *mut View) {
     if !v.is_null() {
-        guarded((), || drop(unsafe { Box::from_raw(v) }));
+        guarded("ssbm_view_free", (), || drop(unsafe { Box::from_raw(v) }));
     }
 }
 /// # Safety
@@ -2420,13 +2521,15 @@ pub unsafe extern "C" fn ssbm_view_update(v: *mut View, h: *const Handle, dt: f3
 /// Live view and writable model-info pointer.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn ssbm_view_model(v: *const View, out: *mut ModelInfo) -> u32 {
-    if v.is_null() || out.is_null() {
-        return 0;
-    }
-    unsafe {
-        *out = (*v).info;
-    }
-    1
+    guarded("ssbm_view_model", 0, || {
+        if v.is_null() || out.is_null() {
+            return 0;
+        }
+        unsafe {
+            *out = (*v).info;
+        }
+        1
+    })
 }
 macro_rules! array_export {
     ($name:ident,$field:ident,$ty:ty) => {
@@ -2447,25 +2550,29 @@ array_export!(ssbm_view_indices, indices, i32);
 /// IViewSource and the Mario/Olimar ABI. Output has room for 2*max floats.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn ssbm_view_uvs(v: *const View, out: *mut f32, max: u32) -> u32 {
-    if v.is_null() {
-        return 0;
-    }
-    unsafe {
-        let uv = &(&*v).uvs;
-        let count = uv.len() / 2;
-        if !out.is_null() {
-            let n = count.min(max as usize);
-            std::ptr::copy_nonoverlapping(uv.as_ptr(), out, n * 2);
+    guarded("ssbm_view_uvs", 0, || {
+        if v.is_null() {
+            return 0;
         }
-        count as u32
-    }
+        unsafe {
+            let uv = &(&*v).uvs;
+            let count = uv.len() / 2;
+            if !out.is_null() {
+                let n = count.min(max as usize);
+                std::ptr::copy_nonoverlapping(uv.as_ptr(), out, n * 2);
+            }
+            count as u32
+        }
+    })
 }
 /// # Safety
 /// Live view and writable vertex count. Pointer survives until update/free.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn ssbm_view_frame_uvs(v: *const View, count: *mut u32) -> *const f32 {
-    if v.is_null() || count.is_null() { return std::ptr::null(); }
-    unsafe { *count = ((*v).frame_uvs.len() / 2) as u32; (*v).frame_uvs.as_ptr() }
+    guarded("ssbm_view_frame_uvs", std::ptr::null(), || {
+        if v.is_null() || count.is_null() { return std::ptr::null(); }
+        unsafe { *count = ((*v).frame_uvs.len() / 2) as u32; (*v).frame_uvs.as_ptr() }
+    })
 }
 macro_rules! pointer_export {
     ($name:ident,$field:ident,$ty:ty) => {
@@ -2498,41 +2605,45 @@ pub unsafe extern "C" fn ssbm_view_texture(
     pixels: *mut u8,
     len: u32,
 ) -> u32 {
-    if v.is_null() || out.is_null() {
-        return 0;
-    }
-    let v = unsafe { &*v };
-    let Some(t) = v.actor.texture(id as usize)
-    else {
-        return 0;
-    };
-    unsafe {
-        *out = TextureInfo {
-            width: t.width as u32,
-            height: t.height as u32,
-            wrap_s: t.wrap_s,
-            wrap_t: t.wrap_t,
-            pad0: 0,
-            pad1: 0,
-        };
-    }
-    if !pixels.is_null() {
-        if len < t.rgba.len() as u32 {
+    guarded("ssbm_view_texture", 0, || {
+        if v.is_null() || out.is_null() {
             return 0;
         }
+        let v = unsafe { &*v };
+        let Some(t) = v.actor.texture(id as usize)
+        else {
+            return 0;
+        };
         unsafe {
-            copy(&t.rgba, pixels, len);
+            *out = TextureInfo {
+                width: t.width as u32,
+                height: t.height as u32,
+                wrap_s: t.wrap_s,
+                wrap_t: t.wrap_t,
+                pad0: 0,
+                pad1: 0,
+            };
         }
-    }
-    1
+        if !pixels.is_null() {
+            if len < t.rgba.len() as u32 {
+                return 0;
+            }
+            unsafe {
+                copy(&t.rgba, pixels, len);
+            }
+        }
+        1
+    })
 }
 
 /// # Safety
 /// Live view or null. Zero means an immutable texture.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn ssbm_view_texture_version(v: *const View, id: u32) -> u32 {
-    if v.is_null() { return 0; }
-    unsafe { (*v).actor.texture_frame(id as usize).map_or(0, |frame| frame as u32 + 1) }
+    guarded("ssbm_view_texture_version", 0, || {
+        if v.is_null() { return 0; }
+        unsafe { (*v).actor.texture_frame(id as usize).map_or(0, |frame| frame as u32 + 1) }
+    })
 }
 
 /// # Safety
@@ -2540,13 +2651,15 @@ pub unsafe extern "C" fn ssbm_view_texture_version(v: *const View, id: u32) -> u
 /// `handle` must be a live uniquely borrowed simulation, or null.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn ssbm_sim_interrupt(handle: *mut Handle) {
-    if !handle.is_null() {
-        let h = unsafe { &mut *handle };
-        if !h.poisoned {
-            h.sim.interrupt();
-            h.net.log(Op::Interrupt);
+    guarded("ssbm_sim_interrupt", (), || {
+        if !handle.is_null() {
+            let h = unsafe { &mut *handle };
+            if !h.poisoned {
+                h.sim.interrupt();
+                h.net.log(Op::Interrupt);
+            }
         }
-    }
+    })
 }
 /// Host lock-on: the world position (sim units) of the enemy the player is
 /// locked onto or aiming nearest; `valid` 0 clears it. Staged specials (Pikachu's
@@ -2555,11 +2668,13 @@ pub unsafe extern "C" fn ssbm_sim_interrupt(handle: *mut Handle) {
 /// Unique live sim or null.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn ssbm_sim_lock_target(handle: *mut Handle, target: V3, valid: u32) {
-    if let Some(h) = unsafe { handle.as_mut() } {
-        let t: Vec3 = target.into();
-        h.sim.lock_target = if valid != 0 && t.is_finite() { Some(t) } else { None };
-        h.net.log(Op::LockTarget { target, valid });
-    }
+    guarded("ssbm_sim_lock_target", (), || {
+        if let Some(h) = unsafe { handle.as_mut() } {
+            let t: Vec3 = target.into();
+            h.sim.lock_target = if valid != 0 && t.is_finite() { Some(t) } else { None };
+            h.net.log(Op::LockTarget { target, valid });
+        }
+    })
 }
 /// World facts the host reports to the fighter's staged specials (Link's boomerang
 /// out, a carried bomb); see `HOST_*` in libssbm's `link.rs`. Set every tick.
@@ -2567,10 +2682,12 @@ pub unsafe extern "C" fn ssbm_sim_lock_target(handle: *mut Handle, target: V3, v
 /// Unique live sim or null.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn ssbm_sim_set_host_flags(handle: *mut Handle, flags: u32) {
-    if let Some(h) = unsafe { handle.as_mut() } {
-        h.sim.host_flags = flags;
-        h.net.log(Op::HostFlags(flags));
-    }
+    guarded("ssbm_sim_set_host_flags", (), || {
+        if let Some(h) = unsafe { handle.as_mut() } {
+            h.sim.host_flags = flags;
+            h.net.log(Op::HostFlags(flags));
+        }
+    })
 }
 /// The current move's hitbox connected with an enemy (Skull Bash stops on it).
 /// # Safety
@@ -2578,7 +2695,7 @@ pub unsafe extern "C" fn ssbm_sim_set_host_flags(handle: *mut Handle, flags: u32
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn ssbm_sim_connect(handle: *mut Handle) {
     if !handle.is_null() {
-        guarded((), || unsafe {
+        guarded("ssbm_sim_connect", (), || unsafe {
             let h = &mut *handle;
             h.sim.attack_connected();
             h.net.log(Op::Connect);
@@ -2590,7 +2707,7 @@ pub unsafe extern "C" fn ssbm_sim_connect(handle: *mut Handle) {
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn ssbm_sim_hurt(handle: *mut Handle) {
     if !handle.is_null() {
-        guarded((), || unsafe {
+        guarded("ssbm_sim_hurt", (), || unsafe {
             let h = &mut *handle;
             h.sim.hurt();
             h.net.log(Op::Hurt(0.));
@@ -2611,7 +2728,7 @@ pub unsafe extern "C" fn ssbm_sim_scope(handle: *mut Handle, on: u32, refill: f3
     if handle.is_null() {
         return 0;
     }
-    guarded(0, || {
+    guarded("ssbm_sim_scope", 0, || {
         let h = unsafe { &mut *handle };
         if h.poisoned {
             return 0;
@@ -2661,7 +2778,7 @@ pub unsafe extern "C" fn ssbm_sim_scope_state(handle: *const Handle, out: *mut S
     if handle.is_null() || out.is_null() {
         return 0;
     }
-    guarded(0, || {
+    guarded("ssbm_sim_scope_state", 0, || {
         let h = unsafe { &*handle };
         let Some(scope) = h.sim.scope.as_ref() else { return 0 };
         unsafe {
@@ -2685,7 +2802,7 @@ pub unsafe extern "C" fn ssbm_scope_beams(dir: *const c_char, out: *mut f32) -> 
     if dir.is_null() || out.is_null() {
         return 0;
     }
-    guarded(0, || {
+    guarded("ssbm_scope_beams", 0, || {
         let beams = match unsafe { path(dir) }.and_then(libssbm_assets::params::load_scope_beams) {
             Ok(b) => b,
             Err(e) => {
@@ -2707,7 +2824,7 @@ pub unsafe extern "C" fn ssbm_scope_beams(dir: *const c_char, out: *mut f32) -> 
 /// UTF-8 asset path. Free with ssbm_view_free.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn ssbm_item_new(dir: *const c_char, item: u32, state: u32) -> *mut View {
-    guarded(std::ptr::null_mut(), || {
+    guarded("ssbm_item_new", std::ptr::null_mut(), || {
         let result = (|| {
             let item = match item {
                 0x15 => libssbm_assets::article::Item::SuperScope,
@@ -2732,7 +2849,7 @@ pub unsafe extern "C" fn ssbm_sim_hurt_scaled(handle: *mut Handle, severity: f32
     if handle.is_null() {
         return 0;
     }
-    guarded(0, || {
+    guarded("ssbm_sim_hurt_scaled", 0, || {
         unsafe {
             let h = &mut *handle;
             h.sim.hurt_scaled(severity);
@@ -2746,14 +2863,16 @@ pub unsafe extern "C" fn ssbm_sim_hurt_scaled(handle: *mut Handle, severity: f32
 /// Live unique handle or null; velocity is units/tick, gravity units/tick squared.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn ssbm_sim_launch_pad(handle: *mut Handle, velocity: V3, gravity: V3) {
-    if handle.is_null() || !Vec3::from(velocity).is_finite() || !Vec3::from(gravity).is_finite() {
-        return;
-    }
-    let h = unsafe { &mut *handle };
-    if !h.poisoned {
-        h.sim.launch_pad(velocity.into(), gravity.into());
-        h.net.log(Op::LaunchPad { velocity, gravity });
-    }
+    guarded("ssbm_sim_launch_pad", (), || {
+        if handle.is_null() || !Vec3::from(velocity).is_finite() || !Vec3::from(gravity).is_finite() {
+            return;
+        }
+        let h = unsafe { &mut *handle };
+        if !h.poisoned {
+            h.sim.launch_pad(velocity.into(), gravity.into());
+            h.net.log(Op::LaunchPad { velocity, gravity });
+        }
+    })
 }
 /// Scales the horizontal speed of the fighter's current jump by `factor` (RoR2's Wax Quail:
 /// a sprinting jump carries further). 1 does nothing; ignored on the ground or for a
@@ -2763,10 +2882,12 @@ pub unsafe extern "C" fn ssbm_sim_launch_pad(handle: *mut Handle, velocity: V3, 
 /// Unique live handle or null.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn ssbm_sim_boost_jump(handle: *mut Handle, factor: f32) {
-    if let Some(h) = unsafe { handle.as_mut() }.filter(|h| !h.poisoned) {
-        h.sim.boost_jump(factor);
-        h.net.log(Op::BoostJump(factor));
-    }
+    guarded("ssbm_sim_boost_jump", (), || {
+        if let Some(h) = unsafe { handle.as_mut() }.filter(|h| !h.poisoned) {
+            h.sim.boost_jump(factor);
+            h.net.log(Op::BoostJump(factor));
+        }
+    })
 }
 /// Enables (1) or disables (0) the H3AD-5T v2 stomp: jump in the air with no jumps left to
 /// slam down. The host sets this each tick from the fighter's item count.
@@ -2775,10 +2896,12 @@ pub unsafe extern "C" fn ssbm_sim_boost_jump(handle: *mut Handle, factor: f32) {
 /// Unique live handle or null.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn ssbm_sim_set_stomp(handle: *mut Handle, enabled: u32) {
-    if let Some(h) = unsafe { handle.as_mut() }.filter(|h| !h.poisoned) {
-        h.sim.stomp_enabled = enabled != 0;
-        h.net.log(Op::SetStomp(enabled));
-    }
+    guarded("ssbm_sim_set_stomp", (), || {
+        if let Some(h) = unsafe { handle.as_mut() }.filter(|h| !h.poisoned) {
+            h.sim.stomp_enabled = enabled != 0;
+            h.net.log(Op::SetStomp(enabled));
+        }
+    })
 }
 /// Sets RoR2's attack-speed multiplier (1 is the source's rate); the fighter's current move
 /// plays that much faster, hitboxes and all. The host sets this each tick from the body's
@@ -2788,10 +2911,12 @@ pub unsafe extern "C" fn ssbm_sim_set_stomp(handle: *mut Handle, enabled: u32) {
 /// Unique live handle or null.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn ssbm_sim_set_attack_speed(handle: *mut Handle, speed: f32) {
-    if let Some(h) = unsafe { handle.as_mut() }.filter(|h| !h.poisoned) {
-        h.sim.attack_speed = if speed.is_finite() { speed.clamp(0.1, 10.0) } else { 1.0 };
-        h.net.log(Op::SetAttackSpeed(speed));
-    }
+    guarded("ssbm_sim_set_attack_speed", (), || {
+        if let Some(h) = unsafe { handle.as_mut() }.filter(|h| !h.poisoned) {
+            h.sim.attack_speed = if speed.is_finite() { speed.clamp(0.1, 10.0) } else { 1.0 };
+            h.net.log(Op::SetAttackSpeed(speed));
+        }
+    })
 }
 #[cfg(test)]
 mod tests {

@@ -34,7 +34,7 @@ pub struct State {
 /// NUL-terminated asset path. New unique handle, freed with projectile_free.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn ssbm_scope_beam_new(dir: *const c_char, level: u32, direction: V3) -> *mut Handle {
-    guarded(std::ptr::null_mut(), || {
+    guarded("ssbm_scope_beam_new", std::ptr::null_mut(), || {
         let result = (|| -> libssbm_assets::Result<Handle> {
             let dir = unsafe { path(dir) }?;
             let beams = libssbm_assets::params::load_scope_beams(dir)?;
@@ -80,21 +80,25 @@ pub unsafe extern "C" fn ssbm_scope_beam_new(dir: *const c_char, level: u32, dir
 /// Unique live projectile handle or null.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn ssbm_projectile_lifetime(h: *mut Handle, frames: f32) {
-    if !h.is_null() && frames.is_finite() && frames >= 0. {
-        unsafe {
-            (&mut *h).sim.params.life = if frames == 0. { f32::INFINITY } else { frames };
+    guarded("ssbm_projectile_lifetime", (), || {
+        if !h.is_null() && frames.is_finite() && frames >= 0. {
+            unsafe {
+                (&mut *h).sim.params.life = if frames == 0. { f32::INFINITY } else { frames };
+            }
         }
-    }
+    })
 }
 /// # Safety
 /// Unique live projectile handle or null. Distance in Melee units before gravity starts.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn ssbm_projectile_straight(h: *mut Handle, units: f32) {
-    if !h.is_null() && units.is_finite() && units >= 0. {
-        unsafe {
-            (&mut *h).sim.params.straight_distance = units;
+    guarded("ssbm_projectile_straight", (), || {
+        if !h.is_null() && units.is_finite() && units >= 0. {
+            unsafe {
+                (&mut *h).sim.params.straight_distance = units;
+            }
         }
-    }
+    })
 }
 /// # Safety
 /// NUL-terminated asset path. New unique handle, freed with projectile_free.
@@ -107,7 +111,7 @@ pub unsafe extern "C" fn ssbm_projectile_new(
     charge: f32,
     direction: V3,
 ) -> *mut Handle {
-    guarded(std::ptr::null_mut(), || {
+    guarded("ssbm_projectile_new", std::ptr::null_mut(), || {
         let result = (|| -> libssbm_assets::Result<Handle> {
             let dir = unsafe { path(dir) }?;
             if !charge.is_finite() {
@@ -355,7 +359,7 @@ pub unsafe extern "C" fn ssbm_projectile_step(
     if h.is_null() {
         return 0;
     }
-    guarded(0, || unsafe {
+    guarded("ssbm_projectile_step", 0, || unsafe {
         (&mut *h).sim.advance(
             dt,
             if has_target != 0 {
@@ -373,7 +377,7 @@ pub unsafe extern "C" fn ssbm_projectile_state(h: *const Handle, out: *mut State
     if h.is_null() || out.is_null() {
         return 0;
     }
-    guarded(0, || unsafe {
+    guarded("ssbm_projectile_state", 0, || unsafe {
         let h = &*h;
         let s = &h.sim;
         let mut damage = if s.bounce_damage > 0. && s.bounced() > 0 {
@@ -429,7 +433,7 @@ pub unsafe extern "C" fn ssbm_projectile_state(h: *const Handle, out: *mut State
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn ssbm_projectile_place(h: *mut Handle, position: V3, grounded: u32) {
     if !h.is_null() {
-        guarded((), || unsafe {
+        guarded("ssbm_projectile_place", (), || unsafe {
             let s = &mut (&mut *h).sim;
             s.position = position.into();
             s.grounded = grounded != 0;
@@ -450,7 +454,7 @@ pub unsafe extern "C" fn ssbm_projectile_bounce(h: *mut Handle) -> u32 {
     if h.is_null() {
         return 0;
     }
-    guarded(0, || unsafe { (&mut *h).sim.bounce() as u32 })
+    guarded("ssbm_projectile_bounce", 0, || unsafe { (&mut *h).sim.bounce() as u32 })
 }
 /// Reflect a ballistic shot off a wall or ceiling (surface normal `n`). Returns
 /// 1 while it keeps flying and 0 once its surface-contact budget is exhausted
@@ -462,7 +466,7 @@ pub unsafe extern "C" fn ssbm_projectile_reflect(h: *mut Handle, n: V3) -> u32 {
     if h.is_null() {
         return 0;
     }
-    guarded(0, || unsafe { (&mut *h).sim.reflect(n.into()) as u32 })
+    guarded("ssbm_projectile_reflect", 0, || unsafe { (&mut *h).sim.reflect(n.into()) as u32 })
 }
 /// # Safety
 /// Unique live projectile and optional unique fighter audio handle. Returns
@@ -472,7 +476,7 @@ pub unsafe extern "C" fn ssbm_projectile_impact(h: *mut Handle, audio: *mut supe
     if h.is_null() {
         return 0;
     }
-    guarded(0, || unsafe {
+    guarded("ssbm_projectile_impact", 0, || unsafe {
         let h = &mut *h;
         if h.notified {
             return 0;
@@ -503,7 +507,7 @@ pub unsafe extern "C" fn ssbm_projectile_impact(h: *mut Handle, audio: *mut supe
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn ssbm_projectile_free(h: *mut Handle) {
     if !h.is_null() {
-        guarded((), || drop(unsafe { Box::from_raw(h) }));
+        guarded("ssbm_projectile_free", (), || drop(unsafe { Box::from_raw(h) }));
     }
 }
 
@@ -518,7 +522,7 @@ pub unsafe extern "C" fn ssbm_hit_feedback(
     kind: u32,
     severity: u32,
 ) -> u32 {
-    guarded(0, || {
+    guarded("ssbm_hit_feedback", 0, || {
         let severity = severity.min(2);
         let sound = match kind {
             1 => Some(91 - severity),

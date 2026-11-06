@@ -104,7 +104,7 @@ pub struct Sprite {
 /// UTF-8 NUL-terminated cache directory. Free returned handle exactly once.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn ssbm_particles_new(dir: *const c_char) -> *mut Particles {
-    guarded(std::ptr::null_mut(), || {
+    guarded("ssbm_particles_new", std::ptr::null_mut(), || {
         let result = (|| Bank::load(unsafe { path(dir) }?))();
         match result {
             Ok(bank) => {
@@ -129,7 +129,7 @@ pub unsafe extern "C" fn ssbm_particles_new(dir: *const c_char) -> *mut Particle
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn ssbm_particles_free(handle: *mut Particles) {
     if !handle.is_null() {
-        guarded((), || drop(unsafe { Box::from_raw(handle) }));
+        guarded("ssbm_particles_free", (), || drop(unsafe { Box::from_raw(handle) }));
     }
 }
 unsafe fn matrix(ptr: *const f32) -> Option<glam::Mat4> {
@@ -152,7 +152,7 @@ pub unsafe extern "C" fn ssbm_particles_spawn(
     if handle.is_null() {
         return 0;
     }
-    guarded(0, || {
+    guarded("ssbm_particles_spawn", 0, || {
         let Some(transform) = (unsafe { matrix(transform) }) else {
             error("invalid particle transform");
             return 0;
@@ -177,7 +177,7 @@ pub unsafe extern "C" fn ssbm_particles_attach(
     if handle.is_null() {
         return 0;
     }
-    guarded(0, || {
+    guarded("ssbm_particles_attach", 0, || {
         let Some(transform) = (unsafe { matrix(transform) }) else {
             return 0;
         };
@@ -190,7 +190,7 @@ pub unsafe extern "C" fn ssbm_particles_attach(
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn ssbm_particles_stop(handle: *mut Particles, key: u64) {
     if !handle.is_null() {
-        guarded((), || unsafe { &mut *handle }.system.stop(key));
+        guarded("ssbm_particles_stop", (), || unsafe { &mut *handle }.system.stop(key));
     }
 }
 /// # Safety
@@ -207,7 +207,7 @@ pub unsafe extern "C" fn ssbm_particles_tune(
     if handle.is_null() || !scale.is_finite() || !alpha.is_finite() || scale <= 0. || alpha < 0. {
         return 0;
     }
-    guarded(0, || {
+    guarded("ssbm_particles_tune", 0, || {
         unsafe { &mut *handle }.tuning.insert(
             id,
             (scale.clamp(0.01, 4.), alpha.clamp(0., 1.), glow != 0),
@@ -222,7 +222,7 @@ pub unsafe extern "C" fn ssbm_particles_step(handle: *mut Particles, dt: f64) ->
     if handle.is_null() || !dt.is_finite() || dt < 0. {
         return 0;
     }
-    guarded(0, || {
+    guarded("ssbm_particles_step", 0, || {
         let h = unsafe { &mut *handle };
         h.clock += dt.min(0.25);
         while h.clock + 1e-10 >= 1. / 60. {
@@ -257,7 +257,7 @@ pub unsafe extern "C" fn ssbm_particles_draws(
     if out.is_null() {
         return count;
     }
-    guarded(0, || {
+    guarded("ssbm_particles_draws", 0, || {
         for (i, p) in h
             .system
             .particles
@@ -320,7 +320,7 @@ pub unsafe extern "C" fn ssbm_particles_texture(
         return 0;
     }
     let h = unsafe { &*handle };
-    guarded(0, || {
+    guarded("ssbm_particles_texture", 0, || {
         let Some(texture) = h.bank.textures.get(id as usize) else {
             return 0;
         };

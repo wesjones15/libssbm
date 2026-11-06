@@ -6,7 +6,7 @@
 //! `Behavior` plays a clip for it. This export reports each move as the shared `Move` id and
 //! the name of that source action, so a host never keeps a hand-written per-fighter list.
 //! Human names and input bindings belong to the host (ror2-common `MeleeMoveset`).
-use super::Handle;
+use super::{Handle, guarded};
 use libssbm::Move;
 
 /// One move of a fighter: the shared `Move` id and the NUL-padded source action name.
@@ -94,15 +94,17 @@ pub(crate) fn moves_of(sim: &libssbm::Sim) -> Vec<MoveEntry> {
 /// A live sim handle (or null, which has no moves) and a writable `max`-element output or null.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn ssbm_sim_moves(handle: *const Handle, out: *mut MoveEntry, max: u32) -> u32 {
-    if handle.is_null() {
-        return 0;
-    }
-    let h = unsafe { &*handle };
-    if h.poisoned {
-        return 0;
-    }
-    let list = moves_of(&h.sim);
-    unsafe { super::copy(&list, out, max) }
+    guarded("ssbm_sim_moves", 0, || {
+        if handle.is_null() {
+            return 0;
+        }
+        let h = unsafe { &*handle };
+        if h.poisoned {
+            return 0;
+        }
+        let list = moves_of(&h.sim);
+        unsafe { super::copy(&list, out, max) }
+    })
 }
 
 #[cfg(test)]

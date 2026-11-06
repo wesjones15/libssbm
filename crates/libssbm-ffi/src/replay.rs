@@ -340,13 +340,15 @@ impl Handle {
 /// Unique live handle or null.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn ssbm_sim_record(handle: *mut Handle, on: u32) -> u32 {
-    let Some(h) = (unsafe { handle.as_mut() }) else { return 0 };
-    let dir = std::mem::take(&mut h.net.dir);
-    h.net = NetLog::with_dir(dir);
-    if on != 0 {
-        h.net.rec = Some(Vec::new());
-    }
-    1
+    guarded("ssbm_sim_record", 0, || {
+        let Some(h) = (unsafe { handle.as_mut() }) else { return 0 };
+        let dir = std::mem::take(&mut h.net.dir);
+        h.net = NetLog::with_dir(dir);
+        if on != 0 {
+            h.net.rec = Some(Vec::new());
+        }
+        1
+    })
 }
 
 /// Moves the recorded log into `out`. Returns its length; with a null `out` or too small a
@@ -355,15 +357,17 @@ pub unsafe extern "C" fn ssbm_sim_record(handle: *mut Handle, on: u32) -> u32 {
 /// Unique live handle; `out` is null or holds `cap` bytes.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn ssbm_sim_ops_take(handle: *mut Handle, out: *mut u8, cap: u32) -> u32 {
-    let Some(h) = (unsafe { handle.as_mut() }) else { return 0 };
-    let Some(buf) = h.net.rec.as_mut() else { return 0 };
-    let len = buf.len() as u32;
-    if len == 0 || out.is_null() || len > cap {
-        return len;
-    }
-    unsafe { std::ptr::copy_nonoverlapping(buf.as_ptr(), out, buf.len()) };
-    buf.clear();
-    len
+    guarded("ssbm_sim_ops_take", 0, || {
+        let Some(h) = (unsafe { handle.as_mut() }) else { return 0 };
+        let Some(buf) = h.net.rec.as_mut() else { return 0 };
+        let len = buf.len() as u32;
+        if len == 0 || out.is_null() || len > cap {
+            return len;
+        }
+        unsafe { std::ptr::copy_nonoverlapping(buf.as_ptr(), out, buf.len()) };
+        buf.clear();
+        len
+    })
 }
 
 /// Where each step of a recorded log ends, so a shadow can replay it one step per frame instead of a
@@ -375,33 +379,35 @@ pub unsafe extern "C" fn ssbm_sim_ops_take(handle: *mut Handle, out: *mut u8, ca
 /// `len` readable bytes at `bytes`; `ends` null or `cap` writable u32s.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn ssbm_ops_steps(bytes: *const u8, len: u32, ends: *mut u32, cap: u32) -> u32 {
-    if bytes.is_null() || len > MAX_REPLAY {
-        return u32::MAX;
-    }
-    let data = unsafe { std::slice::from_raw_parts(bytes, len as usize) };
-    let mut reader = Reader(data);
-    let mut count = 0u32;
-    let mut put = |at: usize, count: &mut u32| {
-        if !ends.is_null() && *count < cap {
-            unsafe { *ends.add(*count as usize) = at as u32 };
+    guarded("ssbm_ops_steps", u32::MAX, || {
+        if bytes.is_null() || len > MAX_REPLAY {
+            return u32::MAX;
         }
-        *count += 1;
-    };
-    let mut tail = false;
-    while !reader.0.is_empty() {
-        let Some(op) = reader.op() else { return u32::MAX };
-        let at = data.len() - reader.0.len();
-        if matches!(op, Op::Sync { .. }) {
-            put(at, &mut count);
-            tail = false;
-        } else {
-            tail = true;
+        let data = unsafe { std::slice::from_raw_parts(bytes, len as usize) };
+        let mut reader = Reader(data);
+        let mut count = 0u32;
+        let put = |at: usize, count: &mut u32| {
+            if !ends.is_null() && *count < cap {
+                unsafe { *ends.add(*count as usize) = at as u32 };
+            }
+            *count += 1;
+        };
+        let mut tail = false;
+        while !reader.0.is_empty() {
+            let Some(op) = reader.op() else { return u32::MAX };
+            let at = data.len() - reader.0.len();
+            if matches!(op, Op::Sync { .. }) {
+                put(at, &mut count);
+                tail = false;
+            } else {
+                tail = true;
+            }
         }
-    }
-    if tail {
-        put(data.len(), &mut count);
-    }
-    count
+        if tail {
+            put(data.len(), &mut count);
+        }
+        count
+    })
 }
 
 /// Replays a recorded log on this (shadow) sim, calling `host` for the collision and events of its
@@ -415,85 +421,87 @@ pub unsafe extern "C" fn ssbm_sim_replay(
     bytes: *const u8,
     len: u32,
 ) -> u32 {
-    if handle.is_null() || host.is_null() || bytes.is_null() || len > MAX_REPLAY {
-        return u32::MAX;
-    }
-    let data = unsafe { std::slice::from_raw_parts(bytes, len as usize) };
-    let mut reader = Reader(data);
-    let mut applied = 0;
-    // Each step clears the effect cues of the one before, but the host reads them once after the whole
-    // replay: keep every step's.
-    let mut effects = Vec::new();
-    while !reader.0.is_empty() {
-        let Some(op) = reader.op() else { return u32::MAX };
-        unsafe {
-            match op {
-                Op::Step { pad, dt } => {
-                    ssbm_sim_step(handle, host, &pad, dt);
-                    effects.append(&mut (&mut *handle).sim.action.effects);
-                }
-                Op::Place { v, kind } => ssbm_sim_place(handle, v, kind),
-                Op::Facing(v) => ssbm_sim_facing(handle, v),
-                Op::JumpHeight(h) => ssbm_sim_jump_height(handle, h),
-                Op::Tuning(t) => {
-                    ssbm_sim_tuning(handle, t);
-                }
-                Op::HoldKnockdown => ssbm_sim_hold_knockdown(handle),
-                Op::Hurt(s) => {
-                    ssbm_sim_hurt_scaled(handle, s);
-                }
-                Op::Interrupt => ssbm_sim_interrupt(handle),
-                Op::LockTarget { target, valid } => ssbm_sim_lock_target(handle, target, valid),
-                Op::HostFlags(f) => ssbm_sim_set_host_flags(handle, f),
-                Op::Connect => ssbm_sim_connect(handle),
-                Op::Anchor { position, grounded } => ssbm_sim_anchor(handle, position, grounded),
-                Op::SetGrabbed(held) => ssbm_sim_set_grabbed(handle, held),
-                Op::BreakRoll => { ssbm_sim_break_roll(handle); }
-                Op::BonkRoll => { ssbm_sim_bonk_roll(handle); }
-                Op::LaunchPad { velocity, gravity } => ssbm_sim_launch_pad(handle, velocity, gravity),
-                Op::Rebirth(dest) => {
-                    if let Ok(dir) = CString::new((&*handle).net.dir.to_string_lossy().as_bytes()) {
-                        ssbm_sim_begin_rebirth(handle, dir.as_ptr(), dest);
+    guarded("ssbm_sim_replay", u32::MAX, || {
+        if handle.is_null() || host.is_null() || bytes.is_null() || len > MAX_REPLAY {
+            return u32::MAX;
+        }
+        let data = unsafe { std::slice::from_raw_parts(bytes, len as usize) };
+        let mut reader = Reader(data);
+        let mut applied = 0;
+        // Each step clears the effect cues of the one before, but the host reads them once after the whole
+        // replay: keep every step's.
+        let mut effects = Vec::new();
+        while !reader.0.is_empty() {
+            let Some(op) = reader.op() else { return u32::MAX };
+            unsafe {
+                match op {
+                    Op::Step { pad, dt } => {
+                        ssbm_sim_step(handle, host, &pad, dt);
+                        effects.append(&mut (&mut *handle).sim.action.effects);
                     }
-                }
-                Op::Arrival => {
-                    if let Ok(dir) = CString::new((&*handle).net.dir.to_string_lossy().as_bytes()) {
-                        ssbm_sim_begin_arrival(handle, dir.as_ptr());
+                    Op::Place { v, kind } => ssbm_sim_place(handle, v, kind),
+                    Op::Facing(v) => ssbm_sim_facing(handle, v),
+                    Op::JumpHeight(h) => ssbm_sim_jump_height(handle, h),
+                    Op::Tuning(t) => {
+                        ssbm_sim_tuning(handle, t);
                     }
-                }
-                Op::Scope { on, refill } => {
-                    ssbm_sim_scope(handle, on, refill);
-                }
-                Op::BoostJump(f) => {
-                    ssbm_sim_boost_jump(handle, f);
-                }
-                Op::SetStomp(on) => {
-                    ssbm_sim_set_stomp(handle, on);
-                }
-                Op::SetAttackSpeed(speed) => {
-                    ssbm_sim_set_attack_speed(handle, speed);
-                }
-                Op::ResetJumps => {
-                    ssbm_sim_reset_jumps(handle);
-                }
-                Op::Sync { position, grounded } => {
-                    let h = &mut *handle;
-                    let to: Vec3 = position.into();
-                    if !h.poisoned
-                        && to.is_finite()
-                        && h.sim.entry.is_none()
-                        && h.sim.rebirth.is_none()
-                        && (h.sim.position - to).length() > DRIFT
-                    {
-                        h.sim.nudge(to, grounded != 0);
+                    Op::HoldKnockdown => ssbm_sim_hold_knockdown(handle),
+                    Op::Hurt(s) => {
+                        ssbm_sim_hurt_scaled(handle, s);
+                    }
+                    Op::Interrupt => ssbm_sim_interrupt(handle),
+                    Op::LockTarget { target, valid } => ssbm_sim_lock_target(handle, target, valid),
+                    Op::HostFlags(f) => ssbm_sim_set_host_flags(handle, f),
+                    Op::Connect => ssbm_sim_connect(handle),
+                    Op::Anchor { position, grounded } => ssbm_sim_anchor(handle, position, grounded),
+                    Op::SetGrabbed(held) => ssbm_sim_set_grabbed(handle, held),
+                    Op::BreakRoll => { ssbm_sim_break_roll(handle); }
+                    Op::BonkRoll => { ssbm_sim_bonk_roll(handle); }
+                    Op::LaunchPad { velocity, gravity } => ssbm_sim_launch_pad(handle, velocity, gravity),
+                    Op::Rebirth(dest) => {
+                        if let Ok(dir) = CString::new((&*handle).net.dir.to_string_lossy().as_bytes()) {
+                            ssbm_sim_begin_rebirth(handle, dir.as_ptr(), dest);
+                        }
+                    }
+                    Op::Arrival => {
+                        if let Ok(dir) = CString::new((&*handle).net.dir.to_string_lossy().as_bytes()) {
+                            ssbm_sim_begin_arrival(handle, dir.as_ptr());
+                        }
+                    }
+                    Op::Scope { on, refill } => {
+                        ssbm_sim_scope(handle, on, refill);
+                    }
+                    Op::BoostJump(f) => {
+                        ssbm_sim_boost_jump(handle, f);
+                    }
+                    Op::SetStomp(on) => {
+                        ssbm_sim_set_stomp(handle, on);
+                    }
+                    Op::SetAttackSpeed(speed) => {
+                        ssbm_sim_set_attack_speed(handle, speed);
+                    }
+                    Op::ResetJumps => {
+                        ssbm_sim_reset_jumps(handle);
+                    }
+                    Op::Sync { position, grounded } => {
+                        let h = &mut *handle;
+                        let to: Vec3 = position.into();
+                        if !h.poisoned
+                            && to.is_finite()
+                            && h.sim.entry.is_none()
+                            && h.sim.rebirth.is_none()
+                            && (h.sim.position - to).length() > DRIFT
+                        {
+                            h.sim.nudge(to, grounded != 0);
+                        }
                     }
                 }
             }
+            applied += 1;
         }
-        applied += 1;
-    }
-    if !effects.is_empty() {
-        unsafe { (&mut *handle).sim.action.effects = effects };
-    }
-    applied
+        if !effects.is_empty() {
+            unsafe { (&mut *handle).sim.action.effects = effects };
+        }
+        applied
+    })
 }
