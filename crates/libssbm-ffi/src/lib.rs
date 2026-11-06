@@ -17,7 +17,7 @@ use std::{
     panic::{AssertUnwindSafe, catch_unwind},
     path::Path,
 };
-pub const SSBM_ABI_VERSION: u32 = 5;
+pub const SSBM_ABI_VERSION: u32 = 6;
 #[repr(C)]
 #[derive(Clone, Copy, Default)]
 pub struct V3 {
@@ -1681,6 +1681,21 @@ pub unsafe extern "C" fn ssbm_sim_jump_height(handle: *mut Handle, height: f32) 
             if !h.poisoned && height.is_finite() && height >= 0. {
                 h.sim.host_jump_height = if height > 0. { Some(height) } else { None };
                 h.net.log(Op::JumpHeight(height));
+            }
+        }
+    })
+}
+/// The world's gravity as a multiple of the game's (a low-gravity stage is below 1; clamped to 0.05..4).
+/// Pair it with a host jump height for that gravity. 1 is the game's own. Cheap to call every frame.
+/// # Safety
+/// Unique live handle or null.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn ssbm_sim_set_gravity_scale(handle: *mut Handle, scale: f32) {
+    guarded("ssbm_sim_set_gravity_scale", (), || {
+        if let Some(h) = unsafe { handle.as_mut() } {
+            if !h.poisoned && scale.is_finite() {
+                h.sim.set_gravity_scale(scale);
+                h.net.log(Op::Gravity(scale));
             }
         }
     })

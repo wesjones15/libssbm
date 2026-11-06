@@ -327,3 +327,35 @@ fn air_feint_invulnerability_follows_source_commands_and_ends_helpless() {
         assert!(s.current_move.is_some(), "attack did not start at fps={fps}");
     }
 }
+
+/// A host's low gravity (the moon): with the jump height it asks for at that gravity, the take-off speed is the
+/// game's own, so the jump goes that much higher and stays up that much longer; 1 restores the game's own.
+#[test]
+fn a_gravity_scale_with_its_jump_height_keeps_the_takeoff_and_floats_longer() {
+    let jump = |scale: f32, height: f32| -> (f32, usize) {
+        let mut s = fighter();
+        let mut h = FlatHost::default();
+        s.set_gravity_scale(scale);
+        s.host_jump_height = Some(height);
+        tick(&mut s, &mut h, 0);
+        let base = s.position.y;
+        let (mut max, mut air) = (base, 0);
+        for frame in 0..600 {
+            let buttons = if frame < 30 { JUMP } else { 0 };
+            s.advance(&mut h, Input { buttons, ..Input::idle() }, 1. / 60.);
+            max = max.max(s.position.y);
+            if !s.grounded {
+                air += 1;
+            }
+        }
+        (max - base, air)
+    };
+    let (normal_h, normal_air) = jump(1.0, 40.);
+    // One quarter gravity: the host asks for four times the height.
+    let (moon_h, moon_air) = jump(0.25, 160.);
+    assert!((normal_h - 40.).abs() < 1.0, "normal apex {normal_h}");
+    assert!((moon_h - 160.).abs() < 3.0, "moon apex {moon_h}");
+    assert!(moon_air as f32 > normal_air as f32 * 1.7, "moon airtime {moon_air} vs {normal_air}");
+    let (again_h, again_air) = jump(1.0, 40.);
+    assert_eq!((again_h, again_air), (normal_h, normal_air), "scale 1 didn't restore the game's gravity");
+}

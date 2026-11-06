@@ -47,6 +47,8 @@ pub(crate) enum Op {
     SetAttackSpeed(f32),
     /// Link's hookshot took hold: restore the fighter's jumps without landing.
     ResetJumps,
+    /// The stage's gravity as a multiple of the usual (a low-gravity stage is below 1).
+    Gravity(f32),
 }
 
 #[derive(Default)]
@@ -56,6 +58,7 @@ pub(crate) struct NetLog {
     rec: Option<Vec<u8>>,
     facing: Option<[u32; 3]>,
     jump: Option<u32>,
+    gravity: Option<u32>,
     tuning: Option<[u32; 5]>,
     lock: Option<[u32; 4]>,
     flags: Option<u32>,
@@ -92,6 +95,7 @@ impl NetLog {
                 if self.steps % 120 == 0 {
                     self.facing = None;
                     self.jump = None;
+                    self.gravity = None;
                     self.tuning = None;
                     self.lock = None;
                     self.flags = None;
@@ -105,6 +109,12 @@ impl NetLog {
                     return;
                 }
                 self.facing = Some(bits3(v));
+            }
+            Op::Gravity(g) => {
+                if self.gravity == Some(g.to_bits()) {
+                    return;
+                }
+                self.gravity = Some(g.to_bits());
             }
             Op::JumpHeight(h) => {
                 if self.jump == Some(h.to_bits()) {
@@ -259,6 +269,10 @@ fn encode(b: &mut Vec<u8>, op: Op) {
             f32w(b, speed);
         }
         Op::ResetJumps => b.push(24),
+        Op::Gravity(g) => {
+            b.push(25);
+            f32w(b, g);
+        }
     }
 }
 
@@ -320,6 +334,7 @@ impl Reader<'_> {
             22 => Op::SetStomp(self.u32()?),
             23 => Op::SetAttackSpeed(self.f32()?),
             24 => Op::ResetJumps,
+            25 => Op::Gravity(self.f32()?),
             _ => return None,
         })
     }
@@ -483,6 +498,7 @@ pub unsafe extern "C" fn ssbm_sim_replay(
                     Op::ResetJumps => {
                         ssbm_sim_reset_jumps(handle);
                     }
+                    Op::Gravity(g) => ssbm_sim_set_gravity_scale(handle, g),
                     Op::Sync { position, grounded } => {
                         let h = &mut *handle;
                         let to: Vec3 = position.into();

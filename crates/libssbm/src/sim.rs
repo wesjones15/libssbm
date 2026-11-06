@@ -227,6 +227,8 @@ pub struct Sim {
     pub locomotion_weight: f32,
     pub move_started_grounded: bool,
     pub params: Params,
+    /// The fighter's own gravity while a host scales it ([`Sim::set_gravity_scale`]).
+    gravity_base: Option<f32>,
     pub options: Options,
     /// Per-fighter special-move behavior (specials, clips, physics).
     pub behavior: Box<dyn Behavior>,
@@ -362,6 +364,16 @@ impl Sim {
         if bound == 0 { 0 } else { x % bound }
     }
     /// Synthetic Samus for headless tests. Runtime hosts use [`Sim::with_behavior`].
+    /// Host extension: the world's gravity as a multiple of the usual (a low-gravity stage is below 1). The
+    /// fighter's fall acceleration is its own times this; with a host jump height set for that gravity
+    /// (`host_jump_height`) the take-off speed is unchanged and the jump goes higher and comes down slower.
+    /// 1 is the game's own.
+    pub fn set_gravity_scale(&mut self, scale: f32) {
+        let scale = if scale.is_finite() { scale.clamp(0.05, 4.0) } else { 1.0 };
+        let base = *self.gravity_base.get_or_insert(self.params.gravity);
+        self.params.gravity = base * scale;
+    }
+
     pub fn new(params: Params, position: Vec3) -> Self {
         Self::with_behavior(
             params,
@@ -382,6 +394,7 @@ impl Sim {
             locomotion_weight: 0.,
             move_started_grounded: false,
             params,
+            gravity_base: None,
             options: Options::default(),
             behavior,
             position,
