@@ -7,9 +7,8 @@
 //! 2D control stick (the arrow's and the boomerang's direction), and the flight
 //! of the arrow, boomerang and bomb is the host's projectile job.
 use crate::{
-    action::GfxCue,
     behavior::Behavior,
-    sim::{EventKind, Host, Input, Move, Phase, Sim, DOWN_B, NEUTRAL_B, SIDE_B, UP_B},
+    sim::{EventKind, Host, Input, Move, Phase, Sim, NEUTRAL_B},
 };
 use glam::Vec3;
 
@@ -117,15 +116,6 @@ impl Link {
     }
 }
 impl Behavior for Link {
-    fn slot(&self, m: Move) -> u32 {
-        match m {
-            Move::SpecialN => 0,
-            Move::SpecialS | Move::SpecialS2 => 2,
-            Move::SpecialHi => 3,
-            Move::SpecialLw => 1,
-            _ => 4,
-        }
-    }
     fn mobile_moves(&self) -> u64 {
         (1u64 << Move::SpecialN as u32) | (1u64 << Move::SpecialS as u32)
     }
@@ -134,23 +124,7 @@ impl Behavior for Link {
     }
     fn mobile_sprint(&self, m: Move) -> bool { m == Move::SpecialN }
     fn preserve_upper_orientation(&self, m: Move) -> bool { m == Move::SpecialN }
-    fn is_up_special(&self, m: Move) -> bool {
-        m == Move::SpecialHi
-    }
 
-    fn select_special(&self, _sim: &Sim, input: Input, movement: Vec3) -> Option<Move> {
-        Some(if input.buttons & NEUTRAL_B != 0 {
-            Move::SpecialN
-        } else if input.buttons & UP_B != 0 {
-            Move::SpecialHi
-        } else if input.buttons & DOWN_B != 0 {
-            Move::SpecialLw
-        } else if input.buttons & SIDE_B != 0 || movement.length() > 0.3 {
-            Move::SpecialS
-        } else {
-            Move::SpecialN
-        })
-    }
     fn enter_special(&self, sim: &mut Sim, _host: &mut dyn Host, m: Move, _input: Input) {
         if m == Move::SpecialHi {
             // Spin Attack: a rising multi-hit recovery (ftlinkspecialhi.c::
@@ -176,26 +150,8 @@ impl Behavior for Link {
         // SpecialN (Hero's Bow) is staged; SpecialLw (Bomb) pulls the bomb out and
         // the host carries it. Neither changes the body's velocity on entry.
     }
-    fn aimable(&self, m: Move) -> bool {
-        matches!(m, Move::SpecialN | Move::SpecialS)
-    }
-    fn is_charge_move(&self, _m: Move) -> bool {
-        false
-    }
-    fn charge_voice_band(&self, _sim: &Sim) -> u32 {
-        0
-    }
     fn charge_steps(&self) -> u32 {
         self.specials.bow_charge_steps
-    }
-    fn charge_visual(&self) -> (f32, f32) {
-        (1., 1.)
-    }
-    fn store_special(&self, _sim: &mut Sim, _host: &mut dyn Host, _pressed: u32) -> bool {
-        false
-    }
-    fn resolve_startup(&self, _sim: &mut Sim, _input: Input) -> bool {
-        false
     }
     fn fire_replays(&self, _m: Move) -> bool {
         false
@@ -207,16 +163,6 @@ impl Behavior for Link {
             (sim.stage_value / self.steps()).clamp(0., 1.)
         } else {
             sim.move_strength
-        }
-    }
-    fn tick_charge(&self, _sim: &mut Sim, _host: &mut dyn Host, _input: Input, _pressed: u32) {}
-    fn tick_charge_cancel(&self, sim: &mut Sim) -> bool {
-        if sim.motion.finished() {
-            sim.set_phase(Phase::Free);
-            sim.current_move = None;
-            true
-        } else {
-            false
         }
     }
 
@@ -276,20 +222,8 @@ impl Behavior for Link {
             _ => "",
         }
     }
-    fn landing(&self, _sim: &Sim, m: Move) -> &'static str {
-        if m == Move::SpecialHi { "LandingFallSpecial" } else { "Landing" }
-    }
-    fn facing_locked(&self, m: Move) -> bool {
-        matches!(m, Move::SpecialHi | Move::SpecialLw)
-    }
     fn spins_whole_body(&self, m: Move) -> bool {
         m == Move::SpecialHi
-    }
-    fn side_special_layered(&self, _m: Move) -> bool {
-        false
-    }
-    fn side_special_upper_aim(&self, _sim: &Sim) -> Option<(f32, f32)> {
-        None
     }
     fn hit_attachment(&self, _sim: &Sim, m: Move) -> (Option<usize>, Vec3) {
         // The arrow leaves the nocked bow and the boomerang and bomb leave the left
@@ -303,15 +237,6 @@ impl Behavior for Link {
     fn projectile_move(&self, m: Move) -> bool {
         // The boomerang is emitted by `tick_boomerang`, not by a clip command.
         matches!(m, Move::SpecialN | Move::SpecialLw)
-    }
-    fn projectile_cue(&self, _m: Move) -> Option<(u32, usize, bool)> {
-        None
-    }
-    fn phase_effect(&self, _sim: &Sim, _phase: Phase) -> Option<GfxCue> {
-        None
-    }
-    fn phase_stop(&self, _phase: Phase) -> Option<crate::action::SoundCue> {
-        None
     }
 
     fn startup(&self, m: Move) -> Option<u32> {

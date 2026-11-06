@@ -455,38 +455,10 @@ impl Behavior for Fox {
     fn hurt_eyes(&self) -> bool {
         true
     }
-    fn slot(&self, m: Move) -> u32 {
-        match m {
-            Move::SpecialN => 0,
-            Move::SpecialS | Move::SpecialS2 => 2,
-            Move::SpecialHi => 3,
-            Move::SpecialLw => 1,
-            _ => 4,
-        }
-    }
     fn mobile_moves(&self) -> u64 {
         1u64 << Move::SpecialN as u32
     }
-    fn upper_body_root(&self) -> Option<usize> {
-        None
-    }
-    fn is_up_special(&self, m: Move) -> bool {
-        m == Move::SpecialHi
-    }
 
-    fn select_special(&self, _sim: &Sim, input: Input, movement: Vec3) -> Option<Move> {
-        Some(if input.buttons & NEUTRAL_B != 0 {
-            Move::SpecialN
-        } else if input.buttons & UP_B != 0 {
-            Move::SpecialHi
-        } else if input.buttons & DOWN_B != 0 {
-            Move::SpecialLw
-        } else if input.buttons & SIDE_B != 0 || movement.length() > 0.3 {
-            Move::SpecialS
-        } else {
-            Move::SpecialN
-        })
-    }
     fn enter_special(&self, sim: &mut Sim, host: &mut dyn Host, m: Move, _input: Input) {
         match m {
             Move::SpecialN => {
@@ -539,24 +511,6 @@ impl Behavior for Fox {
             _ => false,
         }
     }
-    fn is_charge_move(&self, _m: Move) -> bool {
-        false
-    }
-    fn charge_voice_band(&self, _sim: &Sim) -> u32 {
-        0
-    }
-    fn charge_steps(&self) -> u32 {
-        1
-    }
-    fn charge_visual(&self) -> (f32, f32) {
-        (1., 1.)
-    }
-    fn store_special(&self, _sim: &mut Sim, _host: &mut dyn Host, _pressed: u32) -> bool {
-        false
-    }
-    fn resolve_startup(&self, _sim: &mut Sim, _input: Input) -> bool {
-        false
-    }
     fn fire_replays(&self, _m: Move) -> bool {
         false
     }
@@ -572,16 +526,6 @@ impl Behavior for Fox {
             });
         }
         sim.move_strength
-    }
-    fn tick_charge(&self, _sim: &mut Sim, _host: &mut dyn Host, _input: Input, _pressed: u32) {}
-    fn tick_charge_cancel(&self, sim: &mut Sim) -> bool {
-        if sim.motion.finished() {
-            sim.set_phase(Phase::Free);
-            sim.current_move = None;
-            true
-        } else {
-            false
-        }
     }
 
     fn tick_special(&self, sim: &mut Sim, host: &mut dyn Host, input: Input, pressed: u32) {
@@ -700,9 +644,6 @@ impl Behavior for Fox {
             _ => "",
         }
     }
-    fn landing(&self, _sim: &Sim, m: Move) -> &'static str {
-        if m == Move::SpecialHi { "LandingFallSpecial" } else { "Landing" }
-    }
     fn facing_locked(&self, m: Move) -> bool {
         m == Move::SpecialLw
     }
@@ -714,12 +655,6 @@ impl Behavior for Fox {
     fn spins_whole_body(&self, m: Move) -> bool {
         matches!(m, Move::SpecialS | Move::SpecialHi | Move::SpecialLw)
     }
-    fn side_special_layered(&self, _m: Move) -> bool {
-        false
-    }
-    fn side_special_upper_aim(&self, _sim: &Sim) -> Option<(f32, f32)> {
-        None
-    }
     fn hit_attachment(&self, _sim: &Sim, m: Move) -> (Option<usize>, Vec3) {
         // The Blaster's shots leave from the right hand holding the gun.
         if m == Move::SpecialN {
@@ -730,12 +665,6 @@ impl Behavior for Fox {
     }
     fn projectile_move(&self, m: Move) -> bool {
         m == Move::SpecialN
-    }
-    fn projectile_cue(&self, _m: Move) -> Option<(u32, usize, bool)> {
-        None
-    }
-    fn phase_effect(&self, _sim: &Sim, _phase: Phase) -> Option<GfxCue> {
-        None
     }
     fn phase_stop(&self, _phase: Phase) -> Option<SoundCue> {
         None

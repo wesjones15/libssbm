@@ -5,7 +5,7 @@
 //! `Behavior` implementation, not editing the sim.
 use crate::{
     action::{GfxCue, SoundCue},
-    sim::{Host, Input, Move, Phase, Sim},
+    sim::{Host, Input, Move, Phase, Sim, DOWN_B, NEUTRAL_B, SIDE_B, UP_B},
 };
 use glam::Vec3;
 
@@ -28,7 +28,15 @@ pub struct SpecialFall {
 pub trait Behavior: Send {
     // --- Move classification ------------------------------------------------
     /// Skill slot (0..4) a move maps to. Common A-attacks use slot 1.
-    fn slot(&self, m: Move) -> u32;
+    fn slot(&self, m: Move) -> u32 {
+        match m {
+            Move::SpecialN => 0,
+            Move::SpecialS | Move::SpecialS2 => 2,
+            Move::SpecialHi => 3,
+            Move::SpecialLw => 1,
+            _ => 4,
+        }
+    }
     /// Moves that may steer while grounded with the upper/lower split.
     fn mobile_moves(&self) -> u64;
     /// Host adaptation: a mobile action may opt into run speed/Run legs.
@@ -40,46 +48,86 @@ pub trait Behavior: Send {
     /// Root joint of the upper-body subtree for the mobile split. `None` means
     /// the fighter has no split and mobile moves stay whole-body. This is the
     /// per-character "top half of B, bottom half of walk" seam.
-    fn upper_body_root(&self) -> Option<usize>;
+    fn upper_body_root(&self) -> Option<usize> {
+        None
+    }
     /// The recovery special (up-B). The shared sim grants it i-frames from launch
     /// until landing, and clears them if another attack starts midair.
-    fn is_up_special(&self, m: Move) -> bool;
+    fn is_up_special(&self, m: Move) -> bool {
+        m == Move::SpecialHi
+    }
 
     // --- Special selection and lifecycle ------------------------------------
     /// Pick the special move for a special-button press, or `None` to fall back
     /// to the contextual A attack. Reads the sim for flick age, aim and movement.
-    fn select_special(&self, sim: &Sim, input: Input, movement: Vec3) -> Option<Move>;
+    fn select_special(&self, _sim: &Sim, input: Input, movement: Vec3) -> Option<Move> {
+        Some(if input.buttons & NEUTRAL_B != 0 {
+            Move::SpecialN
+        } else if input.buttons & UP_B != 0 {
+            Move::SpecialHi
+        } else if input.buttons & DOWN_B != 0 {
+            Move::SpecialLw
+        } else if input.buttons & SIDE_B != 0 || movement.length() > 0.3 {
+            Move::SpecialS
+        } else {
+            Move::SpecialN
+        })
+    }
     /// Per-special entry work after the common `start` bookkeeping (velocity,
     /// effects, jump usage). Grounded/airborne is already recorded.
     fn enter_special(&self, sim: &mut Sim, host: &mut dyn Host, m: Move, input: Input);
     /// Whether a move keeps aiming at the live camera ray during its action.
-    fn aimable(&self, m: Move) -> bool;
+    fn aimable(&self, m: Move) -> bool {
+        matches!(m, Move::SpecialN | Move::SpecialS)
+    }
     /// The charge-shot move, if this fighter has one (Samus: ChargeShot).
-    fn is_charge_move(&self, m: Move) -> bool;
+    fn is_charge_move(&self, _m: Move) -> bool {
+        false
+    }
     /// Clip for the hold-to-charge phase (Samus: SpecialNHold).
     fn charge_clip(&self) -> &'static str {
         "SpecialNHold"
     }
     /// Source charge-voice band for the held charge (0..4).
-    fn charge_voice_band(&self, sim: &Sim) -> u32;
+    fn charge_voice_band(&self, _sim: &Sim) -> u32 {
+        0
+    }
     /// Charge levels and visual scale range for a charge-capable fighter.
-    fn charge_steps(&self) -> u32;
-    fn charge_visual(&self) -> (f32, f32);
+    fn charge_steps(&self) -> u32 {
+        1
+    }
+    fn charge_visual(&self) -> (f32, f32) {
+        (1., 1.)
+    }
     /// Optional pre-phase handling (e.g. sprint stores a held charge). True when
     /// the whole tick was consumed.
-    fn store_special(&self, sim: &mut Sim, host: &mut dyn Host, pressed: u32) -> bool;
+    fn store_special(&self, _sim: &mut Sim, _host: &mut dyn Host, _pressed: u32) -> bool {
+        false
+    }
     /// After startup, decide whether to enter a hold phase; true when handled
     /// (the caller must not fire).
-    fn resolve_startup(&self, sim: &mut Sim, input: Input) -> bool;
+    fn resolve_startup(&self, _sim: &mut Sim, _input: Input) -> bool {
+        false
+    }
     /// Strength for firing a move (charge ratio for a charge shot, else move
     /// strength). May consume stored charge.
-    fn fire_strength(&self, sim: &mut Sim, m: Move) -> f32;
+    fn fire_strength(&self, sim: &mut Sim, _m: Move) -> f32 {
+        sim.move_strength
+    }
 
     // --- Special phases ------------------------------------------------------
     /// Handle `Phase::ChargeShot` (a hold-to-charge special).
-    fn tick_charge(&self, sim: &mut Sim, host: &mut dyn Host, input: Input, pressed: u32);
+    fn tick_charge(&self, _sim: &mut Sim, _host: &mut dyn Host, _input: Input, _pressed: u32) {}
     /// Handle `Phase::ChargeCancel`; true when the phase finished.
-    fn tick_charge_cancel(&self, sim: &mut Sim) -> bool;
+    fn tick_charge_cancel(&self, sim: &mut Sim) -> bool {
+        if sim.motion.finished() {
+            sim.set_phase(Phase::Free);
+            sim.current_move = None;
+            true
+        } else {
+            false
+        }
+    }
 
     // --- Presentation --------------------------------------------------------
     /// Playback multiplier for a staged pose that must remain held after selection.
@@ -88,16 +136,34 @@ pub trait Behavior: Send {
     /// Pikachu's borrowed Egg Lay holds one Thunder pose for both its stages.
     fn held_pose(&self, _sim: &Sim) -> Option<f32> { None }
     fn clip(&self, sim: &Sim, m: Move) -> &'static str;
-    fn landing(&self, sim: &Sim, m: Move) -> &'static str;
-    fn facing_locked(&self, m: Move) -> bool;
-    fn spins_whole_body(&self, m: Move) -> bool;
-    fn side_special_layered(&self, m: Move) -> bool;
-    fn side_special_upper_aim(&self, sim: &Sim) -> Option<(f32, f32)>;
-    fn hit_attachment(&self, sim: &Sim, m: Move) -> (Option<usize>, Vec3);
+    fn landing(&self, _sim: &Sim, m: Move) -> &'static str {
+        if m == Move::SpecialHi { "LandingFallSpecial" } else { "Landing" }
+    }
+    fn facing_locked(&self, m: Move) -> bool {
+        matches!(m, Move::SpecialHi | Move::SpecialLw)
+    }
+    fn spins_whole_body(&self, _m: Move) -> bool {
+        false
+    }
+    fn side_special_layered(&self, _m: Move) -> bool {
+        false
+    }
+    fn side_special_upper_aim(&self, _sim: &Sim) -> Option<(f32, f32)> {
+        None
+    }
+    fn hit_attachment(&self, _sim: &Sim, _m: Move) -> (Option<usize>, Vec3) {
+        (None, Vec3::ZERO)
+    }
     fn projectile_move(&self, m: Move) -> bool;
-    fn projectile_cue(&self, m: Move) -> Option<(u32, usize, bool)>;
-    fn phase_effect(&self, sim: &Sim, phase: Phase) -> Option<GfxCue>;
-    fn phase_stop(&self, phase: Phase) -> Option<SoundCue>;
+    fn projectile_cue(&self, _m: Move) -> Option<(u32, usize, bool)> {
+        None
+    }
+    fn phase_effect(&self, _sim: &Sim, _phase: Phase) -> Option<GfxCue> {
+        None
+    }
+    fn phase_stop(&self, _phase: Phase) -> Option<SoundCue> {
+        None
+    }
 
     // --- Multi-stage specials (all optional; defaults leave a move single-clip)
     /// Runs every sim tick before the phase logic. A behavior with staged

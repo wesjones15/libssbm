@@ -448,12 +448,6 @@ impl Behavior for Pikachu {
     fn mobile_moves(&self) -> u64 {
         1u64 << Move::SpecialN as u32
     }
-    fn upper_body_root(&self) -> Option<usize> {
-        None
-    }
-    fn is_up_special(&self, m: Move) -> bool {
-        m == Move::SpecialHi
-    }
 
     fn select_special(&self, _sim: &Sim, input: Input, _movement: Vec3) -> Option<Move> {
         Some(if input.buttons & UP_B != 0 {
@@ -507,32 +501,14 @@ impl Behavior for Pikachu {
             _ => {}
         }
     }
-    fn aimable(&self, m: Move) -> bool {
-        matches!(m, Move::SpecialN | Move::SpecialS)
-    }
     fn aim_frozen(&self, sim: &Sim) -> bool {
         sim.current_move == Some(Move::SpecialS) && sim.stage >= BASH_GO
-    }
-    fn is_charge_move(&self, _m: Move) -> bool {
-        false
-    }
-    fn charge_voice_band(&self, _sim: &Sim) -> u32 {
-        0
     }
     /// Skull Bash's charge frames, for the HUD fraction.
     fn charge_steps(&self) -> u32 {
         self.specials.bash_max_charge.max(1)
     }
-    fn charge_visual(&self) -> (f32, f32) {
-        (1., 1.)
-    }
-    fn store_special(&self, _sim: &mut Sim, _host: &mut dyn Host, _pressed: u32) -> bool {
-        false
-    }
     fn fire_replays(&self, _m: Move) -> bool {
-        false
-    }
-    fn resolve_startup(&self, _sim: &mut Sim, _input: Input) -> bool {
         false
     }
     fn fire_strength(&self, sim: &mut Sim, m: Move) -> f32 {
@@ -550,16 +526,6 @@ impl Behavior for Pikachu {
             });
         }
         sim.move_strength
-    }
-    fn tick_charge(&self, _sim: &mut Sim, _host: &mut dyn Host, _input: Input, _pressed: u32) {}
-    fn tick_charge_cancel(&self, sim: &mut Sim) -> bool {
-        if sim.motion.finished() {
-            sim.set_phase(Phase::Free);
-            sim.current_move = None;
-            true
-        } else {
-            false
-        }
     }
 
     fn tick_special(&self, sim: &mut Sim, host: &mut dyn Host, input: Input, pressed: u32) {
@@ -744,35 +710,14 @@ impl Behavior for Pikachu {
             _ => "",
         }
     }
-    fn landing(&self, _sim: &Sim, m: Move) -> &'static str {
-        if m == Move::SpecialHi { "LandingFallSpecial" } else { "Landing" }
-    }
-    fn facing_locked(&self, m: Move) -> bool {
-        matches!(m, Move::SpecialHi | Move::SpecialLw)
-    }
     fn facing_locked_now(&self, sim: &Sim, m: Move) -> bool {
         self.facing_locked(m) || (m == Move::SpecialS && sim.stage >= BASH_GO)
     }
     fn spins_whole_body(&self, m: Move) -> bool {
         matches!(m, Move::SpecialS | Move::SpecialHi | Move::SpecialLw)
     }
-    fn side_special_layered(&self, _m: Move) -> bool {
-        false
-    }
-    fn side_special_upper_aim(&self, _sim: &Sim) -> Option<(f32, f32)> {
-        None
-    }
-    fn hit_attachment(&self, _sim: &Sim, _m: Move) -> (Option<usize>, Vec3) {
-        (None, Vec3::ZERO)
-    }
     fn projectile_move(&self, m: Move) -> bool {
         m == Move::SpecialN
-    }
-    fn projectile_cue(&self, _m: Move) -> Option<(u32, usize, bool)> {
-        None
-    }
-    fn phase_effect(&self, _sim: &Sim, _phase: Phase) -> Option<GfxCue> {
-        None
     }
     fn phase_stop(&self, _phase: Phase) -> Option<SoundCue> {
         None

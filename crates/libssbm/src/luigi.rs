@@ -467,9 +467,6 @@ impl Behavior for Luigi {
     fn upper_body_root(&self) -> Option<usize> {
         Some(5) // LUIGI.upper_body_root: torso root above HipN (arms + head)
     }
-    fn is_up_special(&self, m: Move) -> bool {
-        m == Move::SpecialHi
-    }
 
     fn select_special(&self, sim: &Sim, input: Input, movement: Vec3) -> Option<Move> {
         // The Super Scope stands in for the Fireball (RT) or the Super Jump Punch (LB),
@@ -560,40 +557,12 @@ impl Behavior for Luigi {
     fn aim_frozen(&self, sim: &Sim) -> bool {
         sim.current_move == Some(Move::SpecialS) && sim.stage >= S_LAUNCH
     }
-    fn is_charge_move(&self, _m: Move) -> bool {
-        false
-    }
-    fn charge_voice_band(&self, _sim: &Sim) -> u32 {
-        0
-    }
     /// The missile's charge frames, for the HUD fraction.
     fn charge_steps(&self) -> u32 {
         self.specials.max_charge.round().max(1.) as u32
     }
-    fn charge_visual(&self) -> (f32, f32) {
-        (1., 1.)
-    }
-    fn store_special(&self, _sim: &mut Sim, _host: &mut dyn Host, _pressed: u32) -> bool {
-        false
-    }
     fn fire_replays(&self, _m: Move) -> bool {
         false
-    }
-    fn resolve_startup(&self, _sim: &mut Sim, _input: Input) -> bool {
-        false
-    }
-    fn fire_strength(&self, sim: &mut Sim, _m: Move) -> f32 {
-        sim.move_strength
-    }
-    fn tick_charge(&self, _sim: &mut Sim, _host: &mut dyn Host, _input: Input, _pressed: u32) {}
-    fn tick_charge_cancel(&self, sim: &mut Sim) -> bool {
-        if sim.motion.finished() {
-            sim.set_phase(Phase::Free);
-            sim.current_move = None;
-            true
-        } else {
-            false
-        }
     }
 
     fn tick_special(&self, sim: &mut Sim, host: &mut dyn Host, input: Input, pressed: u32) {
@@ -688,20 +657,8 @@ impl Behavior for Luigi {
             _ => "",
         }
     }
-    fn landing(&self, _sim: &Sim, m: Move) -> &'static str {
-        if m == Move::SpecialHi { "LandingFallSpecial" } else { "Landing" }
-    }
-    fn facing_locked(&self, m: Move) -> bool {
-        matches!(m, Move::SpecialHi | Move::SpecialLw)
-    }
     fn spins_whole_body(&self, m: Move) -> bool {
         matches!(m, Move::SpecialS | Move::SpecialHi | Move::SpecialLw)
-    }
-    fn side_special_layered(&self, _m: Move) -> bool {
-        false
-    }
-    fn side_special_upper_aim(&self, _sim: &Sim) -> Option<(f32, f32)> {
-        None
     }
     fn hit_attachment(&self, _sim: &Sim, m: Move) -> (Option<usize>, Vec3) {
         // The scope's beam leaves from the right hand holding it (FtPart_RThumbNb, through the common bone table).
@@ -713,15 +670,6 @@ impl Behavior for Luigi {
     }
     fn projectile_move(&self, m: Move) -> bool {
         m == Move::SpecialN
-    }
-    fn projectile_cue(&self, _m: Move) -> Option<(u32, usize, bool)> {
-        None
-    }
-    fn phase_effect(&self, _sim: &Sim, _phase: Phase) -> Option<GfxCue> {
-        None
-    }
-    fn phase_stop(&self, _phase: Phase) -> Option<crate::action::SoundCue> {
-        None
     }
     fn special_fall(&self, m: Move) -> Option<SpecialFall> {
         // ftLg_SpecialHi_Anim -> ftCo_80096900: helpless at x50 drift, then x54 landing lag.

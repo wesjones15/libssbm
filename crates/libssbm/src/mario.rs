@@ -8,7 +8,7 @@
 //! fallback to contextual A, not a Sunshine dive; Mario's four specials are not
 //! implemented here yet.
 use crate::{
-    action::{GfxCue, SoundCue},
+    action::SoundCue,
     behavior::Behavior,
     sim::{Host, Input, Move, Phase, Sim},
 };
@@ -48,28 +48,6 @@ impl Behavior for Mario {
     fn aimable(&self, _m: Move) -> bool {
         false
     }
-    fn is_charge_move(&self, _m: Move) -> bool {
-        false
-    }
-    fn charge_voice_band(&self, _sim: &Sim) -> u32 {
-        0
-    }
-    fn charge_steps(&self) -> u32 {
-        1
-    }
-    fn charge_visual(&self) -> (f32, f32) {
-        (1., 1.)
-    }
-    fn store_special(&self, _sim: &mut Sim, _host: &mut dyn Host, _pressed: u32) -> bool {
-        false
-    }
-    fn resolve_startup(&self, _sim: &mut Sim, _input: Input) -> bool {
-        false
-    }
-    fn fire_strength(&self, sim: &mut Sim, _m: Move) -> f32 {
-        sim.move_strength
-    }
-    fn tick_charge(&self, _sim: &mut Sim, _host: &mut dyn Host, _input: Input, _pressed: u32) {}
     fn tick_charge_cancel(&self, _sim: &mut Sim) -> bool {
         false
     }
@@ -83,26 +61,8 @@ impl Behavior for Mario {
     fn facing_locked(&self, _m: Move) -> bool {
         false
     }
-    fn spins_whole_body(&self, _m: Move) -> bool {
-        false
-    }
-    fn side_special_layered(&self, _m: Move) -> bool {
-        false
-    }
-    fn side_special_upper_aim(&self, _sim: &Sim) -> Option<(f32, f32)> {
-        None
-    }
-    fn hit_attachment(&self, _sim: &Sim, _m: Move) -> (Option<usize>, Vec3) {
-        (None, Vec3::ZERO)
-    }
     fn projectile_move(&self, _m: Move) -> bool {
         false
-    }
-    fn projectile_cue(&self, _m: Move) -> Option<(u32, usize, bool)> {
-        None
-    }
-    fn phase_effect(&self, _sim: &Sim, _phase: Phase) -> Option<GfxCue> {
-        None
     }
     fn phase_stop(&self, _phase: Phase) -> Option<SoundCue> {
         None

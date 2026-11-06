@@ -245,15 +245,6 @@ impl Samus {
     }
 }
 impl Behavior for Samus {
-    fn slot(&self, m: Move) -> u32 {
-        match m {
-            Move::SpecialN => 0,
-            Move::SpecialS | Move::SpecialS2 => 2,
-            Move::SpecialHi => 3,
-            Move::SpecialLw => 1,
-            _ => 4,
-        }
-    }
     fn mobile_moves(&self) -> u64 {
         (1u64 << Move::SpecialN as u32)
             | (1u64 << Move::SpecialS as u32)
@@ -263,9 +254,6 @@ impl Behavior for Samus {
     }
     fn upper_body_root(&self) -> Option<usize> {
         self.upper_body_root
-    }
-    fn is_up_special(&self, m: Move) -> bool {
-        m == Move::SpecialHi
     }
 
     fn select_special(&self, sim: &Sim, input: Input, movement: Vec3) -> Option<Move> {
@@ -431,15 +419,6 @@ impl Behavior for Samus {
             sim.fire(host);
         }
     }
-    fn tick_charge_cancel(&self, sim: &mut Sim) -> bool {
-        if sim.motion.finished() {
-            sim.set_phase(Phase::Free);
-            sim.current_move = None;
-            true
-        } else {
-            false
-        }
-    }
 
     fn tick_special(&self, sim: &mut Sim, _host: &mut dyn Host, input: Input, pressed: u32) {
         if Self::morph_roll(sim) {
@@ -509,12 +488,6 @@ impl Behavior for Samus {
             }
             _ => "",
         }
-    }
-    fn landing(&self, _sim: &Sim, m: Move) -> &'static str {
-        if m == Move::SpecialHi { "LandingFallSpecial" } else { "Landing" }
-    }
-    fn facing_locked(&self, m: Move) -> bool {
-        matches!(m, Move::SpecialHi | Move::SpecialLw)
     }
     fn spins_whole_body(&self, m: Move) -> bool {
         matches!(m, Move::SpecialLw | Move::SpecialHi)
