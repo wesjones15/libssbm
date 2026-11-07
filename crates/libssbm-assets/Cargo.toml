@@ -1,4 +1,5 @@
 [package]
+license.workspace = true
 name = "libssbm-assets"
 version.workspace = true
 edition.workspace = true

@@ -24,3 +24,11 @@ The viewer uses real disc meshes, textures and animation clips with simplified
 diffuse materials. Attack effects are diagnostic shapes. Original hitboxes,
 animation command timings, sound and full material behavior remain in progress.
 `--capture build/samus-viewer.png` renders five frames and exits for visual QA.
+
+## License and credits
+
+Original contributions by **wesleyasaurus** are dedicated to the public domain under
+[CC0 1.0 Universal](LICENSE), to the extent wesleyasaurus owns the relevant rights.
+Attribution for those contributions is appreciated but not required. Third-party software
+and original game content retain their respective rights and terms.
+See [CREDITS.md](CREDITS.md) and [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).
