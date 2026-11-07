@@ -382,7 +382,13 @@ impl Retarget {
     /// The Melee model's world matrices for `frame` of `clip`: mapped joints get the
     /// source's world rotation delta, every other joint keeps its bind local rotation.
     pub fn pose(&self, model: &Model, rig: &Rig, clip: &Clip, frame: f32) -> Vec<Mat4> {
-        let sms_world = clip_world(rig, clip, frame);
+        self.pose_world(model, &clip_world(rig, clip, frame))
+    }
+
+    /// [`Self::pose`] from a Sunshine pose that is already posed: `sms_world` holds one world
+    /// rotation per Sunshine joint (a clip's, or a host's override such as the Melee A attacks
+    /// ported onto Mario's rig).
+    pub fn pose_world(&self, model: &Model, sms_world: &[Mat3]) -> Vec<Mat4> {
         let n = model.joints.len();
         let mut mapped = vec![None; n];
         for &(s, m) in MAP {

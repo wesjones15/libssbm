@@ -104,18 +104,27 @@ pub fn extract_items(disc_path: &Path, out: &Path) -> Result<()> {
 }
 
 /// The Ice Climbers' models (Popo `ftpopo.c`: Nr, Gr, Or, Re; Nana `ftnana.c`: Nr, Ye, Aq, Wh), Pikachu's default
-/// costume and the common parts table, for hosts that draw them without playing the fighters (no animations,
-/// sounds or articles). Optional: a roster fighter's asset set is complete without them.
-pub const ICE_CLIMBER_ASSETS: [&str; 13] = [
-    "PlCo.dat", "PlPk.dat", "PlPkNr.dat", "PlPp.dat", "PlPpNr.dat", "PlPpGr.dat", "PlPpOr.dat", "PlPpRe.dat",
-    "PlNn.dat", "PlNnNr.dat", "PlNnYe.dat", "PlNnAq.dat", "PlNnWh.dat",
+/// costume, Pikachu's own animations and the common parts table, for hosts that draw them without playing the
+/// fighters (no sounds or articles). Optional: a roster fighter's asset set is complete without them.
+///
+/// `PlPkAJ.dat` is here because a host drawing Pikachu (Olimar's Pikachu skin) plays his own clips from it; it used
+/// to arrive only when the Melee plugin extracted Pikachu, which it no longer does while he is unfinished. Every file
+/// is checked with Pikachu's own validator ([`crate::fighter::PIKACHU`]), the same one the Melee plugin's
+/// completeness check uses, so both sides agree on what a good file is.
+pub const ICE_CLIMBER_ASSETS: [&str; 14] = [
+    "PlCo.dat", "PlPk.dat", "PlPkNr.dat", "PlPkAJ.dat", "PlPp.dat", "PlPpNr.dat", "PlPpGr.dat", "PlPpOr.dat",
+    "PlPpRe.dat", "PlNn.dat", "PlNnNr.dat", "PlNnYe.dat", "PlNnAq.dat", "PlNnWh.dat",
 ];
 
-/// Whether the Ice Climbers' models have been extracted into `dir`.
+fn ice_climber_file_ok(name: &str, bytes: &[u8]) -> bool {
+    crate::fighter::PIKACHU.validate_asset(name, bytes).is_ok()
+}
+
+/// Whether the Ice Climbers' models (and Pikachu's, see [`ICE_CLIMBER_ASSETS`]) have been extracted into `dir`.
 pub fn ice_climbers_present(dir: &Path) -> bool {
-    ICE_CLIMBER_ASSETS.iter().all(|name| {
-        fs::read(dir.join(name)).ok().is_some_and(|bytes| crate::dat::Dat::parse(&bytes).is_ok())
-    })
+    ICE_CLIMBER_ASSETS
+        .iter()
+        .all(|name| fs::read(dir.join(name)).ok().is_some_and(|bytes| ice_climber_file_ok(name, &bytes)))
 }
 
 /// Extracts [`ICE_CLIMBER_ASSETS`] from the player's disc into the git-ignored `out`, leaving everything else as it is.
@@ -125,7 +134,9 @@ pub fn extract_ice_climbers(disc_path: &Path, out: &Path) -> Result<()> {
     let mut blobs = Vec::new();
     for name in ICE_CLIMBER_ASSETS {
         let bytes = disc.file(name)?;
-        crate::dat::Dat::parse(&bytes)?;
+        if !ice_climber_file_ok(name, &bytes) {
+            return Err(format!("{name}: not a valid Melee file").into());
+        }
         blobs.push((name, bytes));
     }
     fs::create_dir_all(out)?;
