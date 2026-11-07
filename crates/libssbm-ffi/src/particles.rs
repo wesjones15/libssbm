@@ -33,22 +33,22 @@ impl Bank {
         // ground/move VFX lives in its EfXxData.dat alongside the common EfCoData
         // bank. Emitter ids are bank-relative (common 0..591, Samus 2000..,
         // Fox 3000.., Luigi 18000..), so the banks merge without collisions.
-        let archives = [
-            libssbm_assets::fighter::COMMON_EFFECTS,
+        // Only the common bank is required. Each fighter's bank is loaded when its file is in
+        // the cache: a fighter that isn't extracted (hidden as unfinished, or never asked for)
+        // must not take every other fighter's effects down with it. Pikachu (7000..), Captain
+        // Falcon (4000..) and Yoshi (9000..) were optional already; Samus, Fox and Luigi used to
+        // be required, which broke every Melee view once Fox stopped being extracted by default.
+        // Link's and Donkey Kong's archives hold effect models only.
+        let optional = [
             libssbm_assets::fighter::SAMUS.effects,
             libssbm_assets::fighter::FOX.effects,
             libssbm_assets::fighter::LUIGI.effects,
-        ];
-        // Pikachu (7000..), Captain Falcon (4000..) and Yoshi (9000..) are optional banks:
-        // caches extracted before they existed keep working for the other fighters. Link's
-        // and Donkey Kong's archives hold effect models only.
-        let optional = [
             libssbm_assets::fighter::PIKACHU.effects,
             libssbm_assets::fighter::CAPTAIN.effects,
             libssbm_assets::fighter::YOSHI.effects,
         ];
-        for archive in archives.into_iter().chain(optional) {
-            if optional.iter().any(|o| o.file == archive.file) && !dir.join(archive.file).exists() {
+        for archive in [libssbm_assets::fighter::COMMON_EFFECTS].into_iter().chain(optional) {
+            if archive.file != libssbm_assets::fighter::COMMON_EFFECTS.file && !dir.join(archive.file).exists() {
                 continue;
             }
             let archive = Effects::load_archive(dir, archive)?;
@@ -344,4 +344,49 @@ pub unsafe extern "C" fn ssbm_particles_texture(
         }
         1
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::Bank;
+    use std::path::{Path, PathBuf};
+
+    /// A Melee cache with the common and fighter effect banks (`SSBM_ASSETS`, or this checkout's
+    /// assets/), if there is one.
+    fn cache() -> Option<PathBuf> {
+        let dir = std::env::var_os("SSBM_ASSETS")
+            .map(PathBuf::from)
+            .unwrap_or_else(|| Path::new(env!("CARGO_MANIFEST_DIR")).join("../../assets"));
+        (dir.join("EfCoData.dat").is_file() && dir.join("EfSsData.dat").is_file()).then_some(dir)
+    }
+
+    /// A release install only extracts the finished fighters (Samus and Yoshi), so Fox's and
+    /// Luigi's banks are missing. The bank must still load from what is there; only the common
+    /// bank is required.
+    #[test]
+    fn the_bank_loads_without_the_hidden_fighters_effects() {
+        let Some(src) = cache() else {
+            eprintln!("SKIP: no Melee cache with EfCoData.dat and EfSsData.dat");
+            return;
+        };
+        let dir = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../target/test-particles-partial");
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        for file in ["EfCoData.dat", "EfSsData.dat"] {
+            std::fs::copy(src.join(file), dir.join(file)).unwrap();
+        }
+        let bank = Bank::load(&dir).expect("common + Samus only must load");
+        assert!(bank.definitions.keys().any(|id| *id < 2000), "common emitters");
+        assert!(bank.definitions.keys().any(|id| (2000..3000).contains(id)), "Samus's emitters");
+        assert!(!bank.definitions.keys().any(|id| (3000..4000).contains(id)), "no Fox emitters without his file");
+
+        std::fs::remove_file(dir.join("EfCoData.dat")).unwrap();
+        let empty = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../target/test-particles-nocommon");
+        let _ = std::fs::remove_dir_all(&empty);
+        std::fs::create_dir_all(&empty).unwrap();
+        std::fs::copy(src.join("EfSsData.dat"), empty.join("EfSsData.dat")).unwrap();
+        assert!(Bank::load(&empty).is_err(), "the common bank is still required");
+        let _ = std::fs::remove_dir_all(&dir);
+        let _ = std::fs::remove_dir_all(&empty);
+    }
 }
