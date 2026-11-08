@@ -131,6 +131,9 @@ async fn main() {
         draw_grid(24, 1., GRAY, DARKGRAY);
         // Olimar's existing stand-ins: shape/color vocabulary only; swarm remains libpikmin-owned.
         body(vec3(-5., 0.8, 0.), GOLD, 1.6);
+        // Authored skin stand-ins: Luigi green, Louie blue; no source asset IDs.
+        body(vec3(-8., 0.8, 0.), BLUE, 1.6);
+        body(vec3(0., 0.8, -4.), GREEN, 1.6);
         for (i, color) in [RED, BLUE, YELLOW].into_iter().enumerate() {
             let at = vec3(-6. + i as f32, 0.3, 2.);
             body(at, color, 0.6);
@@ -167,6 +170,7 @@ async fn main() {
             20.,
             LIGHTGRAY,
         );
+        draw_text("Skin stand-ins: Luigi = green cylinder; Louie = blue cylinder", 24., 95., 20., LIGHTGRAY);
         draw_text(
             &format!(
                 "Frame {frame} | FLUDD emissions {emits} | live droplets {}",
