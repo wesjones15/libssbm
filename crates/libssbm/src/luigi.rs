@@ -66,7 +66,7 @@ pub struct Specials {
     pub cyclone_wind_down: f32,
 }
 impl Specials {
-    /// Synthetic fixture only; runtime hosts read the disc.
+    /// Synthetic baseline for tests and built-in play; disc-backed play loads tuning.
     pub fn fixture() -> Self {
         Self {
             smash_window: 3.,

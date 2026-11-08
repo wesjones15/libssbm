@@ -42,7 +42,7 @@ pub struct Specials {
     pub reflect_speed_mul: f32,
 }
 impl Specials {
-    /// Synthetic fixture only; runtime hosts read the disc.
+    /// Synthetic baseline for tests and built-in play; disc-backed play loads tuning.
     pub fn fixture() -> Self {
         Self {
             blaster_angle: 0.,

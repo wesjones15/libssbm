@@ -29,7 +29,7 @@ pub struct Specials {
     pub dive_velocity: f32,
 }
 impl Specials {
-    /// Synthetic fixture only; runtime hosts read the disc.
+    /// Synthetic baseline for tests and built-in play; disc-backed play loads tuning.
     pub fn fixture() -> Self {
         Self {
             punch_momentum: 2.4,

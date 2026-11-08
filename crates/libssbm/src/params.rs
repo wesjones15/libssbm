@@ -94,7 +94,7 @@ impl Params {
         }
         Ok(())
     }
-    /// Synthetic fixture only. Runtime hosts require shipped tuning from the disc.
+    /// Synthetic baseline for tests and built-in play; disc-backed play loads tuning.
     pub fn fixture() -> Self {
         Self {
             walk_accel: 0.1,

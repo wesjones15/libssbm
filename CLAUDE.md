@@ -8,8 +8,8 @@
   unit/axis conversion belongs to host adapters. Use fixed 60 Hz simulation
   (GALE01 NTSC gameplay frames), verified against the game loop.
 - Shared fighter mechanics belong in libssbm, Samus decisions in samus modules.
-- Shipped tuning comes from PlSs.dat / PlCo.dat; do not present prototype timings
-  or host damage coefficients as original game values.
+- Disc-backed tuning comes from PlSs.dat / PlCo.dat. The explicit built-in no-assets
+  profile uses authored approximate tuning and clocks; never present those as original game values.
 - Write/update docs/behavior-spec.md with each implemented mechanic. Clearly mark
   partial, unverified and missing behavior. No claims of gameplay validation from
   compilation alone.

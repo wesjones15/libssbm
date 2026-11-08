@@ -1121,6 +1121,9 @@ pub unsafe extern "C" fn ssbm_sim_grapple_points(h: *const Handle, out: *mut V3,
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn ssbm_grapple_new(dir: *const c_char, part: u32) -> *mut View {
     guarded("ssbm_grapple_new", std::ptr::null_mut(), || {
+        if part < 4 && unsafe { path(dir) }.is_ok_and(|p| p.as_os_str().is_empty()) {
+            return Box::into_raw(Box::new(View::new(libssbm_assets::procedural::presentation(0, true))));
+        }
         match (|| libssbm_assets::grapple::part(unsafe { path(dir) }?, part))() {
             Ok(p) => Box::into_raw(Box::new(View::new(p))),
             Err(_) if part < 4 => Box::into_raw(Box::new(View::new(libssbm_assets::procedural::presentation(0, true)))),
@@ -1138,6 +1141,9 @@ pub unsafe extern "C" fn ssbm_grapple_new(dir: *const c_char, part: u32) -> *mut
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn ssbm_hookshot_new(dir: *const c_char, part: u32) -> *mut View {
     guarded("ssbm_hookshot_new", std::ptr::null_mut(), || {
+        if part < 3 && unsafe { path(dir) }.is_ok_and(|p| p.as_os_str().is_empty()) {
+            return Box::into_raw(Box::new(View::new(libssbm_assets::procedural::presentation(5, true))));
+        }
         match (|| libssbm_assets::hookshot::part(unsafe { path(dir) }?, part))() {
             Ok(p) => Box::into_raw(Box::new(View::new(p))),
             Err(_) if part < 3 => Box::into_raw(Box::new(View::new(libssbm_assets::procedural::presentation(5, true)))),
@@ -2151,7 +2157,9 @@ pub unsafe extern "C" fn ssbm_effect_new(dir: *const c_char, fighter_kind: u32, 
     guarded("ssbm_effect_new", std::ptr::null_mut(), || {
         let result = (|| {
             let fighter = fighter_assets(fighter_kind)?;
-            Presentation::effect_for(unsafe { path(dir) }?, id, fighter)
+            let dir = unsafe { path(dir) }?;
+            if dir.as_os_str().is_empty() { return Err("optional effect assets unavailable".into()); }
+            Presentation::effect_for(dir, id, fighter)
         })();
         match result {
             Ok(a) => Box::into_raw(Box::new(View::new(a))),
@@ -2915,7 +2923,10 @@ pub unsafe extern "C" fn ssbm_item_new(dir: *const c_char, item: u32, state: u32
                 0x26 => libssbm_assets::article::Item::SuperScopeBeam,
                 _ => return Err("unsupported item".into()),
             };
-            Ok::<_, Box<dyn std::error::Error + Send + Sync>>(Presentation::item_for(unsafe { path(dir) }?, item, state)
+            let dir = unsafe { path(dir) }?;
+            if state >= item.states() { return Err("invalid item state".into()); }
+            if dir.as_os_str().is_empty() { return Ok(libssbm_assets::procedural::presentation(0, true)); }
+            Ok::<_, Box<dyn std::error::Error + Send + Sync>>(Presentation::item_for(dir, item, state)
                 .unwrap_or_else(|_| libssbm_assets::procedural::presentation(0, true)))
         })();
         match result {

@@ -50,7 +50,7 @@ pub struct Specials {
     pub thunder_strike_frames: u32,
 }
 impl Specials {
-    /// Synthetic fixture only; runtime hosts read the disc.
+    /// Synthetic baseline for tests and built-in play; disc-backed play loads tuning.
     pub fn fixture() -> Self {
         Self {
             bash_max_charge: 90,

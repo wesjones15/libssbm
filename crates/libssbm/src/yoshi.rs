@@ -38,7 +38,7 @@ pub struct Specials {
     pub flutter_frames: u32,
 }
 impl Specials {
-    /// Synthetic fixture only; runtime hosts read the disc.
+    /// Synthetic baseline for tests and built-in play; disc-backed play loads tuning.
     pub fn fixture() -> Self {
         Self {
             egg_roll_hop: 1.5,
