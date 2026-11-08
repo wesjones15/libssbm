@@ -32,6 +32,27 @@ fn body(at: Vec3, color: Color, height: f32) {
     draw_cylinder(at, 0.3, 0.3, height, None, color);
     draw_sphere(at + vec3(0., height * 0.85, 0.32), 0.09, None, WHITE);
 }
+fn mario_pose(feet: Vec3, horizontal: bool, pound: bool, spin: bool) {
+    let height = if pound { 1.6 * 0.55 } else { 1.6 };
+    if horizontal {
+        let center = feet + vec3(0., 0.35 * 0.75, height * 0.25);
+        let mut mesh = Mesh { vertices: Vec::new(), indices: Vec::new(), texture: None };
+        for i in 0..=24 {
+            let a = i as f32 * std::f32::consts::TAU / 24.;
+            for end in [-0.5, 0.5] {
+                let p = center + vec3(a.cos() * 0.35, a.sin() * 0.35, end * height);
+                mesh.vertices.push(Vertex::new(p.x, p.y, p.z, 0., 0., RED));
+            }
+            if i < 24 { let n = i * 2; mesh.indices.extend([n,n+1,n+2,n+1,n+3,n+2]); }
+        }
+        draw_mesh(&mesh);
+        draw_sphere(center + vec3(0., 0., height * 0.5), 0.09, None, WHITE);
+        if spin { draw_cylinder(feet + vec3(0., height * 0.5, 0.), 0.7, 0.7, height * 0.4, None, PINK); }
+    } else {
+        body(feet + vec3(0., height * 0.5, 0.), RED, height);
+        if spin { draw_cylinder(feet + vec3(0., height * 0.5, 0.), 0.7, 0.7, height * 0.4, None, PINK); }
+    }
+}
 fn fighter_model(actor: &libssbm_assets::presentation::Presentation, offset: Vec3) {
     for (i, batch) in actor.model.batches.iter().enumerate() {
         if !actor.visible(i) {
@@ -134,6 +155,10 @@ async fn main() {
         // Authored skin stand-ins: Luigi green, Louie blue; no source asset IDs.
         body(vec3(-8., 0.8, 0.), BLUE, 1.6);
         body(vec3(0., 0.8, -4.), GREEN, 1.6);
+        // Pose vocabulary only: deliberately generic geometry, no original clip/model.
+        mario_pose(vec3(-5., 0., -5.), true, false, false);
+        mario_pose(vec3(-3., 0., -5.), false, true, false);
+        mario_pose(vec3(-1., 0., -7.), false, false, true);
         for (i, color) in [RED, BLUE, YELLOW].into_iter().enumerate() {
             let at = vec3(-6. + i as f32, 0.3, 2.);
             body(at, color, 0.6);
@@ -171,6 +196,7 @@ async fn main() {
             LIGHTGRAY,
         );
         draw_text("Skin stand-ins: Luigi = green cylinder; Louie = blue cylinder", 24., 95., 20., LIGHTGRAY);
+        draw_text("Mario poses: horizontal dive/slide | short ground pound | wide spin core", 24., 122., 20., LIGHTGRAY);
         draw_text(
             &format!(
                 "Frame {frame} | FLUDD emissions {emits} | live droplets {}",
