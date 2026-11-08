@@ -872,7 +872,7 @@ prevents built-in play. Procedural body/article models serve the existing shared
 renderer. Required no-disc tests exercise all eight registered fighters' movement,
 attack activation/recovery, damaging normals and generated views; the C# harness also
 checks actual DLL layouts and moving projectiles. RoR2 play/co-op remain unverified.
-# Procedural stand-in preview (2026-11-08)
+## Procedural stand-in preview (2026-11-08)
 
 `crates/viewer/examples/no_assets.rs` also previews code-authored Luigi (green),
 Louie (blue), horizontal dive/slide, shortened ground-pound and wide spin-core
@@ -880,4 +880,3 @@ silhouettes. These have no original asset/cue/model IDs. Captures at frames
 90/120/150 demonstrate the shape vocabulary; only Mario/water and the generated
 Melee fighter run live simulations in this scene. The pose row is an explicit
 procedural preview, not a claim of source animation fidelity or RoR2 playtesting.
-
