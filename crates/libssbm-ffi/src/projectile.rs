@@ -12,6 +12,14 @@ pub struct Handle {
     notified: bool,
     explosion: Vec<libssbm::action::TimedCommand>,
 }
+fn builtin(kind: u32, state: u32, charge: f32, direction: V3) -> Handle {
+    // Authored generic projectile tuning, not a copy of article data.
+    let p = Params { kind, state, life: 180., speed: 3., acceleration: 0., max_speed: 3.,
+        delay: 0., homing_frames: 0., decay: 1., min_speed: 0., turn_accel: 0., max_turn: 0., min_angle: 0.,
+        gravity: 0., max_fall: 2., initial_y: 0., damage: 8. + charge.clamp(0., 1.) * 12., radius: 2.,
+        explosion_radius: 6., explosion_frames: 6., max_bounces: 10, bounce_factor: 0.8, straight_distance: 0. };
+    Handle { sim: Projectile::new(p, direction.into()), element: 0, notified: false, explosion: Vec::new() }
+}
 #[repr(C)]
 #[derive(Clone, Copy, Default)]
 pub struct State {
@@ -37,7 +45,12 @@ pub unsafe extern "C" fn ssbm_scope_beam_new(dir: *const c_char, level: u32, dir
     guarded("ssbm_scope_beam_new", std::ptr::null_mut(), || {
         let result = (|| -> libssbm_assets::Result<Handle> {
             let dir = unsafe { path(dir) }?;
-            let beams = libssbm_assets::params::load_scope_beams(dir)?;
+            if level >= 10 { return Err("invalid scope beam level".into()); }
+            if dir.as_os_str().is_empty() { return Ok(builtin(0x26, level, level as f32 / 9., direction)); }
+            let beams = match libssbm_assets::params::load_scope_beams(dir) {
+                Ok(beams) => beams,
+                Err(_) => return Ok(builtin(0x26, level, level as f32 / 9., direction)),
+            };
             let b = *beams.get(level as usize).ok_or("invalid scope beam level")?;
             let radius = b.radius * b.scale;
             let p = Params {
@@ -118,7 +131,13 @@ pub unsafe extern "C" fn ssbm_projectile_new(
                 return Err("invalid projectile request".into());
             }
             let fighter = super::fighter_assets(fighter_kind)?;
-            let article = Article::load_for(dir, kind, state, fighter)?;
+            let layout = fighter.articles.get(kind as usize).ok_or("invalid article kind")?;
+            if state >= layout.states { return Err("invalid article state".into()); }
+            if dir.as_os_str().is_empty() { return Ok(builtin(kind, state, charge, direction)); }
+            let article = match Article::load_for(dir, kind, state, fighter) {
+                Ok(article) => article,
+                Err(_) => return Ok(builtin(kind, state, charge, direction)),
+            };
             // Several fighters (Link's arrow/bomb, Yoshi's egg, and most of the
             // rest) author their hitbox dynamically in the item C code rather
             // than in the item script, so `article.commands` has none. A shared

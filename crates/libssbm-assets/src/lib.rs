@@ -48,3 +48,4 @@ pub fn validate_asset(name: &str, bytes: &[u8]) -> Result<()> {
 pub fn complete(path: &std::path::Path) -> bool {
     fighter::SAMUS.complete(path)
 }
+pub mod procedural;

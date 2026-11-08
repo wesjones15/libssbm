@@ -17,7 +17,27 @@ use std::{
     panic::{AssertUnwindSafe, catch_unwind},
     path::Path,
 };
-pub const SSBM_ABI_VERSION: u32 = 6;
+pub const SSBM_ABI_VERSION: u32 = 7;
+
+#[cfg(test)]
+mod builtin_tests {
+    use super::*;
+    #[test]
+    fn every_fighter_and_view_constructs_without_files() {
+        let dir = CString::new("").unwrap();
+        unsafe {
+            for kind in 0..8 {
+                let sim = ssbm_sim_new_fighter(dir.as_ptr(), V3::default(), kind);
+                assert!(!sim.is_null(), "kind {kind}"); assert!((*sim).builtin);
+                let view = ssbm_view_new(dir.as_ptr(), kind, 0);
+                assert!(!view.is_null(), "kind {kind} view");
+                assert!((*view).info.vertex_count > 0);
+                assert_eq!(ssbm_sim_begin_arrival(sim, dir.as_ptr()), 1);
+                ssbm_view_free(view); ssbm_sim_free(sim);
+            }
+        }
+    }
+}
 #[repr(C)]
 #[derive(Clone, Copy, Default)]
 pub struct V3 {
@@ -146,6 +166,7 @@ pub struct Draw {
     pub id: u32,
 }
 pub struct Handle {
+    builtin: bool,
     sim: Sim,
     rig: Rig,
     audio: libssbm_assets::audio::Mixer,
@@ -175,6 +196,13 @@ struct Rig {
     upper_body_root: Option<usize>,
 }
 impl Rig {
+    fn builtin() -> Self {
+        Self { model_scale: 1., grapple: None, charge_flash: vec![[1., 1., 1., 0.5]],
+            model: libssbm_assets::procedural::model([1.; 4], false),
+            animations: libssbm_assets::animation::Animations { clips: Default::default(), rigid: Vec::new() },
+            common_bones: (0..=255).collect(), effect_bone: 0, alternate_bone: 0,
+            cycle_bones: Vec::new(), upper_body_root: None }
+    }
     fn pose_for_sim(&self, sim: &Sim, clip: &str, frame: f32) -> Vec<glam::Mat4> {
         if clip == sim.motion.clip {
             libssbm_assets::presentation::mobile_pose(
@@ -216,7 +244,10 @@ impl Rig {
     }
     fn grapple_points(&self, clip: &str, frame: f32) -> Vec<Vec3> {
         let Some(grapple) = &self.grapple else {
-            return Vec::new();
+            // Generic no-disc grapple, authored in the same body-relative space as hitboxes.
+            let start = if clip == "AirCatch" { 8. } else { 17. };
+            let reach = ((frame - start) / 5.).clamp(0., 1.) * 60.;
+            return vec![Vec3::new(0., 8., 3.), Vec3::new(0., 8., 3. + reach)];
         };
         let pose = self.animations.pose(&self.model, clip, frame, false);
         let anchor = pose[50].w_axis.truncate();
@@ -664,6 +695,7 @@ pub unsafe extern "C" fn ssbm_mario_pose_free(pose: *mut MarioPose) {
 /// (0 = Samus). Free once with ssbm_sim_free.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn ssbm_sim_new_fighter(dir: *const c_char, pos: V3, kind: u32) -> *mut Handle {
+    if dir.is_null() { return std::ptr::null_mut(); }
     guarded("ssbm_sim_new_fighter", std::ptr::null_mut(), || {
         let result = (|| -> libssbm_assets::Result<(
             Sim,
@@ -675,6 +707,7 @@ pub unsafe extern "C" fn ssbm_sim_new_fighter(dir: *const c_char, pos: V3, kind:
             let dir = unsafe { path(dir) }?;
             let fk = libssbm_assets::fighter::FighterKind::from_u32(kind)
                 .ok_or_else(|| format!("unsupported fighter kind {kind}"))?;
+            if dir.as_os_str().is_empty() { return Err("built-in gameplay requested".into()); }
             let fighter = fk
                 .assets()
                 .ok_or_else(|| format!("fighter kind {kind} not implemented"))?;
@@ -750,7 +783,7 @@ pub unsafe extern "C" fn ssbm_sim_new_fighter(dir: *const c_char, pos: V3, kind:
                 }
             }
             let audio =
-                libssbm_assets::audio::Mixer::new(libssbm_assets::audio::Bank::load_for(dir, fighter)?);
+                libssbm_assets::audio::Mixer::new(libssbm_assets::audio::Bank::load_for(dir, fighter).unwrap_or_default());
             let trail = if fk == libssbm_assets::fighter::FighterKind::Link {
                 libssbm_assets::params::load_link_trail(dir).ok()
             } else {
@@ -761,6 +794,7 @@ pub unsafe extern "C" fn ssbm_sim_new_fighter(dir: *const c_char, pos: V3, kind:
         match result {
             Ok((sim, rig, audio, kind, trail)) if Vec3::from(pos).is_finite() => {
                 Box::into_raw(Box::new(Handle {
+                    builtin: false,
                     sim,
                     rig,
                     audio,
@@ -778,8 +812,14 @@ pub unsafe extern "C" fn ssbm_sim_new_fighter(dir: *const c_char, pos: V3, kind:
                 std::ptr::null_mut()
             }
             Err(e) => {
-                error(e);
-                std::ptr::null_mut()
+                let position = Vec3::from(pos);
+                let Some(sim) = libssbm::builtin::sim(kind, position).filter(|_| position.is_finite()) else {
+                    error(e); return std::ptr::null_mut();
+                };
+                Box::into_raw(Box::new(Handle { builtin: true, sim, rig: Rig::builtin(),
+                    audio: libssbm_assets::audio::Mixer::new(Default::default()), foreign_audio: Default::default(),
+                    audio_scratch: Vec::new(), kind: libssbm_assets::fighter::FighterKind::from_u32(kind).unwrap(),
+                    poisoned: false, trail: None, trail_samples: Vec::new(), net: NetLog::with_dir(Default::default()) }))
             }
         }
     })
@@ -1083,6 +1123,7 @@ pub unsafe extern "C" fn ssbm_grapple_new(dir: *const c_char, part: u32) -> *mut
     guarded("ssbm_grapple_new", std::ptr::null_mut(), || {
         match (|| libssbm_assets::grapple::part(unsafe { path(dir) }?, part))() {
             Ok(p) => Box::into_raw(Box::new(View::new(p))),
+            Err(_) if part < 4 => Box::into_raw(Box::new(View::new(libssbm_assets::procedural::presentation(0, true)))),
             Err(e) => {
                 error(e);
                 std::ptr::null_mut()
@@ -1099,6 +1140,7 @@ pub unsafe extern "C" fn ssbm_hookshot_new(dir: *const c_char, part: u32) -> *mu
     guarded("ssbm_hookshot_new", std::ptr::null_mut(), || {
         match (|| libssbm_assets::hookshot::part(unsafe { path(dir) }?, part))() {
             Ok(p) => Box::into_raw(Box::new(View::new(p))),
+            Err(_) if part < 3 => Box::into_raw(Box::new(View::new(libssbm_assets::procedural::presentation(5, true)))),
             Err(e) => {
                 error(e);
                 std::ptr::null_mut()
@@ -1962,7 +2004,11 @@ pub unsafe extern "C" fn ssbm_view_new(dir: *const c_char, kind: u32, costume: u
     guarded("ssbm_view_new", std::ptr::null_mut(), || {
         let result = (|| {
             let fighter = fighter_assets(kind)?;
-            Presentation::load_for(unsafe { path(dir) }?, costume as usize, fighter)
+            let dir = unsafe { path(dir) }?;
+            if costume > 4 { return Err("invalid costume".into()); }
+            if dir.as_os_str().is_empty() { return Ok(libssbm_assets::procedural::presentation(kind, false)); }
+            Ok::<_, Box<dyn std::error::Error + Send + Sync>>(Presentation::load_for(dir, costume as usize, fighter)
+                .unwrap_or_else(|_| libssbm_assets::procedural::presentation(kind, false)))
         })();
         match result {
             Ok(a) => Box::into_raw(Box::new(View::new(a))),
@@ -1988,12 +2034,20 @@ pub unsafe extern "C" fn ssbm_view_new_choice(
     guarded("ssbm_view_new_choice", std::ptr::null_mut(), || {
         let result = (|| {
             let fighter = fighter_assets(kind)?;
-            Presentation::load_for_variant(
-                unsafe { path(dir) }?,
+            let dir = unsafe { path(dir) }?;
+            if choice > 1 || costume > 4 { return Err("invalid model choice".into()); }
+            if dir.as_os_str().is_empty() {
+                let mut p = libssbm_assets::procedural::presentation(kind, false); p.ball = choice != 0; return Ok(p);
+            }
+            Ok::<_, Box<dyn std::error::Error + Send + Sync>>(Presentation::load_for_variant(
+                dir,
                 costume as usize,
                 fighter,
                 choice != 0,
-            )
+            ).unwrap_or_else(|_| {
+                let mut p = libssbm_assets::procedural::presentation(kind, false);
+                p.ball = choice != 0; p
+            }))
         })();
         match result {
             Ok(a) => Box::into_raw(Box::new(View::new(a))),
@@ -2017,7 +2071,12 @@ pub unsafe extern "C" fn ssbm_article_new(
     guarded("ssbm_article_new", std::ptr::null_mut(), || {
         let result = (|| {
             let fighter = fighter_assets(fighter_kind)?;
-            Presentation::article_for(unsafe { path(dir) }?, article_kind, state, fighter)
+            let dir = unsafe { path(dir) }?;
+            let layout = fighter.articles.get(article_kind as usize).ok_or("invalid article kind")?;
+            if state >= layout.states { return Err("invalid article state".into()); }
+            if dir.as_os_str().is_empty() { return Ok(libssbm_assets::procedural::presentation(fighter_kind, true)); }
+            Ok::<_, Box<dyn std::error::Error + Send + Sync>>(Presentation::article_for(dir, article_kind, state, fighter)
+                .unwrap_or_else(|_| libssbm_assets::procedural::presentation(fighter_kind, true)))
         })();
         match result {
             Ok(a) => {
@@ -2096,6 +2155,10 @@ pub unsafe extern "C" fn ssbm_effect_new(dir: *const c_char, fighter_kind: u32, 
         })();
         match result {
             Ok(a) => Box::into_raw(Box::new(View::new(a))),
+            Err(_) if (11..=14).contains(&id) => {
+                // Gameplay shield indicator, deliberately procedural rather than an original effect.
+                Box::into_raw(Box::new(View::new(libssbm_assets::procedural::presentation(fighter_kind, true))))
+            }
             Err(e) => {
                 error(e);
                 std::ptr::null_mut()
@@ -2187,6 +2250,12 @@ pub unsafe extern "C" fn ssbm_sim_begin_arrival(h: *mut Handle, dir: *const c_ch
 unsafe fn begin_return(h: *mut Handle, dir: *const c_char, destination: V3, initial: bool) -> u32 {
     if h.is_null() {
         return 0;
+    }
+    if unsafe { (*h).builtin } {
+        let h = unsafe { &mut *h };
+        h.sim.interrupt();
+        if !initial { h.sim.position = destination.into(); h.sim.velocity = Vec3::ZERO; }
+        return 1;
     }
     guarded("begin_return", 0, || {
         let kind = unsafe { (&*h).kind };
@@ -2756,7 +2825,7 @@ pub unsafe extern "C" fn ssbm_sim_scope(handle: *mut Handle, on: u32, refill: f3
                     scope.params.refill_per_second = refill;
                     active = true;
                 }
-                None => match libssbm_assets::params::load_scope(&h.net.dir) {
+                None => match if h.builtin { Ok(libssbm::scope::ScopeParams::fixture()) } else { libssbm_assets::params::load_scope(&h.net.dir) } {
                     Ok(mut params) => {
                         params.refill_per_second = refill;
                         h.sim.set_scope(Some(params));
@@ -2846,7 +2915,8 @@ pub unsafe extern "C" fn ssbm_item_new(dir: *const c_char, item: u32, state: u32
                 0x26 => libssbm_assets::article::Item::SuperScopeBeam,
                 _ => return Err("unsupported item".into()),
             };
-            Presentation::item_for(unsafe { path(dir) }?, item, state)
+            Ok::<_, Box<dyn std::error::Error + Send + Sync>>(Presentation::item_for(unsafe { path(dir) }?, item, state)
+                .unwrap_or_else(|_| libssbm_assets::procedural::presentation(0, true)))
         })();
         match result {
             Ok(a) => Box::into_raw(Box::new(View::new(a))),
@@ -3737,6 +3807,7 @@ mod tests {
             return Ok(());
         }
         let mut h = Handle {
+            builtin: false,
             sim: Sim::with_behavior(
                 libssbm_assets::params::load_common(&dir, &libssbm_assets::fighter::SAMUS)?,
                 Box::new(libssbm::samus::Samus::new(

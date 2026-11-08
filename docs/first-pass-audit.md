@@ -456,3 +456,11 @@ An audit of what the fighters' moves ask the host to draw found most of it silen
 The hand slots (0 and 1, four animations each for Fox, Luigi, Captain, Link, Yoshi and Donkey Kong) are in the table but no fighter script starts them: this set's hand poses are baked into its clips, so only Fox's and Yoshi's head parts use part animations in practice (Luigi's script starts a hammer-grip animation in slot 2 that no move reaches). The `ftData_x1C` animation arrays are not counted in the data, so a slot's list ends at the first entry that is not a valid tree. The Thunder cloud is not a model in the source: `efSync` 0x4C3 spawns only generator 0x24C (588), a cloud of 61 puff particles about 43 units across that runs 90 ticks, and the port already spawns it above Pikachu, so nothing was missing. Still missing: the egg and bomb items' own effects. Everything here is unplayed.
 
 Tests: `tests/fighter_effects.rs` (every archive loads and every spawned id resolves to something drawable), `tests/face.rs`, `tests/fox.rs::fire_fox_glows...`, `tests/link.rs` (trail on/off and the strip), `colanim.rs` unit tests, `tests/parts.rs` (the tables load, an overlay moves only the keyed head-part bones and eases in, Wait starts one, knockback swaps them), `examples/part_audit.rs` and `examples/part_scripts.rs` (the table and which clips use it). Rim light: `colanim.rs` unit tests (a light's direction, colour and fade; a rotation command), `tests/luigi.rs::the_fireball_launch_lights_him...`, `examples/light_audit.rs` (every program that sets a light), `examples/emitter_dump.rs` and `emitter_run.rs` (an emitter's numbers and a headless run of it).
+## No-assets release path (2026-11-07)
+
+Every registered fighter now has an authored built-in simulation profile and procedural
+body/projectile/held-object presentation. This is a separate approximate profile, not
+a change to the fidelity status of the disc-backed moves audited below. Shared Rust
+tests cover activation/recovery for five attack inputs per fighter, plus movement and
+damaging normals. Native C# checks cover all eight generated models and generic moving
+projectiles. None of this establishes RoR2 or co-op playtesting; those gates remain manual.

@@ -29,6 +29,7 @@ pub struct Sample {
     pub pcm: Vec<[f32; 2]>,
     pub loop_pcm: Vec<[f32; 2]>,
 }
+#[derive(Default)]
 pub struct Bank {
     pub samples: BTreeMap<u32, Sample>,
     sequences: Vec<u32>,
@@ -419,6 +420,7 @@ impl Mixer {
         }
     }
     pub fn play(&mut self, sound: u32, volume: u8, pan: u8, channel: u32) -> Result<()> {
+        if self.bank.samples.is_empty() { return Ok(()); } // Optional audio: silent gameplay.
         let pc = self.bank.script(sound)?;
         if channel > 0 {
             self.stop(channel);

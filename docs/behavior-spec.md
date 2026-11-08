@@ -861,3 +861,14 @@ adaptations; the sim's `SpecialN` timing is unchanged. Viewer captures
 of 45/0/-45 degree aim across four `SpecialN1` frames
 (`crates/viewer/examples/yoshi_tongue.rs`) plus the shared camera/sweep,
 damage-permission and real-disc pose tests pass; RoR2 play is unverified.
+## Optional asset runtime (2026-11-07)
+
+The native constructor now falls back to `libssbm::builtin` when gameplay files are
+unavailable. Empty paths explicitly select this profile. The same fighter behaviors,
+fixed-step executor and host hitbox/projectile integration run with authored approximate
+tuning, finite action schedules and body-relative anchors. These defaults do not claim
+disc timing or hitbox fidelity. Missing audio is silent; model/audio loading no longer
+prevents built-in play. Procedural body/article models serve the existing shared host
+renderer. Required no-disc tests exercise all eight registered fighters' movement,
+attack activation/recovery, damaging normals and generated views; the C# harness also
+checks actual DLL layouts and moving projectiles. RoR2 play/co-op remain unverified.

@@ -1,5 +1,6 @@
 //! Game-agnostic fighter simulation. No game data or host engine types.
 pub mod action;
+pub mod builtin;
 pub mod behavior;
 pub mod captain;
 pub mod controls;
