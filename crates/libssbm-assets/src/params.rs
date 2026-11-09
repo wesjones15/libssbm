@@ -305,6 +305,7 @@ pub fn load_samus_specials(dir: &Path) -> Result<libssbm::samus::Specials> {    
         charge_visual_min: fighter.f32(charge_attrs + 0x18)?,
         charge_visual_max: fighter.f32(charge_attrs + 0x1c)?,
         charge_interval: fighter.u32(ss + 0x20)?.saturating_add(1),
+        charge_head_start: 0,
         missile_smash_window: fighter.f32(ss + 0x28)?.round() as u32,
         missile_spawn_offset: fighter.f32(ss + 0x34)?,
         bomb_spawn_offset: [

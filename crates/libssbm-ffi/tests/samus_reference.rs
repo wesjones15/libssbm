@@ -448,6 +448,39 @@ fn run(assets: &str, tag: &str) -> BTreeMap<&'static str, Vec<(String, String)>>
     rows
 }
 
+/// Scenarios whose authored (built-in) profile must agree with the asset-backed fighter tick for
+/// tick: moves, events, hitbox window, spawns and the tick control returns. Grows as the kit
+/// migrates (step 2: the jab chain and the Charge Shot).
+const MIGRATED: &[&str] = &[
+    "jab_single",
+    "jab_chain_taps",
+    "jab_rapid_mash",
+    "jab_tap_then_miss_late",
+    "charge_tap_hold_control",
+    "charge_half_hold_control",
+    "charge_full_hold_control",
+    "charge_tap_press_control",
+    "charge_press_press_fire",
+    "charge_aimed_up",
+    "interrupt_jab_startup",
+    "interrupt_jab_active",
+    "interrupt_charge_holding",
+    "hurt_during_charge",
+    "connect_jab",
+];
+
+#[test]
+fn builtin_jab_and_charge_shot_keep_the_measured_timings_without_a_disc() {
+    // From the asset-backed recording: the jab strikes two ticks after it starts and hands control
+    // back after 18; a tapped Charge Shot's start clip is 14 ticks and its release clip 30.
+    let rows = run("", "builtin");
+    let get = |key: &str, name: &str| rows[key].iter().find(|(n, _)| n == name).unwrap().1.clone();
+    assert_eq!(get("moves", "jab_single"), "0:0 40:1 58:0");
+    assert!(get("hitbox_window", "jab_single").starts_with("Some(42)..Some(43)"), "{}", get("hitbox_window", "jab_single"));
+    assert_eq!(get("moves", "jab_chain_taps"), "0:0 40:1 52:13 82:0", "Samus has two jabs and no third");
+    assert_eq!(get("spawns", "charge_tap_hold_control"), "40:a1s8 54:a1s1");
+}
+
 #[test]
 fn builtin_samus_kit_is_deterministic_and_recorded() {
     let rows = run("", "builtin");
@@ -486,6 +519,15 @@ fn asset_backed_samus_kit_is_recorded_and_diffed_against_builtin() {
     let _ = writeln!(report, "\n{differing} of {total} scenarios differ.");
     std::fs::write(out_dir().join("samus-parity.md"), &report).unwrap();
     eprintln!("{differing} of {total} scenarios differ; see target/reference/samus-parity.md");
+    for name in MIGRATED {
+        let i = scenarios().iter().position(|s| s.name == *name).unwrap();
+        for key in ["moves", "events", "hitbox_window", "spawns", "control_returns"] {
+            assert_eq!(
+                asset[key][i].1, builtin[key][i].1,
+                "migrated scenario {name}: {key} differs from the asset-backed fighter"
+            );
+        }
+    }
     // The recorded reference itself must have run the kit.
     let moves = &asset["moves"];
     let find = |name: &str| moves.iter().find(|(n, _)| n == name).map(|(_, v)| v.clone()).unwrap();

@@ -8,7 +8,7 @@ use crate::{
 use glam::Vec3;
 pub fn sim(kind: u32, position: Vec3) -> Option<Sim> {
     let behavior: Box<dyn behavior::Behavior> = match kind {
-        0 => Box::new(samus::Samus::fixture()),
+        0 => Box::new(samus::Samus::authored()),
         1 => Box::new(fox::Fox::fixture()),
         2 => Box::new(luigi::Luigi::fixture()),
         3 => Box::new(pikachu::Pikachu::fixture()),
@@ -111,6 +111,9 @@ pub fn sim(kind: u32, position: Vec3) -> Option<Sim> {
                 root_up: None,
             },
         );
+    }
+    if kind == 0 {
+        authored::samus(&mut s);
     }
     Some(s)
 }
