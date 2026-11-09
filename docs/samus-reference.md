@@ -51,7 +51,7 @@ Ball, grab hold) and hurt during a charge; connect on a jab.
   these traces. They need the C# boundary harness (`ror2-samus/NativeCheck`).
 - The held Morph Ball emits no contact hitbox in either mode. That is kept out of parity: fix it as
   its own reviewed change.
-- The disc Samus has no third jab or rapid jab; the built-in fallback does.
+- The disc Samus has no third jab or rapid jab; the authored built-in Samus now matches (the generic fallback for other fighters still has both).
 
 ## Step 2 status: jab and Charge Shot migrated
 
