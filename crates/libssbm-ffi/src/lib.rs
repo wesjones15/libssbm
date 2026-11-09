@@ -2217,7 +2217,13 @@ pub unsafe extern "C" fn ssbm_sim_begin_entry(h: *mut Handle, dir: *const c_char
             error(format!("fighter kind {kind:?} not implemented"));
             return 0;
         };
-        match (|| libssbm_assets::params::entry(unsafe { path(dir) }?, fighter))() {
+        let authored = unsafe { (*h).builtin && (*h).kind == libssbm_assets::fighter::FighterKind::Samus };
+        let params = if authored {
+            Ok(libssbm::authored::samus_return().1)
+        } else {
+            (|| libssbm_assets::params::entry(unsafe { path(dir) }?, fighter))()
+        };
+        match params {
             Ok(params) => {
                 let h = unsafe { &mut *h };
                 h.sim.interrupt();
@@ -2261,7 +2267,10 @@ unsafe fn begin_return(h: *mut Handle, dir: *const c_char, destination: V3, init
     if h.is_null() {
         return 0;
     }
-    if unsafe { (*h).builtin } {
+    // The no-assets profile: Samus runs the same shared arrival and rebirth with authored timings;
+    // the fighters not migrated yet just stop what they were doing and stand at the destination.
+    let authored_samus = unsafe { (*h).builtin && (*h).kind == libssbm_assets::fighter::FighterKind::Samus };
+    if unsafe { (*h).builtin } && !authored_samus {
         let h = unsafe { &mut *h };
         h.sim.interrupt();
         if !initial { h.sim.position = destination.into(); h.sim.velocity = Vec3::ZERO; }
@@ -2270,6 +2279,9 @@ unsafe fn begin_return(h: *mut Handle, dir: *const c_char, destination: V3, init
     guarded("begin_return", 0, || {
         let kind = unsafe { (&*h).kind };
         let result = (|| -> libssbm_assets::Result<_> {
+            if authored_samus {
+                return Ok(libssbm::authored::samus_return());
+            }
             let dir = unsafe { path(dir) }?;
             let fighter = kind
                 .assets()

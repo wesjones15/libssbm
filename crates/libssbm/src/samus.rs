@@ -33,9 +33,6 @@ pub struct Specials {
     pub charge_visual_min: f32,
     pub charge_visual_max: f32,
     pub charge_interval: u32,
-    /// Ticks of charging credited the moment the hold begins (authored: the asset-backed fighter
-    /// reaches a full charge one tick early; 0 for the fixture and disc tuning).
-    pub charge_head_start: u32,
     pub missile_smash_window: u32,
     pub missile_spawn_offset: f32,
     pub bomb_spawn_offset: [f32; 3],
@@ -43,9 +40,18 @@ pub struct Specials {
     pub bomb_velocity: f32,
 }
 impl Specials {
-    /// Authored no-assets tuning. A full Charge Shot takes 120 ticks of holding, ten steps.
+    /// Authored no-assets tuning (rounded approximations of the asset-backed fighter's): seven
+    /// charge steps 17 ticks apart, the Screw Attack's rise and the bomb hop.
     pub fn authored() -> Self {
-        Self { charge_interval: 12, charge_head_start: 1, ..Self::fixture() }
+        Self {
+            charge_steps: 7,
+            charge_interval: 17,
+            missile_spawn_offset: 1.,
+            bomb_spawn_offset: [0., 2., 0.],
+            screw_velocity: 2.5,
+            bomb_velocity: 0.9,
+            ..Self::fixture()
+        }
     }
     /// Synthetic baseline for tests and built-in play; disc-backed play loads tuning.
     pub fn fixture() -> Self {
@@ -54,7 +60,6 @@ impl Specials {
             charge_visual_min: 0.5,
             charge_visual_max: 2.,
             charge_interval: 3,
-            charge_head_start: 0,
             missile_smash_window: 3,
             missile_spawn_offset: 0.,
             bomb_spawn_offset: [0.; 3],
@@ -379,8 +384,7 @@ impl Behavior for Samus {
             && sim.shot_charge < self.specials.charge_steps
             && !(sim.options.hold_charge && input.buttons & crate::sim::SPECIAL == 0)
         {
-            // A fresh hold only; a stored charge resumes from a clean clock.
-            sim.charge_clock = if sim.shot_charge == 0 { self.specials.charge_head_start } else { 0 };
+            sim.charge_clock = 0;
             sim.set_phase(Phase::ChargeShot);
             true
         } else {

@@ -19,7 +19,12 @@ pub fn sim(kind: u32, position: Vec3) -> Option<Sim> {
         8 => Box::new(mario::Mario::new()),
         _ => return None,
     };
-    let mut s = Sim::with_behavior(Params::fixture(), behavior, position);
+    let params = if kind == 0 { Params::samus_authored() } else { Params::fixture() };
+    let mut s = Sim::with_behavior(params, behavior, position);
+    if kind == 0 {
+        s.defense.params = defense::Params::samus_authored();
+        s.defense.health = s.defense.params.maximum;
+    }
     // A full action schedule is required: multi-stage behaviors advance via clip completion.
     for name in CLIPS {
         let looping = *name == "CatchWait";

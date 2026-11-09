@@ -17,6 +17,18 @@ pub struct Params {
     pub minimum_scale: f32,
     pub hard_scale: f32,
 }
+impl Params {
+    /// Samus's authored no-assets shield: rounded approximations of the asset-backed fighter's.
+    pub fn samus_authored() -> Self {
+        Self {
+            hit_mul: 0.7,
+            broken_frames: 490,
+            shield_size: 16.25,
+            minimum_scale: 0.15,
+            ..Self::default()
+        }
+    }
+}
 impl Default for Params {
     fn default() -> Self {
         Self {

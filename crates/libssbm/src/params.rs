@@ -95,6 +95,45 @@ impl Params {
         Ok(())
     }
     /// Synthetic baseline for tests and built-in play; disc-backed play loads tuning.
+    /// Samus's authored no-assets movement: rounded approximations of how the asset-backed
+    /// fighter walks, runs, jumps and falls (see docs/samus-reference.md), not extracted values.
+    pub fn samus_authored() -> Self {
+        Self {
+            walk_accel: 0.3,
+            walk_base: 0.1,
+            walk_speed: 1.,
+            walk_animation_rates: [0.155, 0.378, 0.619],
+            walk_animation_thresholds: [0.4, 0.8],
+            run_animation_rate: 1.39,
+            friction: 0.06,
+            dash_initial: 1.86,
+            dash_accel: 0.1,
+            dash_base: 0.02,
+            run_speed: 1.4,
+            jump_squat: 3,
+            jump_speed: 2.1,
+            jump_horizontal: 1.,
+            jump_momentum: 0.8,
+            jump_horizontal_max: 1.3,
+            air_jump_horizontal: 0.9,
+            short_hop_speed: 1.7,
+            air_jump_scale: 0.9,
+            gravity: 0.066,
+            fall_speed: 1.4,
+            air_accel: 0.0125,
+            air_base: 0.02,
+            air_speed: 0.89,
+            air_horizontal_max: 3.,
+            fall_pose_threshold: 0.1,
+            fall_blend_response: 0.5,
+            fast_fall: 2.3,
+            smash_window: 2,
+            jab_2_window: 24,
+            jab_3_window: 0,
+            rapid_jab_window: 0,
+            ..Self::fixture()
+        }
+    }
     pub fn fixture() -> Self {
         Self {
             walk_accel: 0.1,

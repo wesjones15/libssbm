@@ -12,6 +12,16 @@ pub struct Handle {
     notified: bool,
     explosion: Vec<libssbm::action::TimedCommand>,
 }
+/// The no-assets article: Samus's are authored (`libssbm::authored::samus_article`), every other
+/// fighter's use the generic tuning below.
+fn builtin_for(fighter_kind: u32, kind: u32, state: u32, charge: f32, direction: V3) -> Handle {
+    if fighter_kind == 0 {
+        if let Some(p) = libssbm::authored::samus_article(kind, state, charge) {
+            return Handle { sim: Projectile::new(p, direction.into()), element: 0, notified: false, explosion: Vec::new() };
+        }
+    }
+    builtin(kind, state, charge, direction)
+}
 fn builtin(kind: u32, state: u32, charge: f32, direction: V3) -> Handle {
     // Authored generic projectile tuning, not a copy of article data.
     let p = Params { kind, state, life: 180., speed: 3., acceleration: 0., max_speed: 3.,
@@ -133,10 +143,10 @@ pub unsafe extern "C" fn ssbm_projectile_new(
             let fighter = super::fighter_assets(fighter_kind)?;
             let layout = fighter.articles.get(kind as usize).ok_or("invalid article kind")?;
             if state >= layout.states { return Err("invalid article state".into()); }
-            if dir.as_os_str().is_empty() { return Ok(builtin(kind, state, charge, direction)); }
+            if dir.as_os_str().is_empty() { return Ok(builtin_for(fighter_kind, kind, state, charge, direction)); }
             let article = match Article::load_for(dir, kind, state, fighter) {
                 Ok(article) => article,
-                Err(_) => return Ok(builtin(kind, state, charge, direction)),
+                Err(_) => return Ok(builtin_for(fighter_kind, kind, state, charge, direction)),
             };
             // Several fighters (Link's arrow/bomb, Yoshi's egg, and most of the
             // rest) author their hitbox dynamically in the item C code rather

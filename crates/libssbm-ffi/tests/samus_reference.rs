@@ -33,6 +33,7 @@ const NEUTRAL_B: u32 = 256;
 const SIDE_B: u32 = 512;
 const UP_B: u32 = 1024;
 const DOWN_B: u32 = 2048;
+const DEFEND: u32 = 4096;
 /// libssbm::samus::HOST_MORPH_ROLL: the host's combined bomb + held Morph Ball down-B.
 const HOST_MORPH_ROLL: u32 = 4;
 
@@ -107,6 +108,16 @@ enum Hook {
     Release,
     /// The current attack connected (`ssbm_sim_connect`).
     Connect,
+    /// The shield took a hit of this much damage (`ssbm_sim_shield_hit`).
+    ShieldHit(f32),
+    /// A harder hit of this severity (`ssbm_sim_hurt_scaled`).
+    HurtScaled(f32),
+    /// The host arrival sequence (`ssbm_sim_begin_arrival`), as at a stage's start.
+    Arrival,
+    /// A fall-off rebirth at a safe place (`ssbm_sim_begin_rebirth`).
+    Rebirth,
+    /// The trophy-to-fighter entry (`ssbm_sim_begin_entry`).
+    Entry,
 }
 #[derive(Clone)]
 struct Scenario {
@@ -119,9 +130,11 @@ struct Scenario {
     ticks: u32,
     holds: Vec<Hold>,
     hooks: Vec<(u32, Hook)>,
+    /// Where the host's lock-on is, relative to a spawned shot (homing articles steer to it).
+    target: Option<V3>,
 }
 fn scenario(name: &'static str, ticks: u32, holds: Vec<Hold>) -> Scenario {
-    Scenario { name, hold_charge: 0, host_flags: 0, height: 0.0, ticks, holds, hooks: Vec::new() }
+    Scenario { name, hold_charge: 0, host_flags: 0, height: 0.0, ticks, holds, hooks: Vec::new(), target: None }
 }
 impl Scenario {
     fn hold_charge(mut self) -> Self {
@@ -134,6 +147,10 @@ impl Scenario {
     }
     fn airborne(mut self, h: f32) -> Self {
         self.height = h;
+        self
+    }
+    fn target(mut self, x: f32, y: f32, z: f32) -> Self {
+        self.target = Some(v(x, y, z));
         self
     }
     fn hook(mut self, t: u32, h: Hook) -> Self {
@@ -184,6 +201,9 @@ fn scenarios() -> Vec<Scenario> {
         scenario("charge_aimed_up", 200, vec![hold(S, 1, NEUTRAL_B).aim(1.0, 0.5, 0.0), hold(S + 40, 1, NEUTRAL_B).aim(1.0, 0.5, 0.0)]),
         // Missiles, Screw Attack, bomb and Morph Ball.
         scenario("missile_homing", 160, vec![tap(0, SIDE_B)]),
+        scenario("missile_homing_target_up_right", 160, vec![tap(0, SIDE_B)]).target(60.0, 30.0, 25.0),
+        scenario("missile_homing_target_behind", 200, vec![tap(0, SIDE_B)]).target(-40.0, 5.0, 30.0),
+        scenario("missile_super_target", 160, vec![hold(S, 1, SIDE_B).stick(1.0, 0.0)]).target(80.0, 0.0, 10.0),
         scenario("missile_super", 160, vec![hold(S, 1, SIDE_B).stick(1.0, 0.0)]),
         scenario("missile_air", 160, vec![tap(0, SIDE_B)]).airborne(400.0),
         scenario("screw_attack_ground", 200, vec![tap(0, UP_B)]),
@@ -201,6 +221,22 @@ fn scenarios() -> Vec<Scenario> {
         scenario("grab_throw_back", 220, vec![tap(0, GRAB), hold(S + 50, 1, ATTACK).stick(-1.0, 0.0)]).hook(S + 30, Hook::Catch),
         scenario("grab_throw_up", 220, vec![tap(0, GRAB), hold(S + 50, 1, ATTACK | UP)]).hook(S + 30, Hook::Catch),
         scenario("grab_throw_down", 220, vec![tap(0, GRAB), hold(S + 50, 1, ATTACK | DOWN)]).hook(S + 30, Hook::Catch),
+        // Defense: shield, release, shield hits, dodges and rolls.
+        scenario("shield_hold", 200, vec![hold(S, 120, DEFEND)]),
+        scenario("shield_tap", 120, vec![hold(S, 6, DEFEND)]),
+        scenario("shield_hit", 200, vec![hold(S, 100, DEFEND)]).hook(S + 30, Hook::ShieldHit(12.0)),
+        scenario("shield_break", 700, vec![hold(S, 400, DEFEND)]).hook(S + 10, Hook::ShieldHit(80.0)),
+        scenario("roll_forward", 160, vec![hold(S, 2, DEFEND).stick(1.0, 0.0)]),
+        scenario("roll_back", 160, vec![hold(S, 2, DEFEND).stick(-1.0, 0.0)]),
+        scenario("spot_dodge", 160, vec![hold(S, 2, DEFEND | DOWN)]),
+        scenario("air_dodge", 200, vec![hold(S, 2, DEFEND).stick(1.0, 0.0)]).airborne(400.0),
+        scenario("hurt_scaled_ground", 200, vec![]).hook(S + 5, Hook::HurtScaled(0.5)),
+        scenario("hurt_scaled_air", 260, vec![]).airborne(120.0).hook(S + 5, Hook::HurtScaled(1.0)),
+        scenario("hurt_scaled_launch_heavy", 300, vec![]).hook(S + 5, Hook::HurtScaled(3.0)),
+        // Arrival and fall-off rebirth.
+        scenario("arrival", 500, vec![hold(300, 5, ATTACK)]).hook(5, Hook::Arrival),
+        scenario("entry", 300, vec![hold(150, 5, ATTACK)]).hook(5, Hook::Entry),
+        scenario("rebirth", 700, vec![hold(500, 5, ATTACK)]).hook(S, Hook::Rebirth),
         // Movement and recovery.
         scenario("walk_run", 120, vec![hold(S, 80, 0).stick(1.0, 0.0)]),
         scenario("short_and_full_hop", 220, vec![tap(0, JUMP), hold(S + 80, 8, JUMP)]),
@@ -243,11 +279,15 @@ struct Shot {
 
 /// Mirror of Combat.cs's event switch: which article, state and charge a native event spawns.
 fn article_for(e: &NativeEvent) -> Option<(u32, u32, f32)> {
+    // Only a Hit event (kind 2) is the shot leaving; Started (1) is the move beginning.
+    if e.kind != 2 {
+        return None;
+    }
     match e.move_id {
         20 => Some((1, ((e.strength * 7.0).round() as i32 + 1).clamp(1, 8) as u32, e.strength)),
         21 => Some((2, 0, 0.0)),
         22 => Some((2, 1, 0.0)),
-        24 if e.kind == 2 => Some((0, 0, 0.0)),
+        24 => Some((0, 0, 0.0)),
         _ => None,
     }
 }
@@ -303,6 +343,21 @@ fn record(assets: &str, s: &Scenario) -> String {
                     Hook::Catch => ssbm_sim_set_grabbed(h, 1),
                     Hook::Release => ssbm_sim_set_grabbed(h, 0),
                     Hook::Connect => ssbm_sim_connect(h),
+                    Hook::ShieldHit(damage) => {
+                        ssbm_sim_shield_hit(h, *damage);
+                    }
+                    Hook::HurtScaled(severity) => {
+                        ssbm_sim_hurt_scaled(h, *severity);
+                    }
+                    Hook::Arrival => {
+                        ssbm_sim_begin_arrival(h, cdir.as_ptr());
+                    }
+                    Hook::Rebirth => {
+                        ssbm_sim_begin_rebirth(h, cdir.as_ptr(), v(40.0, 0.0, 0.0));
+                    }
+                    Hook::Entry => {
+                        ssbm_sim_begin_entry(h, cdir.as_ptr());
+                    }
                 }
                 let _ = writeln!(out, "K {t} {}", match hook {
                     Hook::Interrupt => "interrupt",
@@ -310,6 +365,11 @@ fn record(assets: &str, s: &Scenario) -> String {
                     Hook::Catch => "catch",
                     Hook::Release => "release",
                     Hook::Connect => "connect",
+                    Hook::ShieldHit(_) => "shield_hit",
+                    Hook::HurtScaled(_) => "hurt_scaled",
+                    Hook::Arrival => "arrival",
+                    Hook::Rebirth => "rebirth",
+                    Hook::Entry => "entry",
                 });
             }
             world.events.clear();
@@ -319,9 +379,11 @@ fn record(assets: &str, s: &Scenario) -> String {
         let motion = unsafe { ssbm_sim_motion_frame(h) };
         let _ = writeln!(
             out,
-            "T {t} f={} ph={} mv={} pos={} vel={} gr={} ch={} sm={} jumps={} mf={:.2} btn={}",
+            "T {t} f={} ph={} mv={} pos={} vel={} gr={} ch={} sm={} jumps={} mf={:.2} btn={} sh={:.3} sc={:.3} df={} rb={}",
             st.frame, st.phase, st.move_id, f3(st.position), f3(st.velocity), st.grounded,
-            st.shot_charge, st.smash_charge, st.jumps_used, motion, pad.buttons
+            st.shot_charge, st.smash_charge, st.jumps_used, motion, pad.buttons,
+            unsafe { ssbm_sim_shield_fraction(h) }, unsafe { ssbm_sim_shield_scale(h) },
+            unsafe { ssbm_sim_defense_flags(h) }, unsafe { ssbm_sim_rebirth_flags(h) }
         );
         for e in &world.events {
             let _ = writeln!(
@@ -359,16 +421,16 @@ fn record(assets: &str, s: &Scenario) -> String {
             );
         }
         for shot in shots.iter_mut().filter(|s| !s.done) {
-            unsafe { proj::ssbm_projectile_step(shot.handle, 1.0 / 60.0, v(0.0, 0.0, 0.0), 0) };
+            unsafe { proj::ssbm_projectile_step(shot.handle, 1.0 / 60.0, s.target.unwrap_or(v(0.0, 0.0, 0.0)), s.target.is_some() as u32) };
             shot.age += 1;
             let mut ps = proj::State::default();
             unsafe { proj::ssbm_projectile_state(shot.handle, &mut ps) };
             let world_pos = v(shot.origin.x + ps.position.x, shot.origin.y + ps.position.y, shot.origin.z + ps.position.z);
             let _ = writeln!(
                 out,
-                "P {t} index={} kind={} state={} pos={} vel={} frame={:.1} anim={:.1} dmg={:.3} r={:.3} fl={}",
-                shot.index, ps.kind, ps.state, f3(world_pos), f3(ps.velocity), ps.frame, ps.animation_frame,
-                ps.damage, ps.radius, ps.flags
+                "P {t} index={} kind={} state={} pos={} vel={} frame={:.1} anim={:.1} dmg={:.3} r={:.3} fl={} world={}",
+                shot.index, ps.kind, ps.state, f3(ps.position), f3(ps.velocity), ps.frame, ps.animation_frame,
+                ps.damage, ps.radius, ps.flags, f3(world_pos)
             );
             if shot.age >= SHOT_TICKS || ps.flags & 2 != 0 {
                 shot.done = true;
@@ -432,6 +494,71 @@ fn summary(trace: &str) -> BTreeMap<&'static str, String> {
     out
 }
 
+/// The gameplay fields of a trace, canonicalised for a tick-for-tick comparison: the sim state,
+/// events (kind, move, strength, direction), hitbox presence (id, generation, group) and the
+/// projectiles' flight. Rig-dependent geometry (bone-local hitbox positions, attachment points)
+/// and authored approximations (hitbox damage and radius) are left out.
+fn gameplay_lines(trace: &str, with_motion: bool) -> Vec<String> {
+    let keep: &[(&str, &[&str])] = &[
+        ("T", if with_motion { &["ph=", "mv=", "pos=", "vel=", "gr=", "ch=", "sm=", "jumps=", "sh=", "sc=", "df=", "rb="] } else { &["ph=", "mv=", "gr=", "ch=", "sm=", "jumps=", "sh=", "sc=", "df=", "rb="] }),
+        ("E", &["kind=", "mv=", "str=", "dir="]),
+        ("K", &[]),
+        ("S", &["article=", "state=", "charge=", "dir="]),
+        ("H", &["gen=", "grp=", "id=", "ang=", "el="]),
+        ("P", &["index=", "kind=", "state=", "pos=", "vel=", "fl="]),
+    ];
+    trace
+        .lines()
+        .filter_map(|line| {
+            let mut parts = line.split(' ');
+            let kind = parts.next()?;
+            let (_, fields) = keep.iter().find(|(k, _)| *k == kind)?;
+            let tick = parts.next()?;
+            let mut out = format!("{kind} {tick}");
+            for part in line.split(' ').skip(2) {
+                if fields.iter().any(|f| part.starts_with(f)) {
+                    out.push(' ');
+                    out.push_str(part);
+                }
+            }
+            Some(out)
+        })
+        .collect()
+}
+
+/// Scenarios whose root travel is an authored curve, not the disc's per-tick samples: every other
+/// line must match, and the body's path must stay within `APPROX_PATH_UNITS` of the disc's.
+const APPROX_MOTION: &[&str] = &["dash_attack"];
+const APPROX_PATH_UNITS: f32 = 2.5;
+
+/// The largest gap between the two traces' body positions on any tick (sim units).
+fn path_gap(a: &str, b: &str) -> f32 {
+    let positions = |trace: &str| -> Vec<(f32, f32, f32)> {
+        trace
+            .lines()
+            .filter(|l| l.starts_with("T "))
+            .filter_map(|l| {
+                let p = l.split(' ').find_map(|f| f.strip_prefix("pos=("))?.trim_end_matches(')');
+                let mut c = p.split(',').map(|v| v.parse::<f32>().unwrap());
+                Some((c.next()?, c.next()?, c.next()?))
+            })
+            .collect()
+    };
+    positions(a)
+        .iter()
+        .zip(positions(b).iter())
+        .map(|(p, q)| ((p.0 - q.0).powi(2) + (p.1 - q.1).powi(2) + (p.2 - q.2).powi(2)).sqrt())
+        .fold(0.0, f32::max)
+}
+
+/// The first line where two gameplay traces differ, with both sides, or None when they agree.
+fn first_divergence(a: &[String], b: &[String]) -> Option<String> {
+    (0..a.len().max(b.len())).find_map(|i| {
+        let (x, y) = (a.get(i).map(String::as_str).unwrap_or("<end>"), b.get(i).map(String::as_str).unwrap_or("<end>"));
+        (x != y).then(|| format!("line {i}: disc `{x}` vs builtin `{y}`"))
+    })
+}
+
 fn run(assets: &str, tag: &str) -> BTreeMap<&'static str, Vec<(String, String)>> {
     let dir = out_dir().join(tag);
     std::fs::create_dir_all(&dir).unwrap();
@@ -448,37 +575,38 @@ fn run(assets: &str, tag: &str) -> BTreeMap<&'static str, Vec<(String, String)>>
     rows
 }
 
-/// Scenarios whose authored (built-in) profile must agree with the asset-backed fighter tick for
-/// tick: moves, events, hitbox window, spawns and the tick control returns. Grows as the kit
-/// migrates (step 2: the jab chain and the Charge Shot).
-const MIGRATED: &[&str] = &[
-    "jab_single",
-    "jab_chain_taps",
-    "jab_rapid_mash",
-    "jab_tap_then_miss_late",
-    "charge_tap_hold_control",
-    "charge_half_hold_control",
-    "charge_full_hold_control",
-    "charge_tap_press_control",
-    "charge_press_press_fire",
-    "charge_aimed_up",
-    "interrupt_jab_startup",
-    "interrupt_jab_active",
-    "interrupt_charge_holding",
-    "hurt_during_charge",
-    "connect_jab",
-];
-
+/// The built-in Samus's timings as measured against the asset-backed fighter (the recorded
+/// reference, tick for tick), pinned so they hold on a clean checkout with no disc: (scenario, the
+/// ticks each move starts on, the native events, the articles spawned). Input begins at tick 40.
 #[test]
-fn builtin_jab_and_charge_shot_keep_the_measured_timings_without_a_disc() {
-    // From the asset-backed recording: the jab strikes two ticks after it starts and hands control
-    // back after 18; a tapped Charge Shot's start clip is 14 ticks and its release clip 30.
+fn builtin_samus_keeps_the_measured_timings_without_a_disc() {
+    const PINNED: &[(&str, &str, &str, &str)] = &[
+        ("jab_single", "0:0 40:1 58:0", "40:k1m1", ""),
+        ("jab_chain_taps", "0:0 40:1 52:13 82:0", "40:k1m1 52:k1m13", ""),
+        ("side_tilt", "0:0 40:2 72:0", "40:k1m2", ""),
+        ("fair", "0:0 40:7 96:0", "40:k1m7", ""),
+        ("missile_homing", "0:0 40:21 100:0", "40:k1m21 61:k2m21", "61:a2s0"),
+        ("missile_super", "0:0 40:22 90:0", "40:k1m22 61:k2m22", "61:a2s1"),
+        ("screw_attack_air", "0:0 40:23 88:0", "40:k1m23", ""),
+        ("bomb_plain", "0:0 40:24 94:0", "40:k1m24 49:k2m24", "49:a0s0"),
+        (
+            "grab_pummel_throw_forward",
+            "0:0 40:25 70:33 80:28 104:33 110:28 134:33 140:29 182:0",
+            "40:k1m25 80:k1m28 110:k1m28 140:k1m29 154:k6m29",
+            "",
+        ),
+        ("side_smash_charged", "0:0 40:10 130:0", "40:k1m10", ""),
+        ("dash_attack", "0:0 40:5 78:0", "40:k1m5", ""),
+        ("charge_tap_hold_control", "0:0 40:20 84:0", "40:k1m20 54:k2m20", "54:a1s1"),
+        ("charge_full_hold_control", "0:0 40:20 173:0", "40:k1m20 173:k5m20", ""),
+    ];
     let rows = run("", "builtin");
     let get = |key: &str, name: &str| rows[key].iter().find(|(n, _)| n == name).unwrap().1.clone();
-    assert_eq!(get("moves", "jab_single"), "0:0 40:1 58:0");
-    assert!(get("hitbox_window", "jab_single").starts_with("Some(42)..Some(43)"), "{}", get("hitbox_window", "jab_single"));
-    assert_eq!(get("moves", "jab_chain_taps"), "0:0 40:1 52:13 82:0", "Samus has two jabs and no third");
-    assert_eq!(get("spawns", "charge_tap_hold_control"), "40:a1s8 54:a1s1");
+    for (name, moves, events, spawns) in PINNED {
+        assert_eq!(get("moves", name), *moves, "{name}: moves");
+        assert_eq!(get("events", name), *events, "{name}: events");
+        assert_eq!(get("spawns", name), *spawns, "{name}: spawns");
+    }
 }
 
 #[test]
@@ -516,18 +644,33 @@ fn asset_backed_samus_kit_is_recorded_and_diffed_against_builtin() {
         }
     }
     let total = scenarios().len();
-    let _ = writeln!(report, "\n{differing} of {total} scenarios differ.");
-    std::fs::write(out_dir().join("samus-parity.md"), &report).unwrap();
-    eprintln!("{differing} of {total} scenarios differ; see target/reference/samus-parity.md");
-    for name in MIGRATED {
-        let i = scenarios().iter().position(|s| s.name == *name).unwrap();
-        for key in ["moves", "events", "hitbox_window", "spawns", "control_returns"] {
-            assert_eq!(
-                asset[key][i].1, builtin[key][i].1,
-                "migrated scenario {name}: {key} differs from the asset-backed fighter"
-            );
+    let _ = writeln!(report, "\n{differing} of {total} scenarios differ in the coarse summary.");
+    // The strict criterion: every gameplay line, tick for tick.
+    let mut strict = Vec::new();
+    for s in scenarios() {
+        let read = |tag: &str| {
+            gameplay_lines(
+                &std::fs::read_to_string(out_dir().join(tag).join(format!("{}.trace", s.name))).unwrap(),
+                !APPROX_MOTION.contains(&s.name),
+            )
+        };
+        if let Some(d) = first_divergence(&read("disc"), &read("builtin")) {
+            strict.push((s.name, d));
         }
     }
+    for name in APPROX_MOTION {
+        let read = |tag: &str| std::fs::read_to_string(out_dir().join(tag).join(format!("{name}.trace"))).unwrap();
+        let gap = path_gap(&read("disc"), &read("builtin"));
+        let _ = writeln!(report, "\nAuthored root travel `{name}`: largest path gap {gap:.2} units (limit {APPROX_PATH_UNITS}).");
+        assert!(gap <= APPROX_PATH_UNITS, "{name}: authored travel strays {gap} units from the disc's");
+    }
+    let _ = writeln!(report, "\n## Strict gameplay divergence ({} of {total} scenarios)\n", strict.len());
+    for (name, d) in &strict {
+        let _ = writeln!(report, "- **{name}**: {d}");
+    }
+    std::fs::write(out_dir().join("samus-parity.md"), &report).unwrap();
+    eprintln!("{differing} of {total} differ in summary, {} strictly; see target/reference/samus-parity.md", strict.len());
+    assert!(strict.is_empty(), "the authored Samus diverges from the asset-backed one tick for tick: {strict:#?}");
     // The recorded reference itself must have run the kit.
     let moves = &asset["moves"];
     let find = |name: &str| moves.iter().find(|(n, _)| n == name).map(|(_, v)| v.clone()).unwrap();
