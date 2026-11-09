@@ -6,7 +6,7 @@ use libssbm::{Contact, Event, Host, Input, Sim};
 use libssbm_assets::presentation::Presentation;
 mod moves;
 mod particles;
-mod projectile;
+pub mod projectile;
 mod replay;
 pub use replay::{ssbm_ops_steps, ssbm_sim_ops_take, ssbm_sim_record, ssbm_sim_replay};
 pub use moves::{MoveEntry, ssbm_sim_moves};
