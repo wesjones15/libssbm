@@ -52,3 +52,18 @@ Ball, grab hold) and hurt during a charge; connect on a jab.
 - The held Morph Ball emits no contact hitbox in either mode. That is kept out of parity: fix it as
   its own reviewed change.
 - The disc Samus has no third jab or rapid jab; the built-in fallback does.
+
+## Step 2 status: jab and Charge Shot migrated
+
+- `crates/libssbm/src/authored.rs` holds authored `ActionDef`s (Attack11/12, the SpecialN start,
+  release and hold clips) and `Specials::authored()` supplies the Charge Shot tuning; the built-in
+  Samus uses both. They run through the shared executor, not a copy of it.
+- `MIGRATED` in `tests/samus_reference.rs` lists the scenarios that must match the asset-backed
+  fighter tick for tick (moves, events, hitbox window, spawns, control return). They pass.
+- Still different on purpose, and tracked by the report: everything else in the kit, the aerial
+  fall time (shared builtin movement params), and a re-fired stored charge, which lands 1 tick
+  early in the built-in mode (`charge_store_then_fire`).
+- Stand-in pose: `libcommon::strike_pose` (45 degrees at the first active frame, eased out by the
+  end of the clip), `Sim::strike_pose_pitch`, applied to the cylinder in `ssbm_view_update`.
+  Viewer proof: `cargo run --release -p ssbm-viewer --example strike_pose -- out.png`.
+  Not yet done: Olimar's Dismiss Strike, and any in-game check.
