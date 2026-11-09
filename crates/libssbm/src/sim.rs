@@ -501,6 +501,24 @@ impl Sim {
         input.buttons & SPRINT != 0 && (!self.mobile_action()
             || self.current_move.is_some_and(|m| self.behavior.mobile_sprint(m)))
     }
+    /// Forward pitch (radians) a stand-in body (no model) tips by for the current attack: the
+    /// shared 45-degree strike pose (`libcommon::strike_pose`) driven by the action's own clock, so
+    /// a whiff still shows it, attack speed keeps it in sync and an interrupt clears it. Applies to
+    /// the contextual A attacks (jabs, tilts, smashes, dash attack, aerials); specials choose their
+    /// own presentation. A held smash charge stays upright and tips on release. The first active
+    /// frame is the clip's first hitbox command and the end is the clip's last frame. Presentation
+    /// only: nothing in the sim reads it.
+    pub fn strike_pose_pitch(&self) -> Option<f32> {
+        let m = self.current_move?;
+        if !matches!(m as u32, 1..=16) || self.phase == Phase::SmashCharge {
+            return None;
+        }
+        let def = self.action.definitions.get(self.motion.clip)?;
+        let first = def.commands.iter().find_map(|c| {
+            matches!(c.command, crate::action::Command::Hitbox(_)).then_some(c.frame)
+        })?;
+        Some(libcommon::strike_pose::pitch(self.motion.frame, first, def.frames))
+    }
     /// Shared camera-elevation bend for +Z-forward neutral-special rigs (Link's
     /// bow and Yoshi's tongue), plus the Super Scope. The source clips and
     /// lower-body gait remain intact; projectiles retain the full camera aim.

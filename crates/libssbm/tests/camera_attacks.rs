@@ -155,3 +155,33 @@ fn host_yaw_faces_body_without_rotating_drift_or_latched_attacks() {
         );
     }
 }
+
+#[test]
+fn stand_in_strike_pose_follows_the_authored_jab_clock() {
+    use libssbm::{builtin, sim::ATTACK, FlatHost, Input, Phase};
+    let mut s = builtin::sim(0, glam::Vec3::ZERO).unwrap();
+    let mut h = FlatHost::default();
+    for _ in 0..30 {
+        s.advance(&mut h, Input::idle(), 1. / 60.);
+    }
+    assert_eq!(s.strike_pose_pitch(), None, "standing is upright");
+    let press = Input { buttons: ATTACK, ..Input::idle() };
+    s.advance(&mut h, press, 1. / 60.);
+    let mut pitches = vec![s.strike_pose_pitch().expect("jab strikes")];
+    for _ in 0..17 {
+        s.advance(&mut h, Input::idle(), 1. / 60.);
+        pitches.push(s.strike_pose_pitch().unwrap_or(0.));
+    }
+    let peak = pitches.iter().cloned().fold(0., f32::max);
+    assert!((peak - std::f32::consts::FRAC_PI_4).abs() < 1e-5, "peak {peak}: {pitches:?}");
+    let at_peak = pitches.iter().position(|p| *p == peak).unwrap();
+    // The jab's first hitbox is on motion frame 3; the tick the clip shows frame 3 is the peak.
+    assert_eq!(at_peak, 2, "{pitches:?}");
+    assert!(s.strike_pose_pitch().is_none() || *pitches.last().unwrap() < 0.05);
+    // An interrupt clears it at once.
+    s.advance(&mut h, press, 1. / 60.);
+    assert!(s.strike_pose_pitch().is_some());
+    s.interrupt();
+    assert_eq!(s.strike_pose_pitch(), None);
+    let _ = Phase::Free;
+}
