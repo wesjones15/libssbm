@@ -917,6 +917,8 @@ pub unsafe extern "C" fn ssbm_sim_hitboxes(
         count
     })
 }
+/// Half the stand-in cylinder's height (libssbm_assets::procedural::model), the strike pose's pivot.
+const STAND_IN_CENTER_Y: f32 = 8.;
 fn fighter_matrix(origin: Vec3, facing: Vec3) -> glam::Mat4 {
     glam::Mat4::from_translation(origin)
         * glam::Mat4::from_rotation_y(facing.x.atan2(facing.z))
@@ -2576,6 +2578,20 @@ pub unsafe extern "C" fn ssbm_view_update(v: *mut View, h: *const Handle, dt: f3
     }
     match catch_unwind(AssertUnwindSafe(|| {
         v.actor.update(&h.sim, dt.min(0.25));
+        // The no-assets body is a generic cylinder: tip it with the shared strike pose
+        // (`Sim::strike_pose_pitch`, libcommon::strike_pose) about its center and right axis. A disc
+        // model (it has clips) and item views (attached) play their own animation instead.
+        if v.actor.animations.clips.is_empty() && v.actor.attach_joint.is_none() {
+            if let Some(pitch) = h.sim.strike_pose_pitch() {
+                let center = Vec3::new(0., STAND_IN_CENTER_Y, 0.);
+                let tilt = glam::Mat4::from_translation(center)
+                    * glam::Mat4::from_rotation_x(pitch)
+                    * glam::Mat4::from_translation(-center);
+                if let Some(root) = v.actor.world.first_mut() {
+                    *root = tilt * *root;
+                }
+            }
+        }
         let mut offset = 0;
         for i in 0..v.actor.model.batches.len() {
             let skin = v.actor.model.skin(i, &v.actor.world);
