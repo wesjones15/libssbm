@@ -296,6 +296,20 @@ const SHOT_TICKS: u32 = 150;
 
 /// Records one scenario to text. `assets` is the cache directory, or empty for the built-in profile.
 fn record(assets: &str, s: &Scenario) -> String {
+    record_at(assets, s, 60)
+}
+
+/// As [`record`], but the host steps at `hz` frames a second: each call hands the sim `1 / hz`
+/// seconds (zero, one or two ticks), the pad is whatever the script holds at that moment, and a
+/// hook fires on the first call at or after its tick. Tick labels are the 60 Hz tick the call began in.
+fn record_at(assets: &str, s: &Scenario, hz: u32) -> String {
+    record_full(assets, s, hz, None)
+}
+
+/// As record_at; with `churn` (a cache directory whose presentation assets are broken or absent)
+/// every call also tries to build and free a body view, an article view and an effect view from
+/// it and to read audio, as a host does each frame. None of that may touch gameplay.
+fn record_full(assets: &str, s: &Scenario, hz: u32, churn: Option<&CString>) -> String {
     let cdir = CString::new(assets).unwrap();
     let mut world = World::default();
     let host = HostTable { user: &mut world as *mut World as *mut c_void, collide: Some(collide), event: Some(event) };
@@ -319,7 +333,10 @@ fn record(assets: &str, s: &Scenario) -> String {
             ssbm_sim_anchor(h, v(0.0, s.height, 0.0), 0);
         }
     }
-    for t in 0..s.ticks {
+    let dt = 1.0 / hz as f64;
+    let mut fired = vec![false; s.hooks.len()];
+    for call in 0..s.ticks * hz / 60 {
+        let t = call * 60 / hz;
         let mut pad = Pad { movement: v(0.0, 0.0, 0.0), aim: v(1.0, 0.0, 0.0), buttons: 0, allowed: 31 };
         for hd in &s.holds {
             if t >= hd.from && t < hd.from + hd.len {
@@ -331,10 +348,11 @@ fn record(assets: &str, s: &Scenario) -> String {
         unsafe {
             ssbm_sim_set_host_flags(h, s.host_flags);
             ssbm_sim_facing(h, v(1.0, 0.0, 0.0));
-            for (when, hook) in &s.hooks {
-                if *when != t {
+            for (n, (when, hook)) in s.hooks.iter().enumerate() {
+                if t < *when || fired[n] {
                     continue;
                 }
+                fired[n] = true;
                 match hook {
                     Hook::Interrupt => ssbm_sim_interrupt(h),
                     Hook::Hurt => {
@@ -373,7 +391,24 @@ fn record(assets: &str, s: &Scenario) -> String {
                 });
             }
             world.events.clear();
-            ssbm_sim_step(h, &host, &pad, 1.0 / 60.0);
+            ssbm_sim_step(h, &host, &pad, dt);
+        }
+        if let Some(bad) = churn {
+            unsafe {
+                let view = ssbm_view_new(bad.as_ptr(), 0, 0);
+                assert!(!view.is_null(), "a broken cache must fall back to a procedural body");
+                assert_eq!(ssbm_view_update(view, h, dt as f32), 1);
+                ssbm_view_free(view);
+                let article = ssbm_article_new(bad.as_ptr(), 0, 1, 1);
+                assert!(!article.is_null(), "a broken article must fall back to a procedural one");
+                ssbm_view_free(article);
+                let effect = ssbm_effect_new(bad.as_ptr(), 0, 5);
+                if !effect.is_null() {
+                    ssbm_view_free(effect);
+                }
+                let mut audio = vec![0f32; 512];
+                ssbm_sim_audio(h, audio.as_mut_ptr(), 256);
+            }
         }
         let st = state(h);
         let motion = unsafe { ssbm_sim_motion_frame(h) };
@@ -421,7 +456,7 @@ fn record(assets: &str, s: &Scenario) -> String {
             );
         }
         for shot in shots.iter_mut().filter(|s| !s.done) {
-            unsafe { proj::ssbm_projectile_step(shot.handle, 1.0 / 60.0, s.target.unwrap_or(v(0.0, 0.0, 0.0)), s.target.is_some() as u32) };
+            unsafe { proj::ssbm_projectile_step(shot.handle, dt, s.target.unwrap_or(v(0.0, 0.0, 0.0)), s.target.is_some() as u32) };
             shot.age += 1;
             let mut ps = proj::State::default();
             unsafe { proj::ssbm_projectile_state(shot.handle, &mut ps) };
@@ -432,7 +467,7 @@ fn record(assets: &str, s: &Scenario) -> String {
                 shot.index, ps.kind, ps.state, f3(ps.position), f3(ps.velocity), ps.frame, ps.animation_frame,
                 ps.damage, ps.radius, ps.flags, f3(world_pos)
             );
-            if shot.age >= SHOT_TICKS || ps.flags & 2 != 0 {
+            if shot.age >= SHOT_TICKS * hz / 60 || ps.flags & 2 != 0 {
                 shot.done = true;
             }
         }
@@ -676,4 +711,235 @@ fn asset_backed_samus_kit_is_recorded_and_diffed_against_builtin() {
     let find = |name: &str| moves.iter().find(|(n, _)| n == name).map(|(_, v)| v.clone()).unwrap();
     assert!(find("jab_single").contains(":1"), "disc jab never started");
     assert!(find("screw_attack_air").contains(":23"), "disc Screw Attack never started");
+}
+
+
+// ---------------------------------------------------------------------------------------------
+// Step 4: the authored profile against every state a cache can be in, other host step rates,
+// mixed-asset replay, and presentation that fails to load.
+// ---------------------------------------------------------------------------------------------
+
+/// Every scenario's trace recorded with `assets` at `hz`, by name.
+fn gameplay_at(assets: &str, hz: u32, churn: Option<&CString>) -> Vec<(&'static str, String)> {
+    scenarios().iter().map(|s| (s.name, record_full(assets, s, hz, churn))).collect()
+}
+
+/// Asserts two recordings agree on every scenario's gameplay (the dash attack's authored travel
+/// aside when `approx_motion`), naming each first divergence.
+fn assert_same_gameplay(what: &str, a: &[(&'static str, String)], b: &[(&'static str, String)], approx_motion: bool) {
+    let mut bad = Vec::new();
+    for ((name, x), (_, y)) in a.iter().zip(b) {
+        let motion = !(approx_motion && APPROX_MOTION.contains(name));
+        if let Some(d) = first_divergence(&gameplay_lines(x, motion), &gameplay_lines(y, motion)) {
+            bad.push(format!("{name}: {d}"));
+        }
+    }
+    assert!(bad.is_empty(), "{what}: {} scenarios diverge:\n{}", bad.len(), bad.join("\n"));
+}
+
+/// A cache directory under target/reference/cache-variants holding a copy of `src` without the
+/// entries named in `skip`, then `mutate`d.
+fn cache_variant(name: &str, src: &Path, skip: &[&str], mutate: impl FnOnce(&Path)) -> PathBuf {
+    let dir = out_dir().join("cache-variants").join(name);
+    let _ = std::fs::remove_dir_all(&dir);
+    std::fs::create_dir_all(&dir).unwrap();
+    fn copy(from: &Path, to: &Path, skip: &[&str]) {
+        for entry in std::fs::read_dir(from).unwrap() {
+            let entry = entry.unwrap();
+            let name = entry.file_name().to_string_lossy().to_string();
+            if skip.contains(&name.as_str()) {
+                continue;
+            }
+            let target = to.join(&name);
+            if entry.file_type().unwrap().is_dir() {
+                std::fs::create_dir_all(&target).unwrap();
+                copy(&entry.path(), &target, skip);
+            } else {
+                std::fs::copy(entry.path(), target).unwrap();
+            }
+        }
+    }
+    copy(src, &dir, skip);
+    mutate(&dir);
+    dir
+}
+
+/// A directory with every file Samus's assets name, each a few bytes of junk.
+fn junk_cache(name: &str) -> PathBuf {
+    let dir = out_dir().join("cache-variants").join(name);
+    let _ = std::fs::remove_dir_all(&dir);
+    for file in libssbm_assets::fighter::SAMUS.required().unwrap() {
+        let path = dir.join(file);
+        std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+        std::fs::write(path, b"NOT A MELEE FILE").unwrap();
+    }
+    dir
+}
+
+#[test]
+fn empty_missing_and_junk_caches_play_exactly_like_the_authored_profile() {
+    let authored = gameplay_at("", 60, None);
+    let junk = junk_cache("junk");
+    let missing = out_dir().join("cache-variants").join("does-not-exist");
+    for (what, dir) in [("junk files", &junk), ("missing directory", &missing)] {
+        let got = gameplay_at(dir.to_str().unwrap(), 60, None);
+        assert_same_gameplay(what, &authored, &got, false);
+    }
+}
+
+#[test]
+fn partial_and_broken_disc_caches_fall_back_whole_or_keep_the_disc_gameplay() {
+    let Some(src) = cache() else {
+        eprintln!("SKIP: disc cache absent");
+        return;
+    };
+    let authored = gameplay_at("", 60, None);
+    let disc = gameplay_at(src.to_str().unwrap(), 60, None);
+    // Gameplay data missing or unreadable: the whole fighter falls back to the authored profile.
+    let truncated = cache_variant("truncated-fighter", &src, &[], |d| {
+        let bytes = std::fs::read(d.join("PlSs.dat")).unwrap();
+        std::fs::write(d.join("PlSs.dat"), &bytes[..bytes.len() / 2]).unwrap();
+    });
+    let no_animations = cache_variant("no-animations", &src, &["PlSsAJ.dat"], |_| {});
+    let broken_common = cache_variant("broken-common", &src, &[], |d| {
+        std::fs::write(d.join("PlCo.dat"), vec![0xFFu8; 4096]).unwrap();
+    });
+    for (what, dir) in [("truncated PlSs.dat", &truncated), ("missing PlSsAJ.dat", &no_animations), ("broken PlCo.dat", &broken_common)] {
+        let got = gameplay_at(dir.to_str().unwrap(), 60, None);
+        assert_same_gameplay(what, &authored, &got, false);
+    }
+    // Only presentation data missing (effects, results scene, portraits, audio): the sim still
+    // loads and plays the disc gameplay, line for line.
+    let no_presentation = cache_variant(
+        "no-presentation",
+        &src,
+        &["EfSsData.dat", "EfCoData.dat", "IfAll.usd", "MnSlChr.usd", "audio"],
+        |_| {},
+    );
+    let got = gameplay_at(no_presentation.to_str().unwrap(), 60, None);
+    assert_same_gameplay("no effects, portraits or audio", &disc, &got, false);
+    // And the disc gameplay is the authored profile, which is the point of the migration.
+    assert_same_gameplay("disc vs authored", &disc, &authored, true);
+}
+
+#[test]
+fn authored_samus_matches_the_disc_at_30_and_144_hz_host_stepping() {
+    let Some(src) = cache() else {
+        eprintln!("SKIP: disc cache absent");
+        return;
+    };
+    for hz in [30, 144] {
+        let disc = gameplay_at(src.to_str().unwrap(), hz, None);
+        let authored = gameplay_at("", hz, None);
+        assert_same_gameplay(&format!("{hz} Hz"), &disc, &authored, true);
+    }
+}
+
+#[test]
+fn a_held_charge_takes_the_same_ticks_at_any_host_step_rate() {
+    // No disc: the authored fighter's own timeline must not depend on how the host slices time.
+    let s = scenarios().into_iter().find(|s| s.name == "charge_full_hold_control").unwrap();
+    let end_of_move = |hz: u32| {
+        let trace = record_at("", &s, hz);
+        let field = |l: &str, k: &str| l.split(' ').find_map(|f| f.strip_prefix(k)).unwrap().to_string();
+        let mut last = None;
+        for line in trace.lines().filter(|l| l.starts_with("T ")) {
+            if field(line, "mv=") != "0" {
+                last = Some(line.split(' ').nth(1).unwrap().parse::<i64>().unwrap());
+            }
+        }
+        last.unwrap()
+    };
+    let at60 = end_of_move(60);
+    for hz in [30, 144] {
+        let got = end_of_move(hz);
+        assert!((got - at60).abs() <= 2, "{hz} Hz: the charge move ended on tick {got}, not {at60}");
+    }
+}
+
+#[test]
+fn a_disc_owner_and_an_authored_shadow_follow_each_other_both_ways() {
+    let Some(src) = cache() else {
+        eprintln!("SKIP: disc cache absent");
+        return;
+    };
+    let disc = CString::new(src.to_str().unwrap()).unwrap();
+    let empty = CString::new("").unwrap();
+    let mut world = World::default();
+    let host = HostTable { user: &mut world as *mut World as *mut c_void, collide: Some(collide), event: Some(event) };
+    let pad = |x: f32, buttons: u32| Pad { movement: v(x, 0.0, 0.0), aim: v(1.0, 0.0, 0.0), buttons, allowed: 31 };
+    let script = |t: u32| match t {
+        0..=29 => pad(0.0, 0),
+        30..=89 => pad(1.0, 0),
+        90..=91 => pad(0.0, JUMP),
+        92..=151 => pad(0.4, 0),
+        152 | 158 => pad(0.0, ATTACK),
+        200..=205 => pad(1.0, ATTACK),
+        260 => pad(0.0, SPECIAL),
+        330 => pad(0.0, SIDE_B),
+        400..=402 => pad(0.0, JUMP),
+        _ => pad(0.0, 0),
+    };
+    for (owner_dir, shadow_dir, label) in [
+        (&disc, &empty, "disc owner, authored shadow"),
+        (&empty, &disc, "authored owner, disc shadow"),
+    ] {
+        let owner = unsafe { ssbm_sim_new_fighter(owner_dir.as_ptr(), V3::default(), 0) };
+        let shadow = unsafe { ssbm_sim_new_fighter(shadow_dir.as_ptr(), V3::default(), 0) };
+        assert!(!owner.is_null() && !shadow.is_null());
+        assert_eq!(unsafe { ssbm_sim_record(owner, 1) }, 1);
+        let mut bytes = vec![0u8; 1 << 14];
+        let mut worst = 0.0f32;
+        for batch in 0..(600 / 3) {
+            for i in 0..3 {
+                let t = batch * 3 + i;
+                let p = script(t);
+                unsafe {
+                    ssbm_sim_facing(owner, v(1.0, 0.0, 0.0));
+                    if t == 300 {
+                        ssbm_sim_hurt_scaled(owner, 0.3);
+                    }
+                    ssbm_sim_step(owner, &host, &p, 1.0 / 60.0);
+                }
+            }
+            let n = unsafe { ssbm_sim_ops_take(owner, bytes.as_mut_ptr(), bytes.len() as u32) };
+            assert!(n > 0, "{label}: no log");
+            assert_ne!(unsafe { ssbm_sim_replay(shadow, &host, bytes.as_ptr(), n) }, u32::MAX, "{label}: replay rejected");
+            let (a, b) = (state(owner), state(shadow));
+            let d = ((a.position.x - b.position.x).powi(2)
+                + (a.position.y - b.position.y).powi(2)
+                + (a.position.z - b.position.z).powi(2))
+            .sqrt();
+            worst = worst.max(d);
+            assert!(d < 1.5, "{label}: batch {batch}: {d} units apart");
+            assert_eq!((a.move_id, a.phase, a.grounded, a.frame), (b.move_id, b.phase, b.grounded, b.frame), "{label}: batch {batch}");
+        }
+        eprintln!("{label}: worst gap {worst}");
+        unsafe {
+            ssbm_sim_free(owner);
+            ssbm_sim_free(shadow);
+        }
+    }
+}
+
+#[test]
+fn failed_presentation_loads_change_nothing_and_do_not_kill_live_projectiles() {
+    let junk = CString::new(junk_cache("junk-presentation").to_str().unwrap()).unwrap();
+    // The authored fighter, with a view, an article and an effect failing to load every frame.
+    let plain = gameplay_at("", 60, None);
+    let churned = gameplay_at("", 60, Some(&junk));
+    assert_same_gameplay("authored with failing presentation", &plain, &churned, false);
+    // Every projectile the plain run flew was still flying, line for line, in the churned run.
+    let flew = |runs: &[(&str, String)]| runs.iter().map(|(_, t)| t.lines().filter(|l| l.starts_with("P ")).count()).sum::<usize>();
+    assert!(flew(&plain) > 1000, "the kit should fly shots: {}", flew(&plain));
+    assert_eq!(flew(&plain), flew(&churned));
+    // The same against the disc gameplay, with its presentation failing too.
+    if let Some(src) = cache() {
+        let dir = src.to_str().unwrap();
+        let disc = gameplay_at(dir, 60, None);
+        let churned_disc = gameplay_at(dir, 60, Some(&junk));
+        assert_same_gameplay("disc with failing presentation", &disc, &churned_disc, false);
+    } else {
+        eprintln!("SKIP: disc cache absent (the authored half ran)");
+    }
 }

@@ -72,5 +72,24 @@ Ball, grab hold) and hurt during a charge; connect on a jab.
   entry platform view still needs assets, so the visual side is not wired.
 - Stand-in pose: `libcommon::strike_pose`, `Sim::strike_pose_pitch`, applied in `ssbm_view_update`;
   `cargo run --release -p ssbm-viewer --example strike_pose -- out.png` for the proof capture.
-- Not covered: enemies (hits, rehit groups against targets, grapple contact), 30/144 Hz stepping,
-  mixed-asset replay, skill stock, and any in-game play.
+- Not covered: enemies (hits, rehit groups against targets, grapple contact), skill stock, and any
+  in-game play.
+
+## Step 4: cache states, host rates, replay and presentation failure
+
+All in `tests/samus_reference.rs`; the disc halves print SKIP without a cache.
+
+- **Cache states.** Empty, nonexistent and junk-filled caches play exactly like the authored
+  profile. With a disc: a truncated `PlSs.dat`, a missing `PlSsAJ.dat` and a broken `PlCo.dat` fall
+  back whole to the authored profile (the dash attack's authored travel is the sentinel that tells
+  the two apart). A cache missing only effects, portraits and audio plays the disc gameplay line
+  for line.
+- **Host rates.** At 30 and 144 Hz (zero, one or two ticks a call) the authored fighter matches
+  the disc line for line, and a held charge ends within 2 ticks at any rate with no disc.
+- **Mixed replay.** A disc owner with an authored shadow, and the reverse, stay in the same move,
+  phase and frame with a 0.00 unit gap over 600 ticks with a hurt and a missile.
+- **Failed presentation.** With a body view, an article view, an effect view and audio failing to
+  load every frame, gameplay and every projectile's flight are unchanged (authored and disc).
+- The C# no-assets boundary check (`NoAssetsCheck`) now expects Samus's article 0, the bomb, to
+  rise rather than fly forward, as on the disc.
+- Not covered: in-game play, and the C# host's arrival selection (`MeleeSurvivor.cs`).
