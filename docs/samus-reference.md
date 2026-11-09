@@ -53,17 +53,24 @@ Ball, grab hold) and hurt during a charge; connect on a jab.
   its own reviewed change.
 - The disc Samus has no third jab or rapid jab; the authored built-in Samus now matches (the generic fallback for other fighters still has both).
 
-## Step 2 status: jab and Charge Shot migrated
+## Status: the whole Samus kit is authored (steps 2 and 3)
 
-- `crates/libssbm/src/authored.rs` holds authored `ActionDef`s (Attack11/12, the SpecialN start,
-  release and hold clips) and `Specials::authored()` supplies the Charge Shot tuning; the built-in
-  Samus uses both. They run through the shared executor, not a copy of it.
-- `MIGRATED` in `tests/samus_reference.rs` lists the scenarios that must match the asset-backed
-  fighter tick for tick (moves, events, hitbox window, spawns, control return). They pass.
-- Still different on purpose, and tracked by the report: everything else in the kit, the aerial
-  fall time (shared builtin movement params), and a re-fired stored charge, which lands 1 tick
-  early in the built-in mode (`charge_store_then_fire`).
-- Stand-in pose: `libcommon::strike_pose` (45 degrees at the first active frame, eased out by the
-  end of the clip), `Sim::strike_pose_pitch`, applied to the cylinder in `ssbm_view_update`.
-  Viewer proof: `cargo run --release -p ssbm-viewer --example strike_pose -- out.png`.
-  Not yet done: Olimar's Dismiss Strike, and any in-game check.
+- `crates/libssbm/src/authored.rs` and `authored/samus_rest.rs` hold the authored schedules:
+  jab chain, Charge Shot, tilts, smashes, dash attack (authored root travel), aerials, both
+  missiles, Screw Attack, bomb and Morph Ball, grapple, pummel and throws, clip lengths, and the
+  articles (`samus_article`); `Params::samus_authored`, `defense::Params::samus_authored`,
+  `Specials::authored` and `samus_return` (arrival, entry, rebirth) supply the numbers. All are
+  rounded approximations validated against the recording, run through the shared executor.
+- The asset-backed test compares every gameplay line (state, events, hitbox presence, projectile
+  flight, shield and rebirth flags) tick for tick across 77 scenarios: 0 diverge. Not compared:
+  rig-dependent geometry (bone-local hitbox positions, attachment points) and the authored
+  approximations of hitbox damage and radius. The dash attack's path may stray up to 2.5 units
+  (it is 2.3), since its travel is an authored curve.
+- `builtin_samus_keeps_the_measured_timings_without_a_disc` pins the key timings with no disc.
+- Hosts: the no-assets handle now runs the shared arrival, entry and rebirth for Samus. The C#
+  arrival selection (`MeleeSurvivor.cs`: stock arrival when `BuiltinOnly`) is unchanged, and the
+  entry platform view still needs assets, so the visual side is not wired.
+- Stand-in pose: `libcommon::strike_pose`, `Sim::strike_pose_pitch`, applied in `ssbm_view_update`;
+  `cargo run --release -p ssbm-viewer --example strike_pose -- out.png` for the proof capture.
+- Not covered: enemies (hits, rehit groups against targets, grapple contact), 30/144 Hz stepping,
+  mixed-asset replay, skill stock, and any in-game play.
