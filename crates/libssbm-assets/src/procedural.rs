@@ -131,3 +131,21 @@ pub fn presentation(kind: u32, object: bool) -> Presentation {
         parts: [None; 5],
     }
 }
+
+/// The no-assets entry platform: a wide flat cylinder whose top sits at the fighter's feet and
+/// whose thickness the entry animation scales (`ssbm_entry_platform_update`). Generic, not the
+/// original platform model.
+pub fn platform() -> Presentation {
+    let mut p = presentation(0, false);
+    for vertex in &mut p.model.batches[0].vertices {
+        let top = vertex.position.y > 1.;
+        vertex.position.x *= 4.;
+        vertex.position.z *= 4.;
+        vertex.position.y = if top { 0. } else { -2. };
+    }
+    p.model.batches[0].color = PLATFORM_COLOR;
+    p.world = p.model.bind_world();
+    p
+}
+/// The stand-in platform's resting colour; it flashes white with the entry colour animation.
+pub const PLATFORM_COLOR: [f32; 4] = [0.35, 0.75, 1., 1.];

@@ -2181,13 +2181,11 @@ pub unsafe extern "C" fn ssbm_effect_new(dir: *const c_char, fighter_kind: u32, 
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn ssbm_entry_platform_new(dir: *const c_char) -> *mut View {
     guarded("ssbm_entry_platform_new", std::ptr::null_mut(), || {
-        match (|| Presentation::platform(unsafe { path(dir) }?))() {
-            Ok(a) => Box::into_raw(Box::new(View::new(a))),
-            Err(e) => {
-                error(e);
-                std::ptr::null_mut()
-            }
-        }
+        // The disc's platform model when the cache has it; otherwise (no assets, or a cache that
+        // fails to load) the generic flat cylinder, so the entry never goes without a platform.
+        let a = (|| Presentation::platform(unsafe { path(dir) }?))()
+            .unwrap_or_else(|_| libssbm_assets::procedural::platform());
+        Box::into_raw(Box::new(View::new(a)))
     })
 }
 /// # Safety
@@ -2378,6 +2376,11 @@ pub unsafe extern "C" fn ssbm_entry_platform_update(v: *mut View, h: *const Hand
             .map(|m| transform * m)
             .collect();
         v.refresh();
+        // The generic platform flashes white in time with the entry colour animation.
+        if v.actor.animations.clips.is_empty() && v.actor.attach_joint.is_none() {
+            let flash = unsafe { &*h }.sim.entry_flash().is_some();
+            v.colors[0] = if flash { [1., 1., 1., 1.] } else { libssbm_assets::procedural::PLATFORM_COLOR };
+        }
         1
     })
 }
